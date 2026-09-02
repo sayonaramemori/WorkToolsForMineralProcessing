@@ -10,6 +10,7 @@
 #include "services/ProjectSerializer.h"
 #include "topology/OpenCircuitCalculator.h"
 #include "topology/TopologyAlgorithms.h"
+#include "topology/TopologyValidator.h"
 
 #include <QApplication>
 #include <QFile>
@@ -221,5 +222,35 @@ int main(int argc, char** argv) {
         || loadedOccupiedFeed->recycleProducts().size() != 2
         || loadedOccupiedFeed->recycleProducts()[0]->streamId() != "OC:left"
         || loadedOccupiedFeed->recycleProducts()[1]->streamId() != "OC:right") return 34;
+
+    FlowsheetScene multiLoopSource;
+    auto* multiA = new FlotationUnitItem({"MA", {0, 0}});
+    auto* multiB = new FlotationUnitItem({"MB", {400, 350}});
+    auto* multiC = new FlotationUnitItem({"MC", {800, 700}});
+    multiLoopSource.addItem(multiA); multiLoopSource.addItem(multiB);
+    multiLoopSource.addItem(multiC);
+    if (!multiLoopSource.connectProduct(multiA->products().at(1), multiB->inputLine())
+        || !multiLoopSource.connectProduct(multiB->products().at(1), multiC->inputLine())
+        || !multiLoopSource.connectRecycle(
+            multiB->products().at(0), multiA->inputLine(), "multi-loop-a")
+        || !multiLoopSource.connectRecycle(
+            multiC->products().at(0), multiB->inputLine(), "multi-loop-b")) return 35;
+    const QString multiLoopPath = directory.filePath("multi-loop.afs.json");
+    FlowsheetDocument multiLoopDocument;
+    if (!ProjectSerializer::save(
+            multiLoopSource, multiLoopDocument, multiLoopPath, &error)) return 36;
+    FlowsheetScene multiLoopLoaded;
+    FlowsheetDocument multiLoopLoadedDocument;
+    if (!ProjectSerializer::load(
+            multiLoopLoaded, multiLoopLoadedDocument, multiLoopPath, &error)) return 37;
+    QSet<QString> loadedFeedIds;
+    for (auto* item : multiLoopLoaded.items())
+        if (auto* feed = dynamic_cast<FeedJunctionItem*>(item)) loadedFeedIds.insert(feed->id());
+    const auto multiLoopSnapshot = CanvasTopologyBuilder::build(multiLoopLoaded);
+    if (loadedFeedIds != QSet<QString>{"multi-loop-a", "multi-loop-b"}
+        || multiLoopSnapshot.graph.externalFeedStreams().size() != 1
+        || !topology::TopologyAlgorithms::sort(multiLoopSnapshot.graph).hasCycle
+        || topology::TopologyValidator::hasErrors(
+            topology::TopologyValidator::validate(multiLoopSnapshot.graph))) return 38;
     return 0;
 }

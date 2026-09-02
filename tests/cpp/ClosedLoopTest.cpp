@@ -142,5 +142,36 @@ int main(int argc, char** argv) {
         || normalFeed->targetUnit() != stageB || normalFeed->feedJunction()
         || stageB->inputLine()->sourceProduct() != normalFeed
         || downstreamRecycle->feedJunction() || secondRecycle->feedJunction()) return 33;
+
+    // Two independent recycle junctions in the same main flow must coexist.
+    FlowsheetScene multiLoopScene;
+    auto* loopA = new FlotationUnitItem({"LA", {0, 0}});
+    auto* loopB = new FlotationUnitItem({"LB", {400, 350}});
+    auto* loopC = new FlotationUnitItem({"LC", {800, 700}});
+    multiLoopScene.addItem(loopA); multiLoopScene.addItem(loopB); multiLoopScene.addItem(loopC);
+    if (!multiLoopScene.connectProduct(loopA->products().at(1), loopB->inputLine())
+        || !multiLoopScene.connectProduct(loopB->products().at(1), loopC->inputLine())) return 34;
+    auto* firstLoop = multiLoopScene.connectRecycle(
+        loopB->products().at(0), loopA->inputLine(), "loop-feed-a");
+    auto* secondLoop = multiLoopScene.connectRecycle(
+        loopC->products().at(0), loopB->inputLine(), "loop-feed-b");
+    if (!firstLoop || !secondLoop || firstLoop == secondLoop
+        || secondLoop->processProduct() != loopA->products().at(1)) return 35;
+    const auto multiLoopSnapshot = CanvasTopologyBuilder::build(multiLoopScene);
+    if (multiLoopSnapshot.graph.externalFeedStreams().size() != 1
+        || multiLoopSnapshot.requiredMeasurements.size() != 4
+        || !topology::TopologyAlgorithms::sort(multiLoopSnapshot.graph).hasCycle
+        || topology::TopologyValidator::hasErrors(
+            topology::TopologyValidator::validate(multiLoopSnapshot.graph))) return 36;
+    QHash<topology::StreamId, topology::StreamValue> multiLoopValues;
+    multiLoopValues.insert("LA:left", *topology::StreamValue::fromMassAndGrade(10, 5));
+    multiLoopValues.insert("LB:left", *topology::StreamValue::fromMassAndGrade(20, 3));
+    multiLoopValues.insert("LC:left", *topology::StreamValue::fromMassAndGrade(30, 2));
+    multiLoopValues.insert("LC:right", *topology::StreamValue::fromMassAndGrade(40, 1));
+    const auto multiLoopResult = topology::OpenCircuitCalculator::calculate(
+        multiLoopSnapshot.graph, multiLoopValues);
+    if (!multiLoopResult.complete || !multiLoopResult.fullySolved
+        || std::abs(multiLoopResult.values[firstLoop->externalFeedStreamId()].dryMass - 50.0)
+            > 0.001) return 37;
     return 0;
 }

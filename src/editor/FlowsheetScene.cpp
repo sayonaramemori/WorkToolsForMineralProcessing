@@ -78,6 +78,22 @@ QSet<FlotationUnitItem*> FlowsheetScene::connectedComponent(FlotationUnitItem* s
             }
         }
         if (auto* feedJunction = unit->inputLine()->feedJunction()) {
+            if (auto* process = feedJunction->processProduct()) {
+                auto* previous = process->sourceUnit();
+                if (!visited.contains(previous)) {
+                    visited.insert(previous);
+                    queue.enqueue(previous);
+                }
+            }
+            if (auto* processMerge = feedJunction->processMerge()) {
+                for (auto* product : processMerge->products()) {
+                    auto* previous = product->sourceUnit();
+                    if (!visited.contains(previous)) {
+                        visited.insert(previous);
+                        queue.enqueue(previous);
+                    }
+                }
+            }
             for (auto* recycle : feedJunction->recycleProducts()) {
                 auto* previous = recycle->sourceUnit();
                 if (!visited.contains(previous)) {
