@@ -3,14 +3,20 @@
 #include "graphics/items/FlotationUnitItem.h"
 #include "graphics/items/MergeJunctionItem.h"
 #include "graphics/items/ProductLineItem.h"
+#include "editor/FlowsheetScene.h"
 
 #include <QApplication>
 #include <QPainter>
+#include <QGraphicsSceneContextMenuEvent>
+#include <QGraphicsSceneMouseEvent>
+#include <QKeyEvent>
+#include <QMenu>
 #include <QPainterPathStroker>
 #include <QPalette>
 #include <QPen>
 #include <algorithm>
 #include <utility>
+#include <cmath>
 
 namespace afs {
 namespace {
@@ -25,6 +31,7 @@ FeedJunctionItem::FeedJunctionItem(QString id, ProductLineItem* recycleProduct,
     : m_id(std::move(id)), m_recycleProducts{recycleProduct},
       m_processProduct(processProduct), m_processMerge(processMerge), m_targetUnit(targetUnit) {
     setFlag(ItemIsSelectable);
+    setFlag(ItemIsFocusable);
     setZValue(2.5);
     updatePath();
 }
@@ -36,6 +43,7 @@ FeedJunctionItem::FeedJunctionItem(QString id, MergeJunctionItem* recycleMerge,
     : m_id(std::move(id)), m_recycleMerges{recycleMerge},
       m_processProduct(processProduct), m_processMerge(processMerge), m_targetUnit(targetUnit) {
     setFlag(ItemIsSelectable);
+    setFlag(ItemIsFocusable);
     setZValue(2.5);
     updatePath();
 }
@@ -69,9 +77,10 @@ void FeedJunctionItem::appendSourcePath(QPainterPath& path, const QString& strea
                                         const QPointF& start, const QPointF& end,
                                         bool routeLeft, int routeIndex) {
     const double offset = routeIndex * 18.0;
-    const double corridorX = routeLeft
+    const double automaticX = routeLeft
         ? std::min(end.x(), m_junctionPosition.x()) - kRouteClearance - offset
         : std::max(end.x(), m_junctionPosition.x()) + kRouteClearance + offset;
+    const double corridorX = m_manualRouteXs.value(streamId, automaticX);
     path.moveTo(start);
     path.lineTo(end);
     path.lineTo(corridorX, end.y());
@@ -79,6 +88,12 @@ void FeedJunctionItem::appendSourcePath(QPainterPath& path, const QString& strea
     path.lineTo(m_junctionPosition);
     m_sourceAnnotationAnchors.insert(
         streamId, QPointF(corridorX, (end.y() + m_junctionPosition.y()) / 2.0));
+}
+
+void FeedJunctionItem::setManualRouteX(const QString& streamId, std::optional<double> x) {
+    if (x) m_manualRouteXs.insert(streamId, *x);
+    else m_manualRouteXs.remove(streamId);
+    updatePath();
 }
 
 QPainterPath FeedJunctionItem::shape() const {
@@ -156,10 +171,84 @@ void FeedJunctionItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*,
     painter->setBrush(color);
     painter->drawPath(m_arrowPath);
     painter->drawEllipse(m_junctionPosition, kJunctionRadius, kJunctionRadius);
+    if (isSelected()) {
+        painter->setPen(QPen(palette.color(QPalette::Highlight), 1.5));
+        painter->setBrush(palette.color(QPalette::Base));
+        for (const auto& anchor : m_sourceAnnotationAnchors)
+            painter->drawRect(QRectF(anchor - QPointF(4, 4), QSizeF(8, 8)));
+    }
 }
 
 void FeedJunctionItem::refreshAppearance() {
     update();
+}
+
+void FeedJunctionItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
+    if (event->button() != Qt::LeftButton) {
+        QGraphicsPathItem::mousePressEvent(event);
+        return;
+    }
+    QString closest;
+    double distance = 18.0;
+    for (auto it = m_sourceAnnotationAnchors.cbegin(); it != m_sourceAnnotationAnchors.cend(); ++it) {
+        const double candidate = std::abs(event->scenePos().x() - it.value().x());
+        if (candidate <= distance) { distance = candidate; closest = it.key(); }
+    }
+    if (!closest.isEmpty()) {
+        if (!(event->modifiers() & Qt::ControlModifier)) scene()->clearSelection();
+        setSelected(true);
+        setFocus();
+        m_editingStreamId = closest;
+        if (!m_manualRouteXs.contains(closest))
+            m_manualRouteXs.insert(closest, m_sourceAnnotationAnchors.value(closest).x());
+        event->accept();
+        return;
+    }
+    QGraphicsPathItem::mousePressEvent(event);
+}
+
+void FeedJunctionItem::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
+    if (m_editingStreamId.isEmpty()) {
+        QGraphicsPathItem::mouseMoveEvent(event);
+        return;
+    }
+    m_manualRouteXs.insert(m_editingStreamId,
+                          std::round(event->scenePos().x() / 10.0) * 10.0);
+    updatePath();
+    event->accept();
+}
+
+void FeedJunctionItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
+    if (m_editingStreamId.isEmpty()) {
+        QGraphicsPathItem::mouseReleaseEvent(event);
+        return;
+    }
+    m_editingStreamId.clear();
+    if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
+    event->accept();
+}
+
+void FeedJunctionItem::contextMenuEvent(QGraphicsSceneContextMenuEvent* event) {
+    QMenu menu;
+    auto* reset = menu.addAction(QStringLiteral("恢复全部支路自动布线"));
+    reset->setEnabled(!m_manualRouteXs.isEmpty());
+    if (menu.exec(event->screenPos()) == reset) {
+        m_manualRouteXs.clear();
+        updatePath();
+        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
+    }
+    event->accept();
+}
+
+void FeedJunctionItem::keyPressEvent(QKeyEvent* event) {
+    if (event->key() == Qt::Key_Delete && !m_manualRouteXs.isEmpty()) {
+        m_manualRouteXs.clear();
+        updatePath();
+        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
+        event->accept();
+        return;
+    }
+    QGraphicsPathItem::keyPressEvent(event);
 }
 
 QVariant FeedJunctionItem::itemChange(GraphicsItemChange change, const QVariant& value) {

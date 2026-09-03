@@ -7,11 +7,16 @@
 
 #include <QApplication>
 #include <QGraphicsSceneMouseEvent>
+#include <QGraphicsSceneContextMenuEvent>
 #include <QGraphicsSimpleTextItem>
+#include <QKeyEvent>
+#include <QMenu>
+#include <QPainter>
 #include <QPainterPath>
 #include <QPainterPathStroker>
 #include <QPalette>
 #include <QPen>
+#include <cmath>
 
 namespace afs {
 
@@ -19,6 +24,7 @@ ProductLineItem::ProductLineItem(FlotationUnitItem* sourceUnit, ProductSide side
     : QGraphicsPathItem(sourceUnit), m_sourceUnit(sourceUnit), m_side(side),
       m_streamId(sourceUnit->unit().id + (side == ProductSide::Left ? ":left" : ":right")) {
     setFlag(ItemIsSelectable);
+    setFlag(ItemIsFocusable);
     setAcceptHoverEvents(true);
     setZValue(2.0);
     m_nameLabel = new QGraphicsSimpleTextItem(this);
@@ -96,7 +102,14 @@ void ProductLineItem::updatePath() {
         end = m_sourceUnit->mapFromScene(m_targetUnit->mapToScene(QPointF(0, 0)));
     }
     QPainterPath p(QPointF(x, 0));
-    p.lineTo(end);
+    if (m_targetUnit && !m_dragging) {
+        const double routeY = m_manualRouteY.value_or((end.y() + m_sourceUnit->unit().bodyHeight) / 2.0);
+        p.lineTo(x, routeY);
+        p.lineTo(end.x(), routeY);
+        p.lineTo(end);
+    } else {
+        p.lineTo(end);
+    }
     if (!m_targetUnit || m_dragging) {
         QPainterPath arrow;
         arrow.moveTo(end.x() - FlotationGeometry::ArrowHalfWidth, end.y());
@@ -111,6 +124,11 @@ void ProductLineItem::updatePath() {
                         end.y() + FlotationGeometry::ArrowHeight + 5.0);
     m_nameLabel->setVisible(!m_nameLabel->text().isEmpty() && isAvailable() && !m_dragging);
     refreshAppearance();
+}
+
+void ProductLineItem::setManualRouteY(std::optional<double> y) {
+    m_manualRouteY = y;
+    updatePath();
 }
 
 void ProductLineItem::setProductName(const QString& name) {
@@ -160,8 +178,15 @@ void ProductLineItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
     }
     if (!(event->modifiers() & Qt::ControlModifier)) scene()->clearSelection();
     setSelected(true);
+    setFocus();
     refreshAppearance();
-    if (isAvailable()) {
+    if (isConnected()) {
+        m_routeEditing = true;
+        if (!m_manualRouteY) {
+            const QPointF end = mapFromScene(m_targetUnit->mapToScene(QPointF(0, 0)));
+            m_manualRouteY = (end.y() + m_sourceUnit->unit().bodyHeight) / 2.0;
+        }
+    } else if (isAvailable()) {
         m_dragging = true;
         m_dragEnd = mapFromScene(event->scenePos());
         updatePath();
@@ -170,6 +195,12 @@ void ProductLineItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
 }
 
 void ProductLineItem::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
+    if (m_routeEditing) {
+        m_manualRouteY = std::round(event->pos().y() / 10.0) * 10.0;
+        updatePath();
+        event->accept();
+        return;
+    }
     if (!m_dragging) {
         event->accept();
         return;
@@ -204,6 +235,13 @@ void ProductLineItem::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
 }
 
 void ProductLineItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
+    if (m_routeEditing) {
+        m_routeEditing = false;
+        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
+        updatePath();
+        event->accept();
+        return;
+    }
     if (!m_dragging) {
         event->accept();
         return;
@@ -229,6 +267,49 @@ void ProductLineItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
     // between hover and release, in which case no scene operation updates it.
     updatePath();
     event->accept();
+}
+
+void ProductLineItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) {
+    if (isConnected()) {
+        m_manualRouteY = std::round(event->pos().y() / 10.0) * 10.0;
+        updatePath();
+        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
+        event->accept();
+        return;
+    }
+    QGraphicsPathItem::mouseDoubleClickEvent(event);
+}
+
+void ProductLineItem::contextMenuEvent(QGraphicsSceneContextMenuEvent* event) {
+    QMenu menu;
+    auto* reset = menu.addAction(QStringLiteral("恢复自动布线"));
+    reset->setEnabled(m_manualRouteY.has_value());
+    if (menu.exec(event->screenPos()) == reset) {
+        setManualRouteY(std::nullopt);
+        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
+    }
+    event->accept();
+}
+
+void ProductLineItem::keyPressEvent(QKeyEvent* event) {
+    if (event->key() == Qt::Key_Delete && m_manualRouteY) {
+        setManualRouteY(std::nullopt);
+        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
+        event->accept();
+        return;
+    }
+    QGraphicsPathItem::keyPressEvent(event);
+}
+
+void ProductLineItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option,
+                            QWidget* widget) {
+    QGraphicsPathItem::paint(painter, option, widget);
+    if (!isSelected() || !isConnected()) return;
+    const QPointF end = mapFromScene(m_targetUnit->mapToScene(QPointF(0, 0)));
+    const double routeY = m_manualRouteY.value_or((end.y() + m_sourceUnit->unit().bodyHeight) / 2.0);
+    painter->setPen(QPen(QApplication::palette().color(QPalette::Highlight), 1.5));
+    painter->setBrush(QApplication::palette().color(QPalette::Base));
+    painter->drawRect(QRectF(QPointF((sideX() + end.x()) / 2.0 - 4.0, routeY - 4.0), QSizeF(8, 8)));
 }
 
 } // namespace afs

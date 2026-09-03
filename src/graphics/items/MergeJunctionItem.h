@@ -3,6 +3,7 @@
 #include <QGraphicsPathItem>
 #include <QString>
 #include <QVector>
+#include <optional>
 #include "annotations/AnnotationTypes.h"
 
 class QGraphicsSimpleTextItem;
@@ -41,12 +42,17 @@ public:
     void setTargetUnit(FlotationUnitItem* target);
     void setProductName(const QString& name);
     void setTextSettings(const AnnotationTextSettings& settings);
+    [[nodiscard]] std::optional<double> manualMergeY() const { return m_manualMergeY; }
+    void setManualMergeY(std::optional<double> y);
 
 protected:
     QVariant itemChange(GraphicsItemChange change, const QVariant& value) override;
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override;
+    void mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) override;
+    void contextMenuEvent(QGraphicsSceneContextMenuEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
 
 private:
     QString m_id;
@@ -57,6 +63,8 @@ private:
     QPainterPath m_arrowPath;
     QPointF m_outputEnd;
     bool m_dragging{false};
+    bool m_routeEditing{false};
+    std::optional<double> m_manualMergeY;
     QPointF m_dragEnd;
     InputLineItem* m_highlightedInput{nullptr};
     FeedJunctionItem* m_feedJunction{nullptr};

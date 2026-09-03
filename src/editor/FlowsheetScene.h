@@ -39,10 +39,14 @@ public:
     void refreshAppearance();
     void resetGeneratedIds();
     void notifyTopologyChanged() { emit topologyChanged(); }
+    void notifyRouteChanged() { emit geometryChanged(); }
 
 signals:
     void topologyChanged();
     void geometryChanged();
+
+protected:
+    void drawForeground(QPainter* painter, const QRectF& rect) override;
 
 private:
     bool m_movingComponent{false};

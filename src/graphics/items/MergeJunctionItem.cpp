@@ -8,12 +8,16 @@
 #include <QApplication>
 #include <QPainterPathStroker>
 #include <QGraphicsSceneMouseEvent>
+#include <QGraphicsSceneContextMenuEvent>
 #include <QGraphicsSimpleTextItem>
 #include <QLineF>
 #include <QPainter>
 #include <QPalette>
 #include <QPen>
+#include <QKeyEvent>
+#include <QMenu>
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <utility>
 
@@ -27,6 +31,7 @@ constexpr double kOutputLength = 50.0;
 MergeJunctionItem::MergeJunctionItem(QString id, ProductLineItem* first, ProductLineItem* second)
     : m_id(std::move(id)), m_products{first, second} {
     setFlag(ItemIsSelectable);
+    setFlag(ItemIsFocusable);
     setZValue(2.5);
     m_nameLabel = new QGraphicsSimpleTextItem(this);
     m_nameLabel->setAcceptedMouseButtons(Qt::NoButton);
@@ -63,7 +68,7 @@ void MergeJunctionItem::updatePath() {
         maximumEndY = std::max(maximumEndY, end.y());
     }
     m_mergeX = endXSum / static_cast<double>(std::max<qsizetype>(1, m_products.size()));
-    m_mergeY = maximumEndY + kMergeClearance;
+    m_mergeY = m_manualMergeY.value_or(maximumEndY + kMergeClearance);
 
     m_linePath = QPainterPath();
     for (auto* product : m_products) {
@@ -96,6 +101,11 @@ void MergeJunctionItem::updatePath() {
                         m_outputEnd.y() + FlotationGeometry::ArrowHeight + 5.0);
     m_nameLabel->setVisible(!m_nameLabel->text().isEmpty() && isAvailable() && !m_dragging);
     refreshAppearance();
+}
+
+void MergeJunctionItem::setManualMergeY(std::optional<double> y) {
+    m_manualMergeY = y;
+    updatePath();
 }
 
 void MergeJunctionItem::setProductName(const QString& name) {
@@ -133,6 +143,15 @@ void MergeJunctionItem::setHighlightedInput(InputLineItem* input) {
 }
 
 void MergeJunctionItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
+    if (event->button() == Qt::LeftButton && std::abs(event->scenePos().y() - m_mergeY) <= 16.0) {
+        if (!(event->modifiers() & Qt::ControlModifier)) scene()->clearSelection();
+        setSelected(true);
+        setFocus();
+        m_routeEditing = true;
+        if (!m_manualMergeY) m_manualMergeY = m_mergeY;
+        event->accept();
+        return;
+    }
     if (event->button() == Qt::LeftButton && isAvailable()
         && QLineF(event->scenePos(), m_outputEnd).length() <= 30.0) {
         if (!(event->modifiers() & Qt::ControlModifier)) scene()->clearSelection();
@@ -147,6 +166,12 @@ void MergeJunctionItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
 }
 
 void MergeJunctionItem::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
+    if (m_routeEditing) {
+        m_manualMergeY = std::round(event->scenePos().y() / 10.0) * 10.0;
+        updatePath();
+        event->accept();
+        return;
+    }
     if (!m_dragging) {
         QGraphicsPathItem::mouseMoveEvent(event);
         return;
@@ -170,6 +195,13 @@ void MergeJunctionItem::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
 }
 
 void MergeJunctionItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
+    if (m_routeEditing) {
+        m_routeEditing = false;
+        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
+        updatePath();
+        event->accept();
+        return;
+    }
     if (!m_dragging) {
         QGraphicsPathItem::mouseReleaseEvent(event);
         return;
@@ -183,6 +215,34 @@ void MergeJunctionItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
     }
     updatePath();
     event->accept();
+}
+
+void MergeJunctionItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) {
+    m_manualMergeY = std::round(event->scenePos().y() / 10.0) * 10.0;
+    updatePath();
+    if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
+    event->accept();
+}
+
+void MergeJunctionItem::contextMenuEvent(QGraphicsSceneContextMenuEvent* event) {
+    QMenu menu;
+    auto* reset = menu.addAction(QStringLiteral("恢复自动布线"));
+    reset->setEnabled(m_manualMergeY.has_value());
+    if (menu.exec(event->screenPos()) == reset) {
+        setManualMergeY(std::nullopt);
+        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
+    }
+    event->accept();
+}
+
+void MergeJunctionItem::keyPressEvent(QKeyEvent* event) {
+    if (event->key() == Qt::Key_Delete && m_manualMergeY) {
+        setManualMergeY(std::nullopt);
+        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
+        event->accept();
+        return;
+    }
+    QGraphicsPathItem::keyPressEvent(event);
 }
 
 void MergeJunctionItem::refreshAppearance() {
@@ -204,6 +264,11 @@ void MergeJunctionItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*
     painter->setPen(Qt::NoPen);
     painter->setBrush(color);
     painter->drawPath(m_arrowPath);
+    if (isSelected()) {
+        painter->setPen(QPen(palette.color(QPalette::Highlight), 1.5));
+        painter->setBrush(palette.color(QPalette::Base));
+        painter->drawRect(QRectF(QPointF(m_mergeX - 4.0, m_mergeY - 4.0), QSizeF(8, 8)));
+    }
 }
 
 QVariant MergeJunctionItem::itemChange(GraphicsItemChange change, const QVariant& value) {

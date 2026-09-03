@@ -27,6 +27,9 @@ int main(int argc, char** argv) {
     if (firstProduct->isVisible() || secondProduct->isVisible()) return 2;
     if (std::abs(junction->mergeX() - 250.0) > 0.001) return 3;
     if (std::abs(junction->mergeY() - 300.0) > 0.001) return 4;
+    junction->setManualMergeY(375.0);
+    if (!junction->manualMergeY() || std::abs(junction->mergeY() - 375.0) > 0.001)
+        return 16;
     junction->setProductName("合流精矿");
     junction->setTextSettings({16, true, QColor("#8844cc")});
     auto* mergeLabel = dynamic_cast<QGraphicsSimpleTextItem*>(junction->childItems().value(0));
@@ -35,7 +38,9 @@ int main(int argc, char** argv) {
         || mergeLabel->brush().color() != QColor("#8844cc")) return 13;
 
     second->setPos(second->pos() + QPointF(0, 40));
-    if (std::abs(junction->mergeY() - 340.0) > 0.001) return 5;
+    if (std::abs(junction->mergeY() - 375.0) > 0.001) return 5;
+    junction->setManualMergeY(std::nullopt);
+    if (std::abs(junction->mergeY() - 340.0) > 0.001) return 17;
     auto* downstream = new FlotationUnitItem({"downstream", {900, 700}});
     scene.addItem(downstream);
     const QPointF outputBeforeConnect = junction->outputEndPosition();

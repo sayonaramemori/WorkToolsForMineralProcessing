@@ -1,5 +1,7 @@
 # AutoFlotationSheet
 
+完整操作说明见 [用户操作手册](docs/USER_GUIDE.md)。
+
 使用纯 C++20、Qt 6 Widgets 和 xmake 开发的浮选工艺流程图编辑器。
 
 ## 当前功能

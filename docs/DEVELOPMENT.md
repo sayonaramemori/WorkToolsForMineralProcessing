@@ -67,6 +67,15 @@
 - 方向键先由 `CanvasView` 处理；视图通过注入的处理器请求药剂微调，业务上的选中判断和位移由 `AnnotationManager` 完成；
 - 新增视图交互后扩展 `canvas_view_test`。
 
+## 正交布线
+
+- 普通连接、产品合流横杆和回流走廊分别保存最小人工段参数，不保存由端点推导出的完整 `QPainterPath`；
+- 路线拖动按 10 个画布单位吸附，完成后发出 `geometryChanged`，不得使计算结果失效；
+- 右键菜单由 `AnnotationManager` 的场景事件过滤器统一构建，新增线路命令必须合并到该菜单，避免图元菜单被过滤器截获；
+- 跨线桥在 `FlowsheetScene::drawForeground` 中动态绘制，只处理不同物流图元的水平—垂直内部交点，不得修改拓扑；
+- 项目格式 v4 保存 `routeY`、`mergeY` 和各入料来源的 `routeX`，载入器继续接受不含这些字段的 v1–v3 项目；
+- 修改布线路径后运行 `connection_test`、`merge_test`、`project_io_test` 和导出测试。
+
 ## 闭路连接
 
 - 同一连通分量内的产品到入料连接视为回流，不能按开路连接自动移动目标单元；

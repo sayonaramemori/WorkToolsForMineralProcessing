@@ -23,20 +23,26 @@
 namespace afs {
 namespace {
 
-constexpr int kFormatVersion = 3;
+constexpr int kFormatVersion = 4;
 constexpr qint64 kMaximumProjectBytes = 64 * 1024 * 1024;
 
 struct UnitData { FlotationUnit unit; };
-struct DirectConnectionData { QString sourceStreamId; QString targetUnitId; };
+struct DirectConnectionData {
+    QString sourceStreamId;
+    QString targetUnitId;
+    std::optional<double> routeY;
+};
 struct ProductMergeData {
     QString id;
     QVector<QString> streamIds;
     QString targetUnitId;
+    std::optional<double> mergeY;
 };
 struct FeedJunctionData {
     QString id;
     QVector<QString> sourceTypes;
     QVector<QString> sourceIds;
+    QVector<std::optional<double>> routeXs;
     QString targetUnitId;
     QString processSourceType;
     QString processSourceId;
@@ -216,6 +222,9 @@ bool parseProject(const QByteArray& contents, ProjectData& data, QString* error)
             || !readRequiredString(object, "targetUnit", item.targetUnitId)) {
             setError(error, "普通连接缺少来源或目标"); return false;
         }
+        bool routeValid = true;
+        item.routeY = readOptionalNumber(object, "routeY", routeValid);
+        if (!routeValid) { setError(error, "普通连接的手动路线无效"); return false; }
         data.connections.append(std::move(item));
     }
     for (const auto& value : productMerges.toArray()) {
@@ -253,6 +262,9 @@ bool parseProject(const QByteArray& contents, ProjectData& data, QString* error)
             }
             item.targetUnitId = target.toString();
         }
+        bool routeValid = true;
+        item.mergeY = readOptionalNumber(object, "mergeY", routeValid);
+        if (!routeValid) { setError(error, "产品合流的手动路线无效"); return false; }
         data.productMerges.append(std::move(item));
     }
     for (const auto& value : feedJunctions.toArray()) {
@@ -282,6 +294,9 @@ bool parseProject(const QByteArray& contents, ProjectData& data, QString* error)
                 endpoints.insert(type + ':' + source);
                 item.sourceTypes.append(type);
                 item.sourceIds.append(source);
+                bool routeValid = true;
+                item.routeXs.append(readOptionalNumber(sourceObject, "routeX", routeValid));
+                if (!routeValid) { setError(error, "入料汇合支路路线无效"); return false; }
             }
         } else {
             QString type;
@@ -293,6 +308,7 @@ bool parseProject(const QByteArray& contents, ProjectData& data, QString* error)
             }
             item.sourceTypes.append(type);
             item.sourceIds.append(source);
+            item.routeXs.append(std::nullopt);
         }
         if (item.sourceIds.isEmpty()) {
             setError(error, "入料汇合至少需要一个附加来源"); return false;
@@ -533,6 +549,7 @@ bool applyProject(const ProjectData& data, FlowsheetScene& scene, QString* error
         if (!source || !target || !scene.connectProductDirect(source, target->inputLine())) {
             setError(error, QString("无法重建普通连接：%1").arg(item.sourceStreamId)); return false;
         }
+        source->setManualRouteY(item.routeY);
     }
     for (const auto& item : data.productMerges) {
         auto* first = findProduct(products, item.streamIds[0]);
@@ -543,6 +560,7 @@ bool applyProject(const ProjectData& data, FlowsheetScene& scene, QString* error
         auto* merge = scene.mergeProducts(first, second, item.id);
         if (!merge) { setError(error, QString("产品合流状态冲突：%1").arg(item.id)); return false; }
         merges.insert(item.id, merge);
+        merge->setManualMergeY(item.mergeY);
         for (int index = 2; index < item.streamIds.size(); ++index) {
             if (!scene.addProductToMerge(findProduct(products, item.streamIds[index]), merge)) {
                 setError(error, QString("无法重建产品合流支路：%1").arg(item.streamIds[index]));
@@ -589,6 +607,11 @@ bool applyProject(const ProjectData& data, FlowsheetScene& scene, QString* error
             if (!junction) {
                 setError(error, QString("入料汇合来源状态冲突：%1").arg(item.sourceIds[index]));
                 return false;
+            }
+            if (index < item.routeXs.size() && item.routeXs[index]) {
+                const QString routeId = item.sourceTypes[index] == "product"
+                    ? item.sourceIds[index] : item.sourceIds[index] + ":output";
+                junction->setManualRouteX(routeId, item.routeXs[index]);
             }
         }
         feedIds.insert(item.id);
@@ -640,9 +663,12 @@ bool ProjectSerializer::save(const FlowsheetScene& scene, const FlowsheetDocumen
         unitArray.append(QJsonObject{{"id", value.id}, {"x", value.position.x()},
             {"y", value.position.y()}, {"width", value.width}, {"bodyHeight", value.bodyHeight}});
         for (auto* product : unit->products()) {
-            if (product->targetUnit())
-                connectionArray.append(QJsonObject{{"source", product->streamId()},
-                    {"targetUnit", product->targetUnit()->unit().id}});
+            if (product->targetUnit()) {
+                QJsonObject connection{{"source", product->streamId()},
+                                       {"targetUnit", product->targetUnit()->unit().id}};
+                if (product->manualRouteY()) connection.insert("routeY", *product->manualRouteY());
+                connectionArray.append(connection);
+            }
         }
     }
     QJsonArray mergeArray;
@@ -651,15 +677,24 @@ bool ProjectSerializer::save(const FlowsheetScene& scene, const FlowsheetDocumen
         for (auto* product : merge->products()) branches.append(product->streamId());
         QJsonObject object{{"id", merge->id()}, {"branches", branches}};
         if (merge->targetUnit()) object.insert("targetUnit", merge->targetUnit()->unit().id);
+        if (merge->manualMergeY()) object.insert("mergeY", *merge->manualMergeY());
         mergeArray.append(object);
     }
     QJsonArray feedArray;
     for (auto* feed : feeds) {
         QJsonArray sources;
-        for (auto* product : feed->recycleProducts())
-            sources.append(QJsonObject{{"type", "product"}, {"source", product->streamId()}});
-        for (auto* merge : feed->recycleMerges())
-            sources.append(QJsonObject{{"type", "merge"}, {"source", merge->id()}});
+        for (auto* product : feed->recycleProducts()) {
+            QJsonObject source{{"type", "product"}, {"source", product->streamId()}};
+            if (feed->manualRouteXs().contains(product->streamId()))
+                source.insert("routeX", feed->manualRouteXs().value(product->streamId()));
+            sources.append(source);
+        }
+        for (auto* merge : feed->recycleMerges()) {
+            QJsonObject source{{"type", "merge"}, {"source", merge->id()}};
+            if (feed->manualRouteXs().contains(merge->outputStreamId()))
+                source.insert("routeX", feed->manualRouteXs().value(merge->outputStreamId()));
+            sources.append(source);
+        }
         QJsonObject object{{"id", feed->id()}, {"sources", sources},
                            {"targetUnit", feed->targetUnit()->unit().id}};
         if (feed->processProduct()) {

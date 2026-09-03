@@ -4,6 +4,7 @@
 #include <QHash>
 #include <QString>
 #include <QVector>
+#include <optional>
 
 namespace afs {
 
@@ -47,6 +48,8 @@ public:
     [[nodiscard]] QPointF sourceAnnotationAnchor(const QString& streamId) const {
         return m_sourceAnnotationAnchors.value(streamId, m_junctionPosition);
     }
+    [[nodiscard]] const QHash<QString, double>& manualRouteXs() const { return m_manualRouteXs; }
+    void setManualRouteX(const QString& streamId, std::optional<double> x);
     [[nodiscard]] QPointF recycleAnchor() const { return m_recycleAnchor; }
     [[nodiscard]] QPointF externalFeedAnchor() const { return m_externalFeedAnchor; }
     [[nodiscard]] QPointF outputAnchor() const { return m_outputAnchor; }
@@ -59,6 +62,11 @@ public:
 
 protected:
     QVariant itemChange(GraphicsItemChange change, const QVariant& value) override;
+    void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
+    void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
+    void mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override;
+    void contextMenuEvent(QGraphicsSceneContextMenuEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
 
 private:
     QString m_id;
@@ -74,6 +82,8 @@ private:
     QPainterPath m_linePath;
     QPainterPath m_arrowPath;
     QHash<QString, QPointF> m_sourceAnnotationAnchors;
+    QHash<QString, double> m_manualRouteXs;
+    QString m_editingStreamId;
 
     [[nodiscard]] QPointF processSourceAnchor() const;
     void appendSourcePath(QPainterPath& path, const QString& streamId, const QPointF& start,

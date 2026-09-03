@@ -43,6 +43,18 @@ int main(int argc, char** argv) {
     if (!closePoint(upper->pos(), upperBeforeResize)) return 9;
     if (!closePoint(lower->pos(), lowerBeforeLengthChange + QPointF(0, 40))) return 10;
 
+    product->setManualRouteY(260.0);
+    if (!product->manualRouteY() || std::abs(*product->manualRouteY() - 260.0) > 0.001
+        || product->path().elementCount() < 2) return 14;
+    for (int index = 1; index < product->path().elementCount(); ++index) {
+        const auto previous = product->path().elementAt(index - 1);
+        const auto current = product->path().elementAt(index);
+        if (std::abs(previous.x - current.x) > 0.001
+            && std::abs(previous.y - current.y) > 0.001) return 15;
+    }
+    product->setManualRouteY(std::nullopt);
+    if (product->manualRouteY()) return 16;
+
     if (!scene.disconnectProduct(product)) return 11;
     if (product->isConnected() || !lower->inputLine()->isVisible()) return 12;
     const QPointF detachedPosition = lower->pos();

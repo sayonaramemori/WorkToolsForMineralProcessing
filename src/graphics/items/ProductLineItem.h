@@ -2,6 +2,7 @@
 
 #include <QGraphicsPathItem>
 #include <QString>
+#include <optional>
 #include "annotations/AnnotationTypes.h"
 
 class QGraphicsSimpleTextItem;
@@ -41,12 +42,19 @@ public:
     void refreshAppearance();
     void setProductName(const QString& name);
     void setTextSettings(const AnnotationTextSettings& settings);
+    [[nodiscard]] std::optional<double> manualRouteY() const { return m_manualRouteY; }
+    void setManualRouteY(std::optional<double> y);
 
 protected:
     QVariant itemChange(GraphicsItemChange change, const QVariant& value) override;
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override;
+    void mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) override;
+    void contextMenuEvent(QGraphicsSceneContextMenuEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
+    void paint(QPainter* painter, const QStyleOptionGraphicsItem* option,
+               QWidget* widget) override;
 
 private:
     FlotationUnitItem* m_sourceUnit;
@@ -61,6 +69,8 @@ private:
     MergeJunctionItem* m_mergeJunction{nullptr};
     FeedJunctionItem* m_feedJunction{nullptr};
     bool m_dropHighlighted{false};
+    bool m_routeEditing{false};
+    std::optional<double> m_manualRouteY;
     QGraphicsSimpleTextItem* m_nameLabel{nullptr};
     AnnotationTextSettings m_textSettings;
 

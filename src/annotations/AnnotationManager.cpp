@@ -90,9 +90,27 @@ bool AnnotationManager::eventFilter(QObject* watched, QEvent* event) {
         QMenu menu;
         auto* addReagent = streamId.isEmpty() ? nullptr : menu.addAction(tr("添加药剂标注"));
         auto* addNote = menu.addAction(tr("添加自定义文字"));
+        QAction* resetRoute = nullptr;
+        if (auto* product = dynamic_cast<ProductLineItem*>(owner); product && product->manualRouteY())
+            resetRoute = menu.addAction(tr("恢复自动布线"));
+        else if (auto* merge = dynamic_cast<MergeJunctionItem*>(owner); merge && merge->manualMergeY())
+            resetRoute = menu.addAction(tr("恢复自动布线"));
+        else if (auto* feed = dynamic_cast<FeedJunctionItem*>(owner);
+                 feed && !feed->manualRouteXs().isEmpty())
+            resetRoute = menu.addAction(tr("恢复全部支路自动布线"));
         auto* selectedAction = menu.exec(context->screenPos());
         if (!selectedAction) return true;
-        if (selectedAction == addReagent) {
+        if (selectedAction == resetRoute) {
+            if (auto* product = dynamic_cast<ProductLineItem*>(owner))
+                product->setManualRouteY(std::nullopt);
+            else if (auto* merge = dynamic_cast<MergeJunctionItem*>(owner))
+                merge->setManualMergeY(std::nullopt);
+            else if (auto* feed = dynamic_cast<FeedJunctionItem*>(owner)) {
+                const auto ids = feed->manualRouteXs().keys();
+                for (const auto& id : ids) feed->setManualRouteX(id, std::nullopt);
+            }
+            m_scene.notifyRouteChanged();
+        } else if (selectedAction == addReagent) {
             int next = 1;
             while (m_document.annotationRecords().contains(QString("reagent-%1").arg(next))) ++next;
             AnnotationRecord record{QString("reagent-%1").arg(next), AnnotationKind::Reagent,
