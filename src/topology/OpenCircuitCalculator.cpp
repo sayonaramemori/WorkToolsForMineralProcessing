@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <QSet>
 
 namespace afs::topology {
 namespace {
@@ -16,15 +17,6 @@ bool validValue(const StreamValue& value) {
 
 StreamValue add(const StreamValue& a, const StreamValue& b) {
     return {a.dryMass + b.dryMass, a.componentMass + b.componentMass};
-}
-
-std::optional<StreamValue> subtract(const StreamValue& total, const StreamValue& part) {
-    StreamValue result{total.dryMass - part.dryMass, total.componentMass - part.componentMass};
-    if (result.dryMass < -kTolerance || result.componentMass < -kTolerance
-        || result.componentMass > result.dryMass + kTolerance) return std::nullopt;
-    result.dryMass = std::max(0.0, result.dryMass);
-    result.componentMass = std::max(0.0, result.componentMass);
-    return result;
 }
 
 bool approximatelyEqual(const StreamValue& a, const StreamValue& b) {
@@ -44,18 +36,111 @@ void addWarning(CalculationResult& result, IssueCode code,
     result.issues.append({IssueSeverity::Warning, code, objectId, message});
 }
 
-void addIssueOnce(CalculationResult& result, IssueCode code,
-                  const QString& objectId, const QString& message) {
-    for (const auto& issue : result.issues)
-        if (issue.code == code && issue.objectId == objectId) return;
-    addIssue(result, code, objectId, message);
-}
-
 ProductMetrics metrics(const StreamValue& product, const StreamValue& feed) {
     return {
         feed.dryMass > 0.0 ? product.dryMass / feed.dryMass * 100.0 : 0.0,
         feed.componentMass > 0.0 ? product.componentMass / feed.componentMass * 100.0 : 0.0
     };
+}
+
+struct ScalarSolution {
+    QVector<std::optional<double>> values;
+    bool inconsistent{false};
+};
+
+ScalarSolution solveScalarSystem(
+    const TopologyGraph& graph,
+    const QHash<StreamId, StreamValue>& knownValues,
+    const QHash<StreamId, BranchAllocation>& allocations,
+    bool componentMass) {
+    const auto streamIds = graph.streamIds();
+    const int variableCount = streamIds.size();
+    QHash<StreamId, int> columns;
+    for (int index = 0; index < variableCount; ++index) columns.insert(streamIds[index], index);
+    QVector<QVector<double>> matrix;
+    const auto equation = [variableCount] { return QVector<double>(variableCount + 1, 0.0); };
+
+    for (const auto& nodeId : graph.nodeIds()) {
+        auto row = equation();
+        if (graph.nodeKind(nodeId) == NodeKind::Flotation) {
+            for (const auto& id : graph.streamsTo(nodeId, PortKind::Feed)) row[columns[id]] += 1.0;
+            for (const auto& id : graph.streamsFrom(nodeId, PortKind::LeftProduct)) row[columns[id]] -= 1.0;
+            for (const auto& id : graph.streamsFrom(nodeId, PortKind::RightProduct)) row[columns[id]] -= 1.0;
+        } else {
+            for (const auto& id : graph.streamsTo(nodeId, PortKind::MergeInput)) row[columns[id]] += 1.0;
+            for (const auto& id : graph.streamsFrom(nodeId, PortKind::MergeOutput)) row[columns[id]] -= 1.0;
+        }
+        matrix.append(std::move(row));
+    }
+    for (auto it = knownValues.cbegin(); it != knownValues.cend(); ++it) {
+        auto row = equation();
+        row[columns[it.key()]] = 1.0;
+        row[variableCount] = componentMass ? it->componentMass : it->dryMass;
+        matrix.append(std::move(row));
+    }
+    for (const auto& nodeId : graph.nodeIds()) {
+        if (graph.nodeKind(nodeId) != NodeKind::Merge) continue;
+        const auto outputIds = graph.streamsFrom(nodeId, PortKind::MergeOutput);
+        if (outputIds.isEmpty()) continue;
+        const int outputColumn = columns[outputIds.front()];
+        for (const auto& inputId : graph.streamsTo(nodeId, PortKind::MergeInput)) {
+            const auto allocation = allocations.constFind(inputId);
+            if (allocation == allocations.cend()) continue;
+            auto row = equation();
+            row[columns[inputId]] = 1.0;
+            const double percent = componentMass ? allocation->componentSharePercent
+                                                 : allocation->dryMassSharePercent;
+            row[outputColumn] = -percent / 100.0;
+            matrix.append(std::move(row));
+        }
+    }
+
+    constexpr double epsilon = 1e-10;
+    QVector<int> pivotColumns;
+    int pivotRow = 0;
+    for (int column = 0; column < variableCount && pivotRow < matrix.size(); ++column) {
+        int best = pivotRow;
+        for (int row = pivotRow + 1; row < matrix.size(); ++row)
+            if (std::abs(matrix[row][column]) > std::abs(matrix[best][column])) best = row;
+        if (std::abs(matrix[best][column]) <= epsilon) continue;
+        if (best != pivotRow) matrix.swapItemsAt(best, pivotRow);
+        const double pivot = matrix[pivotRow][column];
+        for (int index = column; index <= variableCount; ++index) matrix[pivotRow][index] /= pivot;
+        for (int row = 0; row < matrix.size(); ++row) {
+            if (row == pivotRow || std::abs(matrix[row][column]) <= epsilon) continue;
+            const double factor = matrix[row][column];
+            for (int index = column; index <= variableCount; ++index)
+                matrix[row][index] -= factor * matrix[pivotRow][index];
+        }
+        pivotColumns.append(column);
+        ++pivotRow;
+    }
+
+    ScalarSolution result{QVector<std::optional<double>>(variableCount)};
+    for (const auto& row : matrix) {
+        bool zero = true;
+        for (int column = 0; column < variableCount; ++column)
+            zero = zero && std::abs(row[column]) <= epsilon;
+        if (zero && std::abs(row[variableCount]) > 1e-8) {
+            result.inconsistent = true;
+            return result;
+        }
+    }
+    QSet<int> pivots(pivotColumns.cbegin(), pivotColumns.cend());
+    for (int row = 0; row < pivotColumns.size(); ++row) {
+        bool dependsOnFreeVariable = false;
+        for (int column = 0; column < variableCount; ++column)
+            if (!pivots.contains(column) && std::abs(matrix[row][column]) > epsilon) {
+                dependsOnFreeVariable = true;
+                break;
+            }
+        if (!dependsOnFreeVariable) {
+            double value = matrix[row][variableCount];
+            if (std::abs(value) <= epsilon) value = 0.0;
+            result.values[pivotColumns[row]] = value;
+        }
+    }
+    return result;
 }
 }
 
@@ -106,79 +191,35 @@ CalculationResult OpenCircuitCalculator::calculate(
     }
     if (TopologyValidator::hasErrors(result.issues)) return result;
 
-    // The external feed is identifiable from the overall boundary even when
-    // allocations inside a terminal product merge are not unique.
     const auto terminalIds = graph.terminalProductStreams();
     const auto externalIds = graph.externalFeedStreams();
-    bool allTerminalValuesKnown = !terminalIds.isEmpty();
-    StreamValue terminalSum;
-    for (const auto& streamId : terminalIds) {
-        if (!result.values.contains(streamId)) { allTerminalValuesKnown = false; break; }
-        terminalSum = add(terminalSum, result.values[streamId]);
+    const auto drySolution = solveScalarSystem(graph, knownValues, allocations, false);
+    const auto componentSolution = solveScalarSystem(graph, knownValues, allocations, true);
+    if (drySolution.inconsistent || componentSolution.inconsistent) {
+        addIssue(result, IssueCode::InconsistentBalance, QStringLiteral("equation-system"),
+                 QStringLiteral("实测值、支路占比与流程守恒方程相互矛盾"));
+        result.values.clear();
+        return result;
     }
-    if (allTerminalValuesKnown && externalIds.size() == 1
-        && !result.values.contains(externalIds.front()))
-        result.values.insert(externalIds.front(), terminalSum);
-
-    bool changed = true;
-    int passes = 0;
-    const int maximumPasses = std::max(1, static_cast<int>(graph.streamIds().size()) * 2);
-    while (changed && passes++ < maximumPasses) {
-        changed = false;
-        for (const auto& nodeId : graph.nodeIds()) {
-            if (graph.nodeKind(nodeId) == NodeKind::Flotation) {
-                const auto feedId = graph.streamsTo(nodeId, PortKind::Feed).front();
-                const auto leftId = graph.streamsFrom(nodeId, PortKind::LeftProduct).front();
-                const auto rightId = graph.streamsFrom(nodeId, PortKind::RightProduct).front();
-                const bool hasFeed = result.values.contains(feedId);
-                const bool hasLeft = result.values.contains(leftId);
-                const bool hasRight = result.values.contains(rightId);
-                if (!hasFeed && hasLeft && hasRight) {
-                    result.values.insert(feedId, add(result.values[leftId], result.values[rightId]));
-                    changed = true;
-                } else if (hasFeed && hasLeft && !hasRight) {
-                    if (auto value = subtract(result.values[feedId], result.values[leftId])) {
-                        result.values.insert(rightId, *value); changed = true;
-                    } else addIssueOnce(result, IssueCode::InconsistentBalance, nodeId,
-                                        QStringLiteral("已知入料小于已知产品，无法满足浮选单元守恒"));
-                } else if (hasFeed && !hasLeft && hasRight) {
-                    if (auto value = subtract(result.values[feedId], result.values[rightId])) {
-                        result.values.insert(leftId, *value); changed = true;
-                    } else addIssueOnce(result, IssueCode::InconsistentBalance, nodeId,
-                                        QStringLiteral("已知入料小于已知产品，无法满足浮选单元守恒"));
-                }
-            } else {
-                const auto inputIds = graph.streamsTo(nodeId, PortKind::MergeInput);
-                const auto outputId = graph.streamsFrom(nodeId, PortKind::MergeOutput).front();
-                if (result.values.contains(outputId)) {
-                    for (const auto& input : inputIds) {
-                        if (result.values.contains(input)) continue;
-                        const auto allocation = allocations.constFind(input);
-                        if (allocation == allocations.cend()) continue;
-                        const auto output = result.values[outputId];
-                        result.values.insert(input, {
-                            output.dryMass * allocation->dryMassSharePercent / 100.0,
-                            output.componentMass * allocation->componentSharePercent / 100.0});
-                        changed = true;
-                    }
-                }
-                int missingInputs = 0;
-                StreamId missingId;
-                StreamValue inputSum;
-                for (const auto& input : inputIds) {
-                    if (result.values.contains(input)) inputSum = add(inputSum, result.values[input]);
-                    else { ++missingInputs; missingId = input; }
-                }
-                if (!result.values.contains(outputId) && missingInputs == 0) {
-                    result.values.insert(outputId, inputSum); changed = true;
-                } else if (result.values.contains(outputId) && missingInputs == 1) {
-                    if (auto value = subtract(result.values[outputId], inputSum)) {
-                        result.values.insert(missingId, *value); changed = true;
-                    } else addIssueOnce(result, IssueCode::InconsistentBalance, nodeId,
-                                        QStringLiteral("汇流输出小于已知输入之和，无法满足汇流守恒"));
-                }
-            }
+    result.values.clear();
+    const auto streamIds = graph.streamIds();
+    for (int index = 0; index < streamIds.size(); ++index) {
+        if (!drySolution.values[index] || !componentSolution.values[index]) continue;
+        StreamValue value{*drySolution.values[index], *componentSolution.values[index]};
+        if (value.dryMass < 0.0 && value.dryMass > -1e-8) value.dryMass = 0.0;
+        if (value.componentMass < 0.0 && value.componentMass > -1e-8) value.componentMass = 0.0;
+        if (value.componentMass > value.dryMass
+            && value.componentMass - value.dryMass < 1e-8)
+            value.componentMass = value.dryMass;
+        if (!validValue(value)) {
+            const auto* stream = graph.stream(streamIds[index]);
+            const QString objectId = stream && stream->source ? stream->source->nodeId
+                : stream && stream->target ? stream->target->nodeId : streamIds[index];
+            addIssue(result, IssueCode::InconsistentBalance, objectId,
+                     QStringLiteral("方程解得到负质量或组分质量超出总质量"));
+            continue;
         }
+        result.values.insert(streamIds[index], value);
     }
 
     for (const auto& nodeId : graph.nodeIds()) {
@@ -224,7 +265,7 @@ CalculationResult OpenCircuitCalculator::calculate(
                 result.relativeToExternalFeed.insert(it.key(), metrics(it.value(), feed));
         }
     }
-    allTerminalValuesKnown = true;
+    bool allTerminalValuesKnown = true;
     for (const auto& streamId : terminalIds)
         allTerminalValuesKnown = allTerminalValuesKnown && result.values.contains(streamId);
     const bool externalFeedKnown = externalIds.size() == 1

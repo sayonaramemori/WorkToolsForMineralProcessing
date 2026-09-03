@@ -61,7 +61,7 @@
 - `TopologyGraph`：节点、端口和物流；
 - `TopologyValidator`：端口、环路、连通性和终端检查；
 - `TopologyAlgorithms`：拓扑排序；
-- `OpenCircuitCalculator`：单个组分的质量与组分守恒反算；`FlowsheetCalculationService` 对项目定义的每个组分分别调用计算器并聚合结果。
+- `OpenCircuitCalculator`：将单个组分的质量与组分守恒、实测值和支路占比组装为广义线性方程组并求解；`FlowsheetCalculationService` 对项目定义的每个组分分别调用计算器并聚合结果。
 
 该模块不得依赖 `QGraphicsItem` 或窗口控件。
 
@@ -147,7 +147,9 @@ recycle product┘
 
 普通产品流或产品合并节点的 `MergeOutput` 连接到入料汇合节点的 `MergeInput`；新鲜入料是该节点的另一条外部输入，入料汇合节点的 `MergeOutput` 连接目标浮选单元的 `Feed` 端口。已接入回流的产品合并输出不再属于终端产品，断开后恢复。拓扑排序检测到有向环时将其标记为闭路警告，而不是结构错误。
 
-`CanvasTopologySnapshot::requiredMeasurements` 描述使平衡方程唯一所需的实测物流。开路包含所有终端产品；普通回流额外包含回流产品；合并输出回流额外包含两条合并前支路。计算器反复应用浮选节点和汇流节点的质量、组分守恒关系，直到不再产生新值，因此在给定回流撕裂流数据后也能求解闭路。外部新鲜入料由入料汇合守恒反算。
+`CanvasTopologySnapshot::requiredMeasurements` 描述使平衡方程唯一所需的实测物流。开路包含所有终端产品；普通回流额外包含回流产品；合并输出回流额外包含合并前各支路。
+
+`OpenCircuitCalculator` 将每条物流的干质量和组分质量分别作为未知量，把浮选节点守恒、汇流节点守恒、实测值及支路占比组装为两个线性方程组。求解采用带绝对值选主元的 Gauss-Jordan 消元；行最简形用于识别矛盾方程、自由变量，以及整体欠定时仍可唯一确定的局部物流。只有干质量和组分质量都唯一时，物流才进入结果集。该方法不依赖节点遍历顺序，可以直接处理多个相互耦合的闭路；外部新鲜入料也由全网方程联立反算。
 
 ## 生命周期规则
 

@@ -138,5 +138,35 @@ int main(int argc, char** argv) {
     if (!allocated.complete || !allocated.fullySolved
         || !close(allocated.values["AL1"].dryMass, 12)
         || !close(allocated.values["AL3"].componentMass, 2.4)) return 24;
+
+    // This closed loop has no node with enough locally-known streams to start
+    // iterative propagation. The allocation equation and all balances must be
+    // solved simultaneously.
+    TopologyGraph simultaneous;
+    simultaneous.addMergeNode({"SM"});
+    simultaneous.addFlotationNode({"SA"});
+    simultaneous.addFlotationNode({"SB"});
+    simultaneous.addStream({"SF", std::nullopt, PortRef{"SM", PortKind::MergeInput}});
+    simultaneous.addStream({"SBA", PortRef{"SB", PortKind::LeftProduct},
+                            PortRef{"SM", PortKind::MergeInput}});
+    simultaneous.addStream({"SMF", PortRef{"SM", PortKind::MergeOutput},
+                            PortRef{"SA", PortKind::Feed}});
+    simultaneous.addStream(terminal("SAT", "SA", PortKind::LeftProduct));
+    simultaneous.addStream(connection("SAB", "SA", PortKind::RightProduct, "SB"));
+    simultaneous.addStream(terminal("SBT", "SB", PortKind::RightProduct));
+    QHash<StreamId, StreamValue> simultaneousKnown;
+    simultaneousKnown.insert("SF", *StreamValue::fromMassAndGrade(80, 2));
+    simultaneousKnown.insert("SAT", *StreamValue::fromMassAndGrade(30, 3));
+    QHash<StreamId, BranchAllocation> simultaneousAllocations;
+    simultaneousAllocations.insert("SF", {80, 80});
+    simultaneousAllocations.insert("SBA", {20, 20});
+    const auto simultaneousResult = OpenCircuitCalculator::calculate(
+        simultaneous, simultaneousKnown, simultaneousAllocations);
+    if (!simultaneousResult.complete || !simultaneousResult.fullySolved
+        || !close(simultaneousResult.values["SMF"].dryMass, 100)
+        || !close(simultaneousResult.values["SBA"].dryMass, 20)
+        || !close(simultaneousResult.values["SAB"].dryMass, 70)
+        || !close(simultaneousResult.values["SBT"].dryMass, 50)
+        || !close(simultaneousResult.values["SBT"].gradePercent(), 1.4)) return 25;
     return 0;
 }
