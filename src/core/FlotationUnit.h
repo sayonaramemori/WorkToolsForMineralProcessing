@@ -5,7 +5,7 @@
 
 namespace afs {
 
-enum class UnitKind { Flotation, BinarySplitter };
+enum class UnitKind { Flotation, BinarySplitter, ThreeProductFlotation };
 
 struct FlotationUnit {
     QString id;

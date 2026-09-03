@@ -19,7 +19,8 @@ void addWarning(QVector<TopologyIssue>& issues, IssueCode code,
 
 bool validSourcePort(NodeKind kind, PortKind port) {
     return kind == NodeKind::Flotation
-        ? port == PortKind::LeftProduct || port == PortKind::RightProduct
+        ? port == PortKind::LeftProduct || port == PortKind::MiddleProduct
+            || port == PortKind::RightProduct
         : port == PortKind::MergeOutput;
 }
 
@@ -67,6 +68,11 @@ QVector<TopologyIssue> TopologyValidator::validate(const TopologyGraph& graph) {
                 addError(issues, IssueCode::MissingProduct, nodeId, QStringLiteral("浮选单元必须恰好有一条左产品流"));
             if (graph.streamsFrom(nodeId, PortKind::RightProduct).size() != 1)
                 addError(issues, IssueCode::MissingProduct, nodeId, QStringLiteral("浮选单元必须恰好有一条右产品流"));
+            const int middleCount = graph.streamsFrom(nodeId, PortKind::MiddleProduct).size();
+            if ((flotation && flotation->hasMiddleProduct && middleCount != 1)
+                || ((!flotation || !flotation->hasMiddleProduct) && middleCount != 0))
+                addError(issues, IssueCode::MissingProduct, nodeId,
+                         QStringLiteral("三产品浮选单元必须恰好有一条中间产品流"));
         } else {
             if (graph.streamsTo(nodeId, PortKind::MergeInput).size() < 2)
                 addError(issues, IssueCode::InvalidMerge, nodeId, QStringLiteral("汇流节点至少需要两条输入流"));

@@ -22,7 +22,8 @@ namespace afs {
 
 ProductLineItem::ProductLineItem(FlotationUnitItem* sourceUnit, ProductSide side)
     : QGraphicsPathItem(sourceUnit), m_sourceUnit(sourceUnit), m_side(side),
-      m_streamId(sourceUnit->unit().id + (side == ProductSide::Left ? ":left" : ":right")) {
+      m_streamId(sourceUnit->unit().id + (side == ProductSide::Left ? ":left"
+          : side == ProductSide::Middle ? ":middle" : ":right")) {
     setFlag(ItemIsSelectable);
     setFlag(ItemIsFocusable);
     setAcceptHoverEvents(true);

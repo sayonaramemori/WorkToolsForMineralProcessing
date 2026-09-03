@@ -23,7 +23,7 @@
 namespace afs {
 namespace {
 
-constexpr int kFormatVersion = 5;
+constexpr int kFormatVersion = 6;
 constexpr qint64 kMaximumProjectBytes = 64 * 1024 * 1024;
 
 struct UnitData { FlotationUnit unit; };
@@ -213,7 +213,8 @@ bool parseProject(const QByteArray& contents, ProjectData& data, QString* error)
         const auto kind = object.value("kind");
         if (!kind.isUndefined()) {
             if (!kind.isString()
-                || (kind.toString() != "flotation" && kind.toString() != "binary-splitter")) {
+                || (kind.toString() != "flotation" && kind.toString() != "binary-splitter"
+                    && kind.toString() != "three-product-flotation")) {
                 setError(error, "流程单元类型无效"); return false;
             }
             if (kind.toString() == "binary-splitter") {
@@ -224,6 +225,8 @@ bool parseProject(const QByteArray& contents, ProjectData& data, QString* error)
                 }
                 item.unit.kind = UnitKind::BinarySplitter;
                 item.unit.leftSplitPercent = split;
+            } else if (kind.toString() == "three-product-flotation") {
+                item.unit.kind = UnitKind::ThreeProductFlotation;
             }
         }
         data.units.append(std::move(item));
@@ -678,7 +681,9 @@ bool ProjectSerializer::save(const FlowsheetScene& scene, const FlowsheetDocumen
         const auto& value = unit->unit();
         QJsonObject unitObject{{"id", value.id}, {"x", value.position.x()},
             {"y", value.position.y()}, {"width", value.width}, {"bodyHeight", value.bodyHeight},
-            {"kind", value.kind == UnitKind::BinarySplitter ? "binary-splitter" : "flotation"}};
+            {"kind", value.kind == UnitKind::BinarySplitter ? "binary-splitter"
+                : value.kind == UnitKind::ThreeProductFlotation ? "three-product-flotation"
+                                                                : "flotation"}};
         if (value.kind == UnitKind::BinarySplitter)
             unitObject.insert("leftSplitPercent", value.leftSplitPercent);
         unitArray.append(unitObject);

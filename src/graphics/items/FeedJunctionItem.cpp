@@ -121,8 +121,10 @@ void FeedJunctionItem::updatePath() {
     int leftIndex = 0;
     int rightIndex = 0;
     for (auto* product : m_recycleProducts) {
-        const bool left = product->side() == ProductSide::Left;
         const QPointF end = product->unconnectedEndScenePosition();
+        const bool left = product->side() == ProductSide::Left
+            || (product->side() == ProductSide::Middle
+                && end.x() <= m_targetUnit->scenePos().x());
         appendSourcePath(m_linePath, product->streamId(), product->sourceAnchorScenePosition(), end, left,
                          left ? leftIndex++ : rightIndex++);
     }

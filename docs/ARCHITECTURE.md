@@ -28,13 +28,13 @@
 
 画布图元及局部鼠标交互：
 
-- `FlotationUnitItem`：浮选槽体或二分流器；领域对象通过 `UnitKind` 区分类型，二分流器保存左支路百分比，右支路由其补数得到；
+- `FlotationUnitItem`：二产品浮选槽、三产品浮选槽或二分流器；领域对象通过 `UnitKind` 区分类型，三产品单元动态创建中间产品图元，二分流器保存左支路百分比；
 - `InputLineItem`：入料线；
 - `ProductLineItem`：左右产品线；
 - `MergeJunctionItem`：两条产品合并为终端产品；
 - `FeedJunctionItem`：任意数量附加产品/合流输出与正常入料的汇合及公共入料箭头；正常入料可以是外部新鲜入料、上游产品或合流输出。
 
-产品物流使用稳定 ID：`<unit-id>:left`、`<unit-id>:right`；外部入料使用 `<unit-id>:feed`；合流输出使用 `<merge-id>:output`。
+产品物流使用稳定 ID：`<unit-id>:left`、`<unit-id>:middle`（仅三产品单元）、`<unit-id>:right`；外部入料使用 `<unit-id>:feed`；合流输出使用 `<merge-id>:output`。
 
 ### `src/editor`
 
@@ -70,6 +70,8 @@
 - `OpenCircuitCalculator`：将单个组分的质量与组分守恒、实测值和支路占比组装为广义线性方程组并求解；`FlowsheetCalculationService` 对项目定义的每个组分分别调用计算器并聚合结果。
 
 二分流器在画布连接层沿用一入两出的稳定端口 ID，但计算拓扑在 `FlotationNode::leftSplitPercent` 中携带分流约束。求解器分别为干质量和每个组分质量加入左右支路比例方程，因此支路品位保持一致；二分流器不写入浮选单元性能结果。项目格式 v5 保存节点类型和比例，读取器继续兼容 v1–v4。
+
+三产品单元通过 `PortKind::MiddleProduct` 和 `FlotationNode::hasMiddleProduct` 显式表达第三输出。守恒方程、完整性校验、节点性能及结果详情均按三个产品处理。项目格式 v6 增加 `three-product-flotation` 单元类型，并兼容读取 v1–v5。
 
 该模块不得依赖 `QGraphicsItem` 或窗口控件。
 

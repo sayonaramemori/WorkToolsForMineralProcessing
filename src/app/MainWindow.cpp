@@ -126,6 +126,8 @@ MainWindow::MainWindow() {
     auto* flowMenu = new QMenu(tr("流程编辑"), toolbar);
     auto* addAction = flowMenu->addAction(tr("添加浮选单元"));
     connect(addAction, &QAction::triggered, this, [this] { addFlotationUnit(); });
+    auto* addThreeProductAction = flowMenu->addAction(tr("添加三产品浮选单元"));
+    connect(addThreeProductAction, &QAction::triggered, this, [this] { addThreeProductUnit(); });
     auto* addSplitterAction = flowMenu->addAction(tr("添加二分流器"));
     connect(addSplitterAction, &QAction::triggered, this, [this] { addBinarySplitter(); });
     addMenuButton(tr("流程编辑"), flowMenu);
@@ -269,6 +271,14 @@ void MainWindow::compareScenarios() {
 void MainWindow::addFlotationUnit() {
     const QPointF center = m_view->mapToScene(m_view->viewport()->rect().center());
     FlotationUnit unit{QString::number(m_nextUnitId++), center};
+    m_scene->addItem(new FlotationUnitItem(std::move(unit)));
+    static_cast<FlowsheetScene*>(m_scene)->notifyTopologyChanged();
+}
+
+void MainWindow::addThreeProductUnit() {
+    const QPointF center = m_view->mapToScene(m_view->viewport()->rect().center());
+    FlotationUnit unit{QString::number(m_nextUnitId++), center};
+    unit.kind = UnitKind::ThreeProductFlotation;
     m_scene->addItem(new FlotationUnitItem(std::move(unit)));
     static_cast<FlowsheetScene*>(m_scene)->notifyTopologyChanged();
 }

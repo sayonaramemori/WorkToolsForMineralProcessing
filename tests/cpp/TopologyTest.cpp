@@ -182,5 +182,24 @@ int main(int argc, char** argv) {
         || !close(splitterResult.values["SPR"].dryMass, 65)
         || !close(splitterResult.values["SPF"].gradePercent(), 4.2)
         || splitterResult.flotationPerformance.contains("SP")) return 26;
+
+    TopologyGraph threeProduct;
+    threeProduct.addFlotationNode({"TP", ProductRole::Unknown, ProductRole::Unknown,
+                                   std::nullopt, true});
+    threeProduct.addStream(externalFeed("TPF", "TP"));
+    threeProduct.addStream(terminal("TPL", "TP", PortKind::LeftProduct));
+    threeProduct.addStream(terminal("TPM", "TP", PortKind::MiddleProduct));
+    threeProduct.addStream(terminal("TPR", "TP", PortKind::RightProduct));
+    QHash<StreamId, StreamValue> threeKnown;
+    threeKnown.insert("TPL", *StreamValue::fromMassAndGrade(10, 8));
+    threeKnown.insert("TPM", *StreamValue::fromMassAndGrade(20, 3));
+    threeKnown.insert("TPR", *StreamValue::fromMassAndGrade(70, 1));
+    const auto threeResult = OpenCircuitCalculator::calculate(threeProduct, threeKnown);
+    if (!threeResult.complete || !threeResult.fullySolved
+        || !close(threeResult.values["TPF"].dryMass, 100)
+        || !close(threeResult.values["TPF"].gradePercent(), 2.1)
+        || !close(threeResult.flotationPerformance["TP"].middle.massYieldPercent, 20)
+        || !close(threeResult.flotationPerformance["TP"].middle.recoveryPercent,
+                  0.6 / 2.1 * 100.0)) return 27;
     return 0;
 }

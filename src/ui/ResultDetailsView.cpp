@@ -97,17 +97,24 @@ void ResultDetailsView::showUnit(const QString& unitId, const topology::Topology
     const auto* result = m_document.calculationResult();
     const auto feeds = graph.streamsTo(unitId, topology::PortKind::Feed);
     const auto lefts = graph.streamsFrom(unitId, topology::PortKind::LeftProduct);
+    const auto middles = graph.streamsFrom(unitId, topology::PortKind::MiddleProduct);
     const auto rights = graph.streamsFrom(unitId, topology::PortKind::RightProduct);
     if (!result || !result->complete || feeds.isEmpty() || lefts.isEmpty() || rights.isEmpty()) {
         showPlaceholder();
         return;
     }
-    const QStringList ids{feeds.front(), lefts.front(), rights.front()};
+    QStringList ids{feeds.front(), lefts.front()};
+    QStringList headers{"指标", "入料", "左产品"};
+    if (!middles.isEmpty()) {
+        ids.append(middles.front());
+        headers.append("中间产品");
+    }
+    ids.append(rights.front());
+    headers.append("右产品");
     for (const auto& id : ids) if (!result->values.contains(id)) { showPlaceholder(); return; }
 
     m_title->setText(QString("浮选单元 %1 · 平衡结果").arg(unitId));
-    configureTable(3 + 3 * m_document.components().size(), 4,
-                   {"指标", "入料", "左产品", "右产品"});
+    configureTable(3 + 3 * m_document.components().size(), headers.size(), headers);
     QStringList names{"干质量", "节点产率 / %", "全流程产率 / %"};
     for (const auto& component : m_document.components()) {
         names.append(QString("%1 品位 / %").arg(component.name));
@@ -120,7 +127,8 @@ void ResultDetailsView::showUnit(const QString& unitId, const topology::Topology
         const auto value = result->values.value(ids[column]);
         const auto performance = result->flotationPerformance.value(unitId);
         const topology::ProductMetrics local = column == 0 ? topology::ProductMetrics{100, 100}
-            : (column == 1 ? performance.left : performance.right);
+            : column == 1 ? performance.left
+            : (!middles.isEmpty() && column == 2) ? performance.middle : performance.right;
         setNumericItem(0, column + 1, value.dryMass);
         setNumericItem(1, column + 1, local.massYieldPercent);
         const auto overall = result->relativeToExternalFeed.constFind(ids[column]);
@@ -150,7 +158,9 @@ void ResultDetailsView::showUnit(const QString& unitId, const topology::Topology
                 componentResult->flotationPerformance.value(unitId);
             const topology::ProductMetrics componentLocal = column == 0
                 ? topology::ProductMetrics{100, 100}
-                : (column == 1 ? componentPerformance.left : componentPerformance.right);
+                : column == 1 ? componentPerformance.left
+                : (!middles.isEmpty() && column == 2) ? componentPerformance.middle
+                                                       : componentPerformance.right;
             setNumericItem(row++, column + 1, componentLocal.recoveryPercent);
             const auto componentOverall =
                 componentResult->relativeToExternalFeed.constFind(ids[column]);
@@ -160,7 +170,7 @@ void ResultDetailsView::showUnit(const QString& unitId, const topology::Topology
         }
     }
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    for (int column = 1; column < 4; ++column)
+    for (int column = 1; column < headers.size(); ++column)
         m_table->horizontalHeader()->setSectionResizeMode(column, QHeaderView::ResizeToContents);
 }
 

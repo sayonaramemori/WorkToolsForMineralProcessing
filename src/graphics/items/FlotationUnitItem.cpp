@@ -28,6 +28,8 @@ FlotationUnitItem::FlotationUnitItem(FlotationUnit unit) : m_unit(std::move(unit
     setCursor(Qt::OpenHandCursor);
     m_inputLine = new InputLineItem(this);
     m_leftProduct = new ProductLineItem(this, ProductSide::Left);
+    if (m_unit.kind == UnitKind::ThreeProductFlotation)
+        m_middleProduct = new ProductLineItem(this, ProductSide::Middle);
     m_rightProduct = new ProductLineItem(this, ProductSide::Right);
 }
 
@@ -38,8 +40,7 @@ bool FlotationUnitItem::adjustWidth(double delta) {
     prepareGeometryChange();
     m_unit.width = newWidth;
     update();
-    m_leftProduct->updatePath();
-    m_rightProduct->updatePath();
+    for (auto* product : products()) product->updatePath();
     if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene()))
         flowsheet->sourceWidthChanged(this, oldWidth);
     return true;
@@ -57,7 +58,10 @@ bool FlotationUnitItem::setLeftSplitPercent(double percent) {
 }
 
 QList<ProductLineItem*> FlotationUnitItem::products() const {
-    return {m_leftProduct, m_rightProduct};
+    QList<ProductLineItem*> result{m_leftProduct};
+    if (m_middleProduct) result.append(m_middleProduct);
+    result.append(m_rightProduct);
+    return result;
 }
 
 QRectF FlotationUnitItem::boundingRect() const {

@@ -213,7 +213,8 @@ bool AnnotationManager::anchorForStream(const QString& streamId, QPointF& anchor
                 anchor = product->mapToScene(path.pointAtPercent(0.52));
             }
             defaultOffset = product->side() == ProductSide::Left ? QPointF(-145, -25)
-                                                                 : QPointF(14, -25);
+                : product->side() == ProductSide::Middle ? QPointF(-60, -25)
+                                                         : QPointF(14, -25);
             return true;
         }
         if (auto* merge = dynamic_cast<MergeJunctionItem*>(graphicsItem)) {

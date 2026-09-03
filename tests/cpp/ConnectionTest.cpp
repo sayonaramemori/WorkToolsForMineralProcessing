@@ -60,5 +60,20 @@ int main(int argc, char** argv) {
     const QPointF detachedPosition = lower->pos();
     upper->setPos(upper->pos() + QPointF(15, 10));
     if (!closePoint(lower->pos(), detachedPosition)) return 13;
+
+    FlowsheetScene threeProductScene;
+    FlotationUnit threeProductData{"three", {0, 0}};
+    threeProductData.kind = UnitKind::ThreeProductFlotation;
+    auto* threeProduct = new FlotationUnitItem(threeProductData);
+    auto* downstream = new FlotationUnitItem({"downstream", {500, 400}});
+    threeProductScene.addItem(threeProduct);
+    threeProductScene.addItem(downstream);
+    if (threeProduct->products().size() != 3
+        || threeProduct->products()[1]->side() != ProductSide::Middle
+        || !threeProductScene.connectProduct(
+            threeProduct->products()[1], downstream->inputLine())) return 17;
+    if (!threeProduct->products()[1]->isConnected()
+        || downstream->inputLine()->sourceProduct() != threeProduct->products()[1]
+        || !closePoint(downstream->pos(), QPointF(0, 222))) return 18;
     return 0;
 }

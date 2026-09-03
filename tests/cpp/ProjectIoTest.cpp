@@ -284,5 +284,30 @@ int main(int argc, char** argv) {
     const auto splitterSnapshot = CanvasTopologyBuilder::build(splitterLoaded);
     if (splitterSnapshot.requiredMeasurements.size() != 1
         || splitterSnapshot.requiredMeasurements.front().streamId != "splitter:left") return 42;
+
+    FlowsheetScene threeProductSource;
+    FlotationUnit threeProductUnit{"three", {240, 160}};
+    threeProductUnit.kind = UnitKind::ThreeProductFlotation;
+    threeProductSource.addItem(new FlotationUnitItem(threeProductUnit));
+    FlowsheetDocument threeProductDocument;
+    const QString threeProductPath = directory.filePath("three-product.afs.json");
+    if (!ProjectSerializer::save(
+            threeProductSource, threeProductDocument, threeProductPath, &error)) return 43;
+    FlowsheetScene threeProductLoaded;
+    FlowsheetDocument threeProductLoadedDocument;
+    if (!ProjectSerializer::load(threeProductLoaded, threeProductLoadedDocument,
+                                 threeProductPath, &error)) return 44;
+    FlotationUnitItem* loadedThreeProduct = nullptr;
+    for (auto* item : threeProductLoaded.items())
+        if (auto* unit = dynamic_cast<FlotationUnitItem*>(item);
+            unit && unit->unit().id == "three") loadedThreeProduct = unit;
+    if (!loadedThreeProduct
+        || loadedThreeProduct->unit().kind != UnitKind::ThreeProductFlotation
+        || loadedThreeProduct->products().size() != 3
+        || loadedThreeProduct->products()[1]->streamId() != "three:middle") return 45;
+    const auto threeProductSnapshot = CanvasTopologyBuilder::build(threeProductLoaded);
+    if (threeProductSnapshot.graph.streamsFrom(
+            "three", topology::PortKind::MiddleProduct).size() != 1
+        || threeProductSnapshot.requiredMeasurements.size() != 3) return 46;
     return 0;
 }

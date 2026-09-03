@@ -28,6 +28,7 @@ private:
     FlotationUnit m_unit;
     class InputLineItem* m_inputLine;
     class ProductLineItem* m_leftProduct;
+    class ProductLineItem* m_middleProduct{nullptr};
     class ProductLineItem* m_rightProduct;
 };
 

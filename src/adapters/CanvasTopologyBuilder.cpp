@@ -30,7 +30,8 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
                                       topology::ProductRole::Unknown,
                                       unit->unit().kind == UnitKind::BinarySplitter
                                           ? std::optional<double>(unit->unit().leftSplitPercent)
-                                          : std::nullopt});
+                                          : std::nullopt,
+                                      unit->unit().kind == UnitKind::ThreeProductFlotation});
     }
     for (auto* merge : merges) result.graph.addMergeNode({merge->id()});
     for (auto* junction : feedJunctions) result.graph.addMergeNode({junction->id()});
@@ -47,8 +48,10 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
         const auto products = unit->products();
         for (int index = 0; index < products.size(); ++index) {
             auto* product = products[index];
-            const auto sourcePort = index == 0 ? topology::PortKind::LeftProduct
-                                               : topology::PortKind::RightProduct;
+            const auto side = product->side();
+            const auto sourcePort = side == ProductSide::Left ? topology::PortKind::LeftProduct
+                : side == ProductSide::Middle ? topology::PortKind::MiddleProduct
+                                              : topology::PortKind::RightProduct;
             std::optional<topology::PortRef> target;
             if (product->targetUnit()) {
                 target = topology::PortRef{product->targetUnit()->unit().id, topology::PortKind::Feed};
@@ -62,7 +65,8 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
             const CanvasStreamDescriptor descriptor{
                 product->streamId(),
                 QString("单元 %1 - %2产品").arg(unit->unit().id,
-                    index == 0 ? QString("左") : QString("右")),
+                    side == ProductSide::Left ? QString("左")
+                    : side == ProductSide::Middle ? QString("中") : QString("右")),
                 product, product->mergeJunction() != nullptr};
             result.productStreams.append(descriptor);
             if (!target) {
@@ -117,7 +121,8 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
                 product->streamId(),
                 QString("合流支路：单元 %1 - %2产品")
                     .arg(product->sourceUnit()->unit().id,
-                         product->side() == ProductSide::Left ? QString("左") : QString("右")),
+                         product->side() == ProductSide::Left ? QString("左")
+                         : product->side() == ProductSide::Middle ? QString("中") : QString("右")),
                 merge});
         }
     }
@@ -127,7 +132,8 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
                 product->streamId(),
                 QString("回流：单元 %1 - %2产品")
                     .arg(product->sourceUnit()->unit().id,
-                         product->side() == ProductSide::Left ? QString("左") : QString("右")),
+                         product->side() == ProductSide::Left ? QString("左")
+                         : product->side() == ProductSide::Middle ? QString("中") : QString("右")),
                 junction});
         }
         for (auto* merge : junction->recycleMerges()) {
@@ -136,7 +142,8 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
                     product->streamId(),
                     QString("回流支路：单元 %1 - %2产品")
                         .arg(product->sourceUnit()->unit().id,
-                             product->side() == ProductSide::Left ? QString("左") : QString("右")),
+                             product->side() == ProductSide::Left ? QString("左")
+                             : product->side() == ProductSide::Middle ? QString("中") : QString("右")),
                     junction});
             }
         }

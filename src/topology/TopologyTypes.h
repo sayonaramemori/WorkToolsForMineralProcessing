@@ -12,7 +12,7 @@ using StreamId = QString;
 
 enum class NodeKind { Flotation, Merge };
 enum class ProductRole { Concentrate, Tailing, Middling, Unknown };
-enum class PortKind { Feed, LeftProduct, RightProduct, MergeInput, MergeOutput };
+enum class PortKind { Feed, LeftProduct, MiddleProduct, RightProduct, MergeInput, MergeOutput };
 
 struct PortRef {
     NodeId nodeId;
@@ -25,6 +25,7 @@ struct FlotationNode {
     ProductRole leftRole{ProductRole::Unknown};
     ProductRole rightRole{ProductRole::Unknown};
     std::optional<double> leftSplitPercent;
+    bool hasMiddleProduct{false};
 };
 
 struct MergeNode {
@@ -86,6 +87,7 @@ struct ProductMetrics {
 struct FlotationPerformance {
     ProductMetrics left;
     ProductMetrics right;
+    ProductMetrics middle;
 };
 
 struct ComponentCalculationResult {

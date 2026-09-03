@@ -14,7 +14,7 @@ class FeedJunctionItem;
 class InputLineItem;
 class MergeJunctionItem;
 
-enum class ProductSide { Left = -1, Right = 1 };
+enum class ProductSide { Left = -1, Middle = 0, Right = 1 };
 
 class ProductLineItem final : public QGraphicsPathItem {
 public:
