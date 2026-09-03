@@ -126,6 +126,8 @@ MainWindow::MainWindow() {
     auto* flowMenu = new QMenu(tr("流程编辑"), toolbar);
     auto* addAction = flowMenu->addAction(tr("添加浮选单元"));
     connect(addAction, &QAction::triggered, this, [this] { addFlotationUnit(); });
+    auto* addSplitterAction = flowMenu->addAction(tr("添加二分流器"));
+    connect(addSplitterAction, &QAction::triggered, this, [this] { addBinarySplitter(); });
     addMenuButton(tr("流程编辑"), flowMenu);
 
     toolbar->addSeparator();
@@ -267,6 +269,21 @@ void MainWindow::compareScenarios() {
 void MainWindow::addFlotationUnit() {
     const QPointF center = m_view->mapToScene(m_view->viewport()->rect().center());
     FlotationUnit unit{QString::number(m_nextUnitId++), center};
+    m_scene->addItem(new FlotationUnitItem(std::move(unit)));
+    static_cast<FlowsheetScene*>(m_scene)->notifyTopologyChanged();
+}
+
+void MainWindow::addBinarySplitter() {
+    bool accepted = false;
+    const double leftPercent = QInputDialog::getDouble(
+        this, tr("添加二分流器"), tr("左支路比例（右支路自动补足至 100%）"),
+        50.0, 0.1, 99.9, 1, &accepted);
+    if (!accepted) return;
+    const QPointF center = m_view->mapToScene(m_view->viewport()->rect().center());
+    FlotationUnit unit{QString::number(m_nextUnitId++), center};
+    unit.kind = UnitKind::BinarySplitter;
+    unit.leftSplitPercent = leftPercent;
+    unit.bodyHeight = 110.0;
     m_scene->addItem(new FlotationUnitItem(std::move(unit)));
     static_cast<FlowsheetScene*>(m_scene)->notifyTopologyChanged();
 }

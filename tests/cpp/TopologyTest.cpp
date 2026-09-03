@@ -168,5 +168,19 @@ int main(int argc, char** argv) {
         || !close(simultaneousResult.values["SAB"].dryMass, 70)
         || !close(simultaneousResult.values["SBT"].dryMass, 50)
         || !close(simultaneousResult.values["SBT"].gradePercent(), 1.4)) return 25;
+
+    TopologyGraph splitter;
+    splitter.addFlotationNode({"SP", ProductRole::Unknown, ProductRole::Unknown, 35.0});
+    splitter.addStream(externalFeed("SPF", "SP"));
+    splitter.addStream(terminal("SPL", "SP", PortKind::LeftProduct));
+    splitter.addStream(terminal("SPR", "SP", PortKind::RightProduct));
+    QHash<StreamId, StreamValue> splitterKnown;
+    splitterKnown.insert("SPL", *StreamValue::fromMassAndGrade(35, 4.2));
+    const auto splitterResult = OpenCircuitCalculator::calculate(splitter, splitterKnown);
+    if (!splitterResult.complete || !splitterResult.fullySolved
+        || !close(splitterResult.values["SPF"].dryMass, 100)
+        || !close(splitterResult.values["SPR"].dryMass, 65)
+        || !close(splitterResult.values["SPF"].gradePercent(), 4.2)
+        || splitterResult.flotationPerformance.contains("SP")) return 26;
     return 0;
 }

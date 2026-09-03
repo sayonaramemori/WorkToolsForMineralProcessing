@@ -262,5 +262,27 @@ int main(int argc, char** argv) {
         || !topology::TopologyAlgorithms::sort(multiLoopSnapshot.graph).hasCycle
         || topology::TopologyValidator::hasErrors(
             topology::TopologyValidator::validate(multiLoopSnapshot.graph))) return 38;
+
+    FlowsheetScene splitterSource;
+    FlotationUnit splitterUnit{"splitter", {120, 80}};
+    splitterUnit.kind = UnitKind::BinarySplitter;
+    splitterUnit.leftSplitPercent = 37.5;
+    splitterSource.addItem(new FlotationUnitItem(splitterUnit));
+    FlowsheetDocument splitterDocument;
+    const QString splitterPath = directory.filePath("splitter.afs.json");
+    if (!ProjectSerializer::save(splitterSource, splitterDocument, splitterPath, &error)) return 39;
+    FlowsheetScene splitterLoaded;
+    FlowsheetDocument splitterLoadedDocument;
+    if (!ProjectSerializer::load(
+            splitterLoaded, splitterLoadedDocument, splitterPath, &error)) return 40;
+    FlotationUnitItem* loadedSplitter = nullptr;
+    for (auto* item : splitterLoaded.items())
+        if (auto* unit = dynamic_cast<FlotationUnitItem*>(item);
+            unit && unit->unit().id == "splitter") loadedSplitter = unit;
+    if (!loadedSplitter || loadedSplitter->unit().kind != UnitKind::BinarySplitter
+        || std::abs(loadedSplitter->unit().leftSplitPercent - 37.5) > 0.001) return 41;
+    const auto splitterSnapshot = CanvasTopologyBuilder::build(splitterLoaded);
+    if (splitterSnapshot.requiredMeasurements.size() != 1
+        || splitterSnapshot.requiredMeasurements.front().streamId != "splitter:left") return 42;
     return 0;
 }

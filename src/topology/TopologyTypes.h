@@ -24,6 +24,7 @@ struct FlotationNode {
     NodeId id;
     ProductRole leftRole{ProductRole::Unknown};
     ProductRole rightRole{ProductRole::Unknown};
+    std::optional<double> leftSplitPercent;
 };
 
 struct MergeNode {

@@ -27,7 +27,10 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
 
     for (auto* unit : units) {
         result.graph.addFlotationNode({unit->unit().id, topology::ProductRole::Unknown,
-                                      topology::ProductRole::Unknown});
+                                      topology::ProductRole::Unknown,
+                                      unit->unit().kind == UnitKind::BinarySplitter
+                                          ? std::optional<double>(unit->unit().leftSplitPercent)
+                                          : std::nullopt});
     }
     for (auto* merge : merges) result.graph.addMergeNode({merge->id()});
     for (auto* junction : feedJunctions) result.graph.addMergeNode({junction->id()});
@@ -97,7 +100,12 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
                                                   topology::PortKind::Feed}});
     }
     result.reportStreams += result.productStreams;
-    result.requiredMeasurements = result.terminalProducts;
+    for (const auto& terminal : result.terminalProducts) {
+        auto* product = dynamic_cast<ProductLineItem*>(terminal.graphicsItem);
+        if (product && product->sourceUnit()->unit().kind == UnitKind::BinarySplitter
+            && product->side() == ProductSide::Right) continue;
+        result.requiredMeasurements.append(terminal);
+    }
     // A downstream merge provides only the sum of its two input branches.
     // One measured branch is therefore required to identify the other one.
     for (auto* merge : merges) {

@@ -3,6 +3,7 @@
 
 #include <QQueue>
 #include <QSet>
+#include <cmath>
 
 namespace afs::topology {
 namespace {
@@ -53,6 +54,13 @@ QVector<TopologyIssue> TopologyValidator::validate(const TopologyGraph& graph) {
 
     for (const auto& nodeId : graph.nodeIds()) {
         if (graph.nodeKind(nodeId) == NodeKind::Flotation) {
+            const auto* flotation = graph.flotationNode(nodeId);
+            if (flotation && flotation->leftSplitPercent
+                && (!std::isfinite(*flotation->leftSplitPercent)
+                    || *flotation->leftSplitPercent <= 0.0
+                    || *flotation->leftSplitPercent >= 100.0))
+                addError(issues, IssueCode::InvalidMeasurement, nodeId,
+                         QStringLiteral("二分流器左支路比例必须大于 0% 且小于 100%"));
             if (graph.streamsTo(nodeId, PortKind::Feed).size() != 1)
                 addError(issues, IssueCode::MissingFeed, nodeId, QStringLiteral("浮选单元必须恰好有一条入料流"));
             if (graph.streamsFrom(nodeId, PortKind::LeftProduct).size() != 1)

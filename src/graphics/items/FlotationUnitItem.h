@@ -16,11 +16,13 @@ public:
 
     [[nodiscard]] const FlotationUnit& unit() const { return m_unit; }
     bool adjustWidth(double delta);
+    bool setLeftSplitPercent(double percent);
     [[nodiscard]] class InputLineItem* inputLine() const { return m_inputLine; }
     [[nodiscard]] QList<class ProductLineItem*> products() const;
 
 protected:
     QVariant itemChange(GraphicsItemChange change, const QVariant& value) override;
+    void mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) override;
 
 private:
     FlotationUnit m_unit;

@@ -38,6 +38,7 @@ private:
     QComboBox* m_scenarioCombo{nullptr};
 
     void addFlotationUnit();
+    void addBinarySplitter();
     bool saveProject();
     void importProject();
     void updateNextUnitId();

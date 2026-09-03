@@ -23,7 +23,7 @@
 namespace afs {
 namespace {
 
-constexpr int kFormatVersion = 4;
+constexpr int kFormatVersion = 5;
 constexpr qint64 kMaximumProjectBytes = 64 * 1024 * 1024;
 
 struct UnitData { FlotationUnit unit; };
@@ -210,6 +210,22 @@ bool parseProject(const QByteArray& contents, ProjectData& data, QString* error)
         item.unit.position = {x, y};
         item.unit.width = width;
         item.unit.bodyHeight = bodyHeight;
+        const auto kind = object.value("kind");
+        if (!kind.isUndefined()) {
+            if (!kind.isString()
+                || (kind.toString() != "flotation" && kind.toString() != "binary-splitter")) {
+                setError(error, "流程单元类型无效"); return false;
+            }
+            if (kind.toString() == "binary-splitter") {
+                double split = 0.0;
+                if (!finiteNumber(object.value("leftSplitPercent"), split)
+                    || split <= 0.0 || split >= 100.0) {
+                    setError(error, "二分流器比例无效"); return false;
+                }
+                item.unit.kind = UnitKind::BinarySplitter;
+                item.unit.leftSplitPercent = split;
+            }
+        }
         data.units.append(std::move(item));
     }
     if (data.units.isEmpty()) { setError(error, "项目中没有浮选单元"); return false; }
@@ -660,8 +676,12 @@ bool ProjectSerializer::save(const FlowsheetScene& scene, const FlowsheetDocumen
     QJsonArray connectionArray;
     for (auto* unit : units) {
         const auto& value = unit->unit();
-        unitArray.append(QJsonObject{{"id", value.id}, {"x", value.position.x()},
-            {"y", value.position.y()}, {"width", value.width}, {"bodyHeight", value.bodyHeight}});
+        QJsonObject unitObject{{"id", value.id}, {"x", value.position.x()},
+            {"y", value.position.y()}, {"width", value.width}, {"bodyHeight", value.bodyHeight},
+            {"kind", value.kind == UnitKind::BinarySplitter ? "binary-splitter" : "flotation"}};
+        if (value.kind == UnitKind::BinarySplitter)
+            unitObject.insert("leftSplitPercent", value.leftSplitPercent);
+        unitArray.append(unitObject);
         for (auto* product : unit->products()) {
             if (product->targetUnit()) {
                 QJsonObject connection{{"source", product->streamId()},

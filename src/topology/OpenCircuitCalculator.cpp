@@ -71,6 +71,25 @@ ScalarSolution solveScalarSystem(
             for (const auto& id : graph.streamsFrom(nodeId, PortKind::MergeOutput)) row[columns[id]] -= 1.0;
         }
         matrix.append(std::move(row));
+        if (graph.nodeKind(nodeId) == NodeKind::Flotation) {
+            const auto* node = graph.flotationNode(nodeId);
+            if (node && node->leftSplitPercent) {
+                const auto feedIds = graph.streamsTo(nodeId, PortKind::Feed);
+                const auto leftIds = graph.streamsFrom(nodeId, PortKind::LeftProduct);
+                const auto rightIds = graph.streamsFrom(nodeId, PortKind::RightProduct);
+                if (!feedIds.isEmpty() && !leftIds.isEmpty() && !rightIds.isEmpty()) {
+                    auto leftRow = equation();
+                    leftRow[columns[leftIds.front()]] = 1.0;
+                    leftRow[columns[feedIds.front()]] = -*node->leftSplitPercent / 100.0;
+                    matrix.append(std::move(leftRow));
+                    auto rightRow = equation();
+                    rightRow[columns[rightIds.front()]] = 1.0;
+                    rightRow[columns[feedIds.front()]] =
+                        -(100.0 - *node->leftSplitPercent) / 100.0;
+                    matrix.append(std::move(rightRow));
+                }
+            }
+        }
     }
     for (auto it = knownValues.cbegin(); it != knownValues.cend(); ++it) {
         auto row = equation();
@@ -231,10 +250,12 @@ CalculationResult OpenCircuitCalculator::calculate(
                 const auto outputSum = add(result.values[leftId], result.values[rightId]);
                 if (!approximatelyEqual(result.values[feedId], outputSum))
                     addIssue(result, IssueCode::InconsistentBalance, nodeId, QStringLiteral("浮选单元质量或组分不平衡"));
-                result.flotationPerformance.insert(nodeId, {
-                    metrics(result.values[leftId], result.values[feedId]),
-                    metrics(result.values[rightId], result.values[feedId])
-                });
+                const auto* node = graph.flotationNode(nodeId);
+                if (!node || !node->leftSplitPercent)
+                    result.flotationPerformance.insert(nodeId, {
+                        metrics(result.values[leftId], result.values[feedId]),
+                        metrics(result.values[rightId], result.values[feedId])
+                    });
             }
         } else {
             const auto inputIds = graph.streamsTo(nodeId, PortKind::MergeInput);
