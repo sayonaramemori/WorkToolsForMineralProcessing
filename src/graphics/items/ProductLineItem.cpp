@@ -22,8 +22,7 @@ namespace afs {
 
 ProductLineItem::ProductLineItem(FlotationUnitItem* sourceUnit, ProductSide side)
     : QGraphicsPathItem(sourceUnit), m_sourceUnit(sourceUnit), m_side(side),
-      m_streamId(sourceUnit->unit().id + (side == ProductSide::Left ? ":left"
-          : side == ProductSide::Middle ? ":middle" : ":right")) {
+      m_streamId(sourceUnit->unit().id + productSideSuffix(side)) {
     setFlag(ItemIsSelectable);
     setFlag(ItemIsFocusable);
     setAcceptHoverEvents(true);
@@ -39,7 +38,7 @@ ProductLineItem::ProductLineItem(FlotationUnitItem* sourceUnit, ProductSide side
 }
 
 double ProductLineItem::sideX() const {
-    return static_cast<int>(m_side) * m_sourceUnit->unit().width / 2.0;
+    return productSideDirection(m_side) * m_sourceUnit->unit().width / 2.0;
 }
 
 QPointF ProductLineItem::unconnectedEndScenePosition() const {

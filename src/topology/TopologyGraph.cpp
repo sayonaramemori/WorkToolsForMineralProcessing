@@ -64,6 +64,15 @@ QVector<StreamId> TopologyGraph::streamsTo(const NodeId& node, PortKind port) co
     return result;
 }
 
+QVector<StreamId> TopologyGraph::flotationProductStreams(const NodeId& node) const {
+    QVector<StreamId> result;
+    const auto* flotation = flotationNode(node);
+    if (!flotation) return result;
+    for (const auto port : flotationProductPorts(*flotation))
+        result += streamsFrom(node, port);
+    return result;
+}
+
 QVector<StreamId> TopologyGraph::externalFeedStreams() const {
     QVector<StreamId> result;
     for (const auto& id : m_streamOrder) if (!m_streams[id].source && m_streams[id].target) result.append(id);

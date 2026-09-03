@@ -64,15 +64,17 @@ QVector<TopologyIssue> TopologyValidator::validate(const TopologyGraph& graph) {
                          QStringLiteral("二分流器左支路比例必须大于 0% 且小于 100%"));
             if (graph.streamsTo(nodeId, PortKind::Feed).size() != 1)
                 addError(issues, IssueCode::MissingFeed, nodeId, QStringLiteral("浮选单元必须恰好有一条入料流"));
-            if (graph.streamsFrom(nodeId, PortKind::LeftProduct).size() != 1)
-                addError(issues, IssueCode::MissingProduct, nodeId, QStringLiteral("浮选单元必须恰好有一条左产品流"));
-            if (graph.streamsFrom(nodeId, PortKind::RightProduct).size() != 1)
-                addError(issues, IssueCode::MissingProduct, nodeId, QStringLiteral("浮选单元必须恰好有一条右产品流"));
-            const int middleCount = graph.streamsFrom(nodeId, PortKind::MiddleProduct).size();
-            if ((flotation && flotation->hasMiddleProduct && middleCount != 1)
-                || ((!flotation || !flotation->hasMiddleProduct) && middleCount != 0))
-                addError(issues, IssueCode::MissingProduct, nodeId,
-                         QStringLiteral("三产品浮选单元必须恰好有一条中间产品流"));
+            if (flotation) {
+                for (const auto port : flotationProductPorts(*flotation)) {
+                    if (graph.streamsFrom(nodeId, port).size() != 1)
+                        addError(issues, IssueCode::MissingProduct, nodeId,
+                                 QStringLiteral("浮选单元的每个产品端口必须恰好有一条物流"));
+                }
+                if (!flotation->hasMiddleProduct
+                    && !graph.streamsFrom(nodeId, PortKind::MiddleProduct).isEmpty())
+                    addError(issues, IssueCode::InvalidPort, nodeId,
+                             QStringLiteral("二产品单元不能包含中间产品物流"));
+            }
         } else {
             if (graph.streamsTo(nodeId, PortKind::MergeInput).size() < 2)
                 addError(issues, IssueCode::InvalidMerge, nodeId, QStringLiteral("汇流节点至少需要两条输入流"));

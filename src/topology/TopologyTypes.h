@@ -28,6 +28,8 @@ struct FlotationNode {
     bool hasMiddleProduct{false};
 };
 
+[[nodiscard]] QVector<PortKind> flotationProductPorts(const FlotationNode& node);
+
 struct MergeNode {
     NodeId id;
 };
@@ -88,6 +90,9 @@ struct FlotationPerformance {
     ProductMetrics left;
     ProductMetrics right;
     ProductMetrics middle;
+
+    [[nodiscard]] ProductMetrics forPort(PortKind port) const;
+    void setForPort(PortKind port, ProductMetrics metrics);
 };
 
 struct ComponentCalculationResult {

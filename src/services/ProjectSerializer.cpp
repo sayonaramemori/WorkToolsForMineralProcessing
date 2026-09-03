@@ -67,6 +67,22 @@ void setError(QString* destination, const QString& message) {
     if (destination) *destination = message;
 }
 
+QString unitKindKey(UnitKind kind) {
+    switch (kind) {
+    case UnitKind::Flotation: return "flotation";
+    case UnitKind::BinarySplitter: return "binary-splitter";
+    case UnitKind::ThreeProductFlotation: return "three-product-flotation";
+    }
+    return {};
+}
+
+std::optional<UnitKind> unitKindFromKey(const QString& key) {
+    if (key == "flotation") return UnitKind::Flotation;
+    if (key == "binary-splitter") return UnitKind::BinarySplitter;
+    if (key == "three-product-flotation") return UnitKind::ThreeProductFlotation;
+    return std::nullopt;
+}
+
 bool finiteNumber(const QJsonValue& value, double& result) {
     if (!value.isDouble()) return false;
     result = value.toDouble();
@@ -212,21 +228,18 @@ bool parseProject(const QByteArray& contents, ProjectData& data, QString* error)
         item.unit.bodyHeight = bodyHeight;
         const auto kind = object.value("kind");
         if (!kind.isUndefined()) {
-            if (!kind.isString()
-                || (kind.toString() != "flotation" && kind.toString() != "binary-splitter"
-                    && kind.toString() != "three-product-flotation")) {
+            const auto parsedKind = kind.isString() ? unitKindFromKey(kind.toString()) : std::nullopt;
+            if (!parsedKind) {
                 setError(error, "流程单元类型无效"); return false;
             }
-            if (kind.toString() == "binary-splitter") {
+            item.unit.kind = *parsedKind;
+            if (*parsedKind == UnitKind::BinarySplitter) {
                 double split = 0.0;
                 if (!finiteNumber(object.value("leftSplitPercent"), split)
                     || split <= 0.0 || split >= 100.0) {
                     setError(error, "二分流器比例无效"); return false;
                 }
-                item.unit.kind = UnitKind::BinarySplitter;
                 item.unit.leftSplitPercent = split;
-            } else if (kind.toString() == "three-product-flotation") {
-                item.unit.kind = UnitKind::ThreeProductFlotation;
             }
         }
         data.units.append(std::move(item));
@@ -681,9 +694,7 @@ bool ProjectSerializer::save(const FlowsheetScene& scene, const FlowsheetDocumen
         const auto& value = unit->unit();
         QJsonObject unitObject{{"id", value.id}, {"x", value.position.x()},
             {"y", value.position.y()}, {"width", value.width}, {"bodyHeight", value.bodyHeight},
-            {"kind", value.kind == UnitKind::BinarySplitter ? "binary-splitter"
-                : value.kind == UnitKind::ThreeProductFlotation ? "three-product-flotation"
-                                                                : "flotation"}};
+            {"kind", unitKindKey(value.kind)}};
         if (value.kind == UnitKind::BinarySplitter)
             unitObject.insert("leftSplitPercent", value.leftSplitPercent);
         unitArray.append(unitObject);

@@ -432,8 +432,8 @@ void FlowsheetScene::refreshConnections() {
 void FlowsheetScene::sourceWidthChanged(FlotationUnitItem* source, double oldWidth) {
     for (auto* product : source->products()) {
         if (!product->targetUnit()) continue;
-        const double oldX = static_cast<int>(product->side()) * oldWidth / 2.0;
-        const double newX = static_cast<int>(product->side()) * source->unit().width / 2.0;
+        const double oldX = productSideDirection(product->side()) * oldWidth / 2.0;
+        const double newX = productSideDirection(product->side()) * source->unit().width / 2.0;
         const QPointF delta(newX - oldX, 0);
         // 改变上游槽宽时只平移该产品对应的下游分支，不能反向移动上游整体。
         QSet<FlotationUnitItem*> downstream;

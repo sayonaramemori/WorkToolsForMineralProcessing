@@ -93,6 +93,13 @@
 - 项目格式 v6 使用 `three-product-flotation` 保存类型；v1–v5 中不存在该类型，读取行为保持不变；
 - 修改第三输出后运行全量测试，至少覆盖三产品守恒、性能指标、中间产品连接及项目保存往返。
 
+### 产品端口扩展规则
+
+- 画布代码使用 `productSideSuffix()`、`productSideLabel()` 和 `productSideDirection()`，不要新增侧别三元表达式或手工拼接物流后缀；
+- 计算代码使用 `flotationProductPorts()` 和 `TopologyGraph::flotationProductStreams()` 遍历实际产品，保持端口与物流顺序一致；
+- 节点性能通过 `FlotationPerformance::forPort()` 和 `setForPort()` 访问，界面不直接判断列号对应哪个具名字段；
+- 项目单元类型字符串只在序列化器的 `unitKindKey()`/`unitKindFromKey()` 中维护；新增类型时必须同时扩展两向映射和往返测试。
+
 ## 闭路连接
 
 - 同一连通分量内的产品到入料连接视为回流，不能按开路连接自动移动目标单元；

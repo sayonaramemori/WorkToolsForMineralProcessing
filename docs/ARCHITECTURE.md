@@ -36,6 +36,8 @@
 
 产品物流使用稳定 ID：`<unit-id>:left`、`<unit-id>:middle`（仅三产品单元）、`<unit-id>:right`；外部入料使用 `<unit-id>:feed`；合流输出使用 `<merge-id>:output`。
 
+产品侧别的稳定后缀、中文标签和横向方向由 `ProductLineItem.h` 中的侧别辅助函数统一提供。画布适配器、连接几何和标注不得各自拼接 `:left/:middle/:right` 或复制侧别判断。
+
 ### `src/editor`
 
 画布关系和编辑命令：
@@ -72,6 +74,8 @@
 二分流器在画布连接层沿用一入两出的稳定端口 ID，但计算拓扑在 `FlotationNode::leftSplitPercent` 中携带分流约束。求解器分别为干质量和每个组分质量加入左右支路比例方程，因此支路品位保持一致；二分流器不写入浮选单元性能结果。项目格式 v5 保存节点类型和比例，读取器继续兼容 v1–v4。
 
 三产品单元通过 `PortKind::MiddleProduct` 和 `FlotationNode::hasMiddleProduct` 显式表达第三输出。守恒方程、完整性校验、节点性能及结果详情均按三个产品处理。项目格式 v6 增加 `three-product-flotation` 单元类型，并兼容读取 v1–v5。
+
+计算层使用 `flotationProductPorts()` 和 `TopologyGraph::flotationProductStreams()` 获得按左、中、右排列的实际输出集合。`FlotationPerformance::forPort()`/`setForPort()` 负责端口与性能指标映射，使求解器、校验器和结果界面共享同一产品集合定义。
 
 该模块不得依赖 `QGraphicsItem` 或窗口控件。
 

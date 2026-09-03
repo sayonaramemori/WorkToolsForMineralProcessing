@@ -16,6 +16,28 @@ class MergeJunctionItem;
 
 enum class ProductSide { Left = -1, Middle = 0, Right = 1 };
 
+[[nodiscard]] inline QString productSideSuffix(ProductSide side) {
+    switch (side) {
+    case ProductSide::Left: return ":left";
+    case ProductSide::Middle: return ":middle";
+    case ProductSide::Right: return ":right";
+    }
+    return {};
+}
+
+[[nodiscard]] inline QString productSideLabel(ProductSide side) {
+    switch (side) {
+    case ProductSide::Left: return QStringLiteral("左");
+    case ProductSide::Middle: return QStringLiteral("中");
+    case ProductSide::Right: return QStringLiteral("右");
+    }
+    return {};
+}
+
+[[nodiscard]] inline int productSideDirection(ProductSide side) {
+    return static_cast<int>(side);
+}
+
 class ProductLineItem final : public QGraphicsPathItem {
 public:
     ProductLineItem(FlotationUnitItem* sourceUnit, ProductSide side);

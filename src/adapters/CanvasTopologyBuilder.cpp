@@ -64,9 +64,7 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
                                     topology::PortRef{unit->unit().id, sourcePort}, target});
             const CanvasStreamDescriptor descriptor{
                 product->streamId(),
-                QString("单元 %1 - %2产品").arg(unit->unit().id,
-                    side == ProductSide::Left ? QString("左")
-                    : side == ProductSide::Middle ? QString("中") : QString("右")),
+                QString("单元 %1 - %2产品").arg(unit->unit().id, productSideLabel(side)),
                 product, product->mergeJunction() != nullptr};
             result.productStreams.append(descriptor);
             if (!target) {
@@ -120,9 +118,7 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
             result.requiredMeasurements.append({
                 product->streamId(),
                 QString("合流支路：单元 %1 - %2产品")
-                    .arg(product->sourceUnit()->unit().id,
-                         product->side() == ProductSide::Left ? QString("左")
-                         : product->side() == ProductSide::Middle ? QString("中") : QString("右")),
+                    .arg(product->sourceUnit()->unit().id, productSideLabel(product->side())),
                 merge});
         }
     }
@@ -131,9 +127,7 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
             result.requiredMeasurements.append({
                 product->streamId(),
                 QString("回流：单元 %1 - %2产品")
-                    .arg(product->sourceUnit()->unit().id,
-                         product->side() == ProductSide::Left ? QString("左")
-                         : product->side() == ProductSide::Middle ? QString("中") : QString("右")),
+                    .arg(product->sourceUnit()->unit().id, productSideLabel(product->side())),
                 junction});
         }
         for (auto* merge : junction->recycleMerges()) {
@@ -141,9 +135,7 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
                 result.requiredMeasurements.append({
                     product->streamId(),
                     QString("回流支路：单元 %1 - %2产品")
-                        .arg(product->sourceUnit()->unit().id,
-                             product->side() == ProductSide::Left ? QString("左")
-                             : product->side() == ProductSide::Middle ? QString("中") : QString("右")),
+                        .arg(product->sourceUnit()->unit().id, productSideLabel(product->side())),
                     junction});
             }
         }

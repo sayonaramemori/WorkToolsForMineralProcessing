@@ -20,6 +20,7 @@ public:
     [[nodiscard]] const QVector<StreamId>& streamIds() const { return m_streamOrder; }
     [[nodiscard]] QVector<StreamId> streamsFrom(const NodeId& node, PortKind port) const;
     [[nodiscard]] QVector<StreamId> streamsTo(const NodeId& node, PortKind port) const;
+    [[nodiscard]] QVector<StreamId> flotationProductStreams(const NodeId& node) const;
     [[nodiscard]] QVector<StreamId> externalFeedStreams() const;
     [[nodiscard]] QVector<StreamId> terminalProductStreams() const;
 

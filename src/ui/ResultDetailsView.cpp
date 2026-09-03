@@ -96,21 +96,26 @@ void ResultDetailsView::showStream(const QString& streamId) {
 void ResultDetailsView::showUnit(const QString& unitId, const topology::TopologyGraph& graph) {
     const auto* result = m_document.calculationResult();
     const auto feeds = graph.streamsTo(unitId, topology::PortKind::Feed);
-    const auto lefts = graph.streamsFrom(unitId, topology::PortKind::LeftProduct);
-    const auto middles = graph.streamsFrom(unitId, topology::PortKind::MiddleProduct);
-    const auto rights = graph.streamsFrom(unitId, topology::PortKind::RightProduct);
-    if (!result || !result->complete || feeds.isEmpty() || lefts.isEmpty() || rights.isEmpty()) {
+    const auto* node = graph.flotationNode(unitId);
+    const auto ports = node ? topology::flotationProductPorts(*node)
+                            : QVector<topology::PortKind>{};
+    const auto productIds = graph.flotationProductStreams(unitId);
+    if (!result || !result->complete || feeds.isEmpty() || !node
+        || productIds.size() != ports.size()) {
         showPlaceholder();
         return;
     }
-    QStringList ids{feeds.front(), lefts.front()};
-    QStringList headers{"指标", "入料", "左产品"};
-    if (!middles.isEmpty()) {
-        ids.append(middles.front());
-        headers.append("中间产品");
+    QStringList ids{feeds.front()};
+    QStringList headers{"指标", "入料"};
+    for (int index = 0; index < productIds.size(); ++index) {
+        ids.append(productIds[index]);
+        switch (ports[index]) {
+        case topology::PortKind::LeftProduct: headers.append("左产品"); break;
+        case topology::PortKind::MiddleProduct: headers.append("中间产品"); break;
+        case topology::PortKind::RightProduct: headers.append("右产品"); break;
+        default: break;
+        }
     }
-    ids.append(rights.front());
-    headers.append("右产品");
     for (const auto& id : ids) if (!result->values.contains(id)) { showPlaceholder(); return; }
 
     m_title->setText(QString("浮选单元 %1 · 平衡结果").arg(unitId));
@@ -127,8 +132,7 @@ void ResultDetailsView::showUnit(const QString& unitId, const topology::Topology
         const auto value = result->values.value(ids[column]);
         const auto performance = result->flotationPerformance.value(unitId);
         const topology::ProductMetrics local = column == 0 ? topology::ProductMetrics{100, 100}
-            : column == 1 ? performance.left
-            : (!middles.isEmpty() && column == 2) ? performance.middle : performance.right;
+                                                           : performance.forPort(ports[column - 1]);
         setNumericItem(0, column + 1, value.dryMass);
         setNumericItem(1, column + 1, local.massYieldPercent);
         const auto overall = result->relativeToExternalFeed.constFind(ids[column]);
@@ -158,9 +162,7 @@ void ResultDetailsView::showUnit(const QString& unitId, const topology::Topology
                 componentResult->flotationPerformance.value(unitId);
             const topology::ProductMetrics componentLocal = column == 0
                 ? topology::ProductMetrics{100, 100}
-                : column == 1 ? componentPerformance.left
-                : (!middles.isEmpty() && column == 2) ? componentPerformance.middle
-                                                       : componentPerformance.right;
+                : componentPerformance.forPort(ports[column - 1]);
             setNumericItem(row++, column + 1, componentLocal.recoveryPercent);
             const auto componentOverall =
                 componentResult->relativeToExternalFeed.constFind(ids[column]);
