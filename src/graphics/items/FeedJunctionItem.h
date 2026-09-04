@@ -49,7 +49,11 @@ public:
         return m_sourceAnnotationAnchors.value(streamId, m_junctionPosition);
     }
     [[nodiscard]] const QHash<QString, double>& manualRouteXs() const { return m_manualRouteXs; }
+    [[nodiscard]] const QHash<QString, double>& manualRouteYs() const { return m_manualRouteYs; }
     void setManualRouteX(const QString& streamId, std::optional<double> x);
+    void setManualRouteY(const QString& streamId, std::optional<double> y);
+    void resetManualRoutes();
+    [[nodiscard]] QString selectedSourceStreamId() const { return m_selectedStreamId; }
     [[nodiscard]] QPointF recycleAnchor() const { return m_recycleAnchor; }
     [[nodiscard]] QPointF externalFeedAnchor() const { return m_externalFeedAnchor; }
     [[nodiscard]] QPointF outputAnchor() const { return m_outputAnchor; }
@@ -80,14 +84,22 @@ private:
     QPointF m_externalFeedAnchor;
     QPointF m_outputAnchor;
     QPainterPath m_linePath;
+    QPainterPath m_commonPath;
     QPainterPath m_arrowPath;
+    QHash<QString, QPainterPath> m_sourcePaths;
     QHash<QString, QPointF> m_sourceAnnotationAnchors;
+    QHash<QString, QPointF> m_verticalHandles;
+    QHash<QString, QPointF> m_horizontalHandles;
     QHash<QString, double> m_manualRouteXs;
+    QHash<QString, double> m_manualRouteYs;
+    QString m_selectedStreamId;
     QString m_editingStreamId;
+    enum class EditingAxis { None, Horizontal, Vertical };
+    EditingAxis m_editingAxis{EditingAxis::None};
 
     [[nodiscard]] QPointF processSourceAnchor() const;
     void appendSourcePath(QPainterPath& path, const QString& streamId, const QPointF& start,
-                          const QPointF& end, bool routeLeft, int routeIndex);
+                          const QPointF& end, bool routeLeft, int routeIndex, int entryIndex);
 };
 
 } // namespace afs

@@ -50,7 +50,9 @@
 
 ### 正交布线与跨线桥
 
-人工路线只保存可稳定重建路径的段参数：`ProductLineItem::manualRouteY`、`MergeJunctionItem::manualMergeY` 和 `FeedJunctionItem::manualRouteXs`。端点和其余折线由图元根据当前拓扑生成，避免移动流程后出现脱离端口的绝对坐标路径。项目格式 v4 保存这些可选参数，并兼容读取 v1–v3。
+人工路线只保存可稳定重建路径的段参数：`ProductLineItem::manualRouteY`、`MergeJunctionItem::manualMergeY`，以及 `FeedJunctionItem` 按来源物流保存的 `manualRouteXs/manualRouteYs`。端点和其余折线由图元根据当前拓扑生成，避免移动流程后出现脱离端口的绝对坐标路径。项目格式 v7 保存回流支路汇入高度，并兼容读取仅含横向走廊的旧项目。
+
+`FeedJunctionItem` 为每个来源保留独立路径、横向与纵向控制柄及当前选中来源。选中某一来源时仅强调该路径，弱化同一汇合点的其他路径及其他回流节点；命中检测基于实际路径轮廓，而不是只比较横坐标。公共入料段仍只绘制一次。
 
 `FlowsheetScene::drawForeground` 从可见物流图元的正交线段计算水平—垂直交点，在水平线一侧绘制跨线桥。桥形属于纯视图层，不生成端口、节点或物料流，也不参与拓扑计算。
 

@@ -23,7 +23,7 @@
 namespace afs {
 namespace {
 
-constexpr int kFormatVersion = 6;
+constexpr int kFormatVersion = 7;
 constexpr qint64 kMaximumProjectBytes = 64 * 1024 * 1024;
 
 struct UnitData { FlotationUnit unit; };
@@ -43,6 +43,7 @@ struct FeedJunctionData {
     QVector<QString> sourceTypes;
     QVector<QString> sourceIds;
     QVector<std::optional<double>> routeXs;
+    QVector<std::optional<double>> routeYs;
     QString targetUnitId;
     QString processSourceType;
     QString processSourceId;
@@ -328,6 +329,7 @@ bool parseProject(const QByteArray& contents, ProjectData& data, QString* error)
                 item.sourceIds.append(source);
                 bool routeValid = true;
                 item.routeXs.append(readOptionalNumber(sourceObject, "routeX", routeValid));
+                item.routeYs.append(readOptionalNumber(sourceObject, "routeY", routeValid));
                 if (!routeValid) { setError(error, "入料汇合支路路线无效"); return false; }
             }
         } else {
@@ -341,6 +343,7 @@ bool parseProject(const QByteArray& contents, ProjectData& data, QString* error)
             item.sourceTypes.append(type);
             item.sourceIds.append(source);
             item.routeXs.append(std::nullopt);
+            item.routeYs.append(std::nullopt);
         }
         if (item.sourceIds.isEmpty()) {
             setError(error, "入料汇合至少需要一个附加来源"); return false;
@@ -645,6 +648,11 @@ bool applyProject(const ProjectData& data, FlowsheetScene& scene, QString* error
                     ? item.sourceIds[index] : item.sourceIds[index] + ":output";
                 junction->setManualRouteX(routeId, item.routeXs[index]);
             }
+            if (index < item.routeYs.size() && item.routeYs[index]) {
+                const QString routeId = item.sourceTypes[index] == "product"
+                    ? item.sourceIds[index] : item.sourceIds[index] + ":output";
+                junction->setManualRouteY(routeId, item.routeYs[index]);
+            }
         }
         feedIds.insert(item.id);
     }
@@ -723,12 +731,16 @@ bool ProjectSerializer::save(const FlowsheetScene& scene, const FlowsheetDocumen
             QJsonObject source{{"type", "product"}, {"source", product->streamId()}};
             if (feed->manualRouteXs().contains(product->streamId()))
                 source.insert("routeX", feed->manualRouteXs().value(product->streamId()));
+            if (feed->manualRouteYs().contains(product->streamId()))
+                source.insert("routeY", feed->manualRouteYs().value(product->streamId()));
             sources.append(source);
         }
         for (auto* merge : feed->recycleMerges()) {
             QJsonObject source{{"type", "merge"}, {"source", merge->id()}};
             if (feed->manualRouteXs().contains(merge->outputStreamId()))
                 source.insert("routeX", feed->manualRouteXs().value(merge->outputStreamId()));
+            if (feed->manualRouteYs().contains(merge->outputStreamId()))
+                source.insert("routeY", feed->manualRouteYs().value(merge->outputStreamId()));
             sources.append(source);
         }
         QJsonObject object{{"id", feed->id()}, {"sources", sources},

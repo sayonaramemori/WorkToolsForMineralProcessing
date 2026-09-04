@@ -38,6 +38,7 @@ int main(int argc, char** argv) {
     upper->products().at(1)->setManualRouteY(245.0);
     merge->setManualMergeY(515.0);
     feed->setManualRouteX(merge->outputStreamId(), 735.0);
+    feed->setManualRouteY(merge->outputStreamId(), 145.0);
 
     FlowsheetDocument sourceDocument;
     sourceDocument.setDryMass("upper-unused", 12.5);
@@ -109,6 +110,9 @@ int main(int argc, char** argv) {
         || std::abs(*loadedMerge->manualMergeY() - 515.0) > 0.001
         || !loadedFeed->manualRouteXs().contains(loadedMerge->outputStreamId())
         || std::abs(loadedFeed->manualRouteXs().value(loadedMerge->outputStreamId()) - 735.0)
+            > 0.001
+        || !loadedFeed->manualRouteYs().contains(loadedMerge->outputStreamId())
+        || std::abs(loadedFeed->manualRouteYs().value(loadedMerge->outputStreamId()) - 145.0)
             > 0.001) return 35;
     if (std::abs(loadedUpper->unit().position.x() + 120) > 0.001
         || std::abs(loadedUpper->unit().width - 420) > 0.001

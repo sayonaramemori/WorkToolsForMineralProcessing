@@ -47,7 +47,9 @@ QString AnnotationManager::selectedLineStreamId(QGraphicsItem** owner) const {
             if (owner) *owner = input; return input->unit()->unit().id + ":feed";
         }
         if (auto* feed = dynamic_cast<FeedJunctionItem*>(item)) {
-            if (owner) *owner = feed; return feed->outputStreamId();
+            if (owner) *owner = feed;
+            return feed->selectedSourceStreamId().isEmpty()
+                ? feed->outputStreamId() : feed->selectedSourceStreamId();
         }
     }
     return {};
@@ -96,7 +98,7 @@ bool AnnotationManager::eventFilter(QObject* watched, QEvent* event) {
         else if (auto* merge = dynamic_cast<MergeJunctionItem*>(owner); merge && merge->manualMergeY())
             resetRoute = menu.addAction(tr("恢复自动布线"));
         else if (auto* feed = dynamic_cast<FeedJunctionItem*>(owner);
-                 feed && !feed->manualRouteXs().isEmpty())
+                 feed && (!feed->manualRouteXs().isEmpty() || !feed->manualRouteYs().isEmpty()))
             resetRoute = menu.addAction(tr("恢复全部支路自动布线"));
         auto* selectedAction = menu.exec(context->screenPos());
         if (!selectedAction) return true;
@@ -106,8 +108,7 @@ bool AnnotationManager::eventFilter(QObject* watched, QEvent* event) {
             else if (auto* merge = dynamic_cast<MergeJunctionItem*>(owner))
                 merge->setManualMergeY(std::nullopt);
             else if (auto* feed = dynamic_cast<FeedJunctionItem*>(owner)) {
-                const auto ids = feed->manualRouteXs().keys();
-                for (const auto& id : ids) feed->setManualRouteX(id, std::nullopt);
+                feed->resetManualRoutes();
             }
             m_scene.notifyRouteChanged();
         } else if (selectedAction == addReagent) {
