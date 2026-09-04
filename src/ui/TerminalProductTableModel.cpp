@@ -71,8 +71,12 @@ QString TerminalProductTableModel::componentIdForColumn(int column) const {
 QVariant TerminalProductTableModel::data(const QModelIndex& index, int role) const {
     if (!index.isValid() || index.row() >= m_streams.size()) return {};
     const auto& stream = m_streams[index.row()];
-    const bool isMeasurement = m_measurementStreamIds.contains(stream.streamId);
+    const bool isEditableMeasurement = m_editableStreamIds.contains(stream.streamId);
     const auto measurement = m_document.measurement(stream.streamId);
+    bool hasAnyMeasurement = measurement.dryMass.has_value();
+    for (const auto& componentId : m_document.componentIds())
+        hasAnyMeasurement = hasAnyMeasurement || measurement.grade(componentId).has_value();
+    const bool measurementComplete = measurement.completeFor(m_document.componentIds());
     const auto* calculation = m_document.calculationResult();
     const bool hasCalculatedValue = calculation && calculation->values.contains(stream.streamId);
     const auto calculated = hasCalculatedValue ? calculation->values.value(stream.streamId)
@@ -82,15 +86,16 @@ QVariant TerminalProductTableModel::data(const QModelIndex& index, int role) con
         case NameColumn: return stream.displayName;
         case ProductNameColumn: return m_document.productName(stream.streamId);
         case MassColumn:
-            return isMeasurement ? (measurement.dryMass ? QVariant(*measurement.dryMass) : QVariant())
-                                 : (hasCalculatedValue ? QVariant(calculated.dryMass) : QVariant());
+            if (measurement.dryMass) return *measurement.dryMass;
+            return role == Qt::DisplayRole && hasCalculatedValue
+                ? QVariant(calculated.dryMass) : QVariant();
         default: break;
         }
         if (isGradeColumn(index.column())) {
             const QString componentId = componentIdForColumn(index.column());
             const auto grade = measurement.grade(componentId);
-            if (isMeasurement) return grade ? QVariant(*grade) : QVariant();
-            if (calculation) {
+            if (grade) return *grade;
+            if (role == Qt::DisplayRole && calculation) {
                 const auto component = calculation->components.constFind(componentId);
                 if (component != calculation->components.cend()
                     && component->values.contains(stream.streamId))
@@ -108,13 +113,14 @@ QVariant TerminalProductTableModel::data(const QModelIndex& index, int role) con
             return stream.mergeBranch && share ? QVariant(*share) : QVariant();
         }
         if (index.column() == statusColumn())
-            return isMeasurement ? (measurement.completeFor(m_document.componentIds()) ? QString("已填写") : QString("待填写"))
-                                 : (hasCalculatedValue ? QString("计算值") : QString("待计算"));
+            return measurementComplete ? QString("实测值")
+                : hasAnyMeasurement ? QString("填写中")
+                : hasCalculatedValue ? QString("计算值") : QString("可填写");
         return {};
     }
     if (role == Qt::TextAlignmentRole && index.column() != NameColumn)
         return int(Qt::AlignCenter);
-    if (role == Qt::BackgroundRole && isMeasurement) {
+    if (role == Qt::BackgroundRole && isEditableMeasurement && hasAnyMeasurement) {
         const bool missingRequiredValue =
             (index.column() == MassColumn && !measurement.dryMass)
             || (isGradeColumn(index.column())
@@ -124,14 +130,12 @@ QVariant TerminalProductTableModel::data(const QModelIndex& index, int role) con
             return QBrush(dark ? QColor("#6a3f2b") : QColor("#ffd2b3"));
         }
     }
-    if (role == CompletionRole) return !isMeasurement || measurement.completeFor(m_document.componentIds());
+    if (role == CompletionRole) return measurementComplete;
     if (role == Qt::ForegroundRole && index.column() == statusColumn())
-        return QBrush(isMeasurement
-            ? (measurement.completeFor(m_document.componentIds()) ? QColor(35, 145, 70) : QColor(210, 125, 25))
-            : (hasCalculatedValue ? QColor(40, 110, 180) : QColor(120, 120, 120)));
+        return QBrush(measurementComplete ? QColor(35, 145, 70)
+            : hasAnyMeasurement ? QColor(210, 125, 25)
+            : hasCalculatedValue ? QColor(40, 110, 180) : QColor(120, 120, 120));
     if (role == Qt::ToolTipRole) {
-        if (!isMeasurement && (index.column() == MassColumn || isGradeColumn(index.column())))
-            return QString("中间产品数据由平衡计算生成，不可手动编辑");
         if (index.column() == MassColumn) return QString("请输入非负干质量；留空表示未知");
         if (isGradeColumn(index.column())) return QString("请输入 0–100 之间的组分品位；留空表示未知");
         if (index.column() == dryMassShareColumn() || isComponentShareColumn(index.column()))
@@ -166,7 +170,7 @@ Qt::ItemFlags TerminalProductTableModel::flags(const QModelIndex& index) const {
     if (index.column() == ProductNameColumn
         || (m_streams[index.row()].mergeBranch
             && (index.column() == dryMassShareColumn() || isComponentShareColumn(index.column())))
-        || (m_measurementStreamIds.contains(m_streams[index.row()].streamId)
+        || (m_editableStreamIds.contains(m_streams[index.row()].streamId)
             && (index.column() == MassColumn || isGradeColumn(index.column()))))
         result |= Qt::ItemIsEditable;
     return result;
@@ -182,7 +186,7 @@ bool TerminalProductTableModel::setData(const QModelIndex& index, const QVariant
         || isComponentShareColumn(index.column());
     if (index.column() != MassColumn && !isGradeColumn(index.column()) && !shareColumn) return false;
     if (shareColumn && !m_streams[index.row()].mergeBranch) return false;
-    if (!shareColumn && !m_measurementStreamIds.contains(m_streams[index.row()].streamId)) return false;
+    if (!shareColumn && !m_editableStreamIds.contains(m_streams[index.row()].streamId)) return false;
     const QString text = value.toString().trimmed();
     std::optional<double> number;
     if (!text.isEmpty()) {
@@ -211,10 +215,10 @@ void TerminalProductTableModel::setStreams(QVector<CanvasStreamDescriptor> strea
 }
 
 void TerminalProductTableModel::setStreams(QVector<CanvasStreamDescriptor> streams,
-                                           QSet<QString> measurementStreamIds) {
+                                           QSet<QString> editableStreamIds) {
     beginResetModel();
     m_streams = std::move(streams);
-    m_measurementStreamIds = std::move(measurementStreamIds);
+    m_editableStreamIds = std::move(editableStreamIds);
     endResetModel();
 }
 
@@ -231,8 +235,7 @@ int TerminalProductTableModel::rowForGraphicsItem(const QGraphicsItem* item) con
 int TerminalProductTableModel::completedCount() const {
     int result = 0;
     for (const auto& stream : m_streams)
-        if (m_measurementStreamIds.contains(stream.streamId)
-            && m_document.measurement(stream.streamId).completeFor(m_document.componentIds())) ++result;
+        if (m_document.measurement(stream.streamId).completeFor(m_document.componentIds())) ++result;
     return result;
 }
 

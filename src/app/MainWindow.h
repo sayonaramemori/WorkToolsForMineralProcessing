@@ -7,6 +7,7 @@ class QAction;
 class QGraphicsScene;
 class QComboBox;
 class QCloseEvent;
+class QLabel;
 
 namespace afs {
 
@@ -36,6 +37,7 @@ private:
     int m_nextUnitId{1};
     QString m_projectPath;
     QComboBox* m_scenarioCombo{nullptr};
+    QLabel* m_selectionStatusLabel{nullptr};
 
     void addFlotationUnit();
     void addThreeProductUnit();
@@ -53,6 +55,7 @@ private:
     void refreshProductNames();
     void editAnnotationTextStyle();
     void syncCanvasSelectionToTable();
+    void refreshSelectionStatus();
     void calculateFlowsheet();
     void refreshSelectedResult();
     void refreshScenarioUi();

@@ -58,7 +58,7 @@ public:
         base.text.clear();
         QStyledItemDelegate::paint(painter, base, index);
         const QString text = index.data(Qt::DisplayRole).toString();
-        const bool ready = text == QStringLiteral("已填写")
+        const bool ready = text == QStringLiteral("实测值")
             || text == QStringLiteral("计算值");
         const QColor foreground = ready ? QColor("#17864b") : QColor("#a86400");
         QColor background = ready ? QColor("#dff5e8") : QColor("#fff0d6");
@@ -215,9 +215,9 @@ void TerminalProductDock::applyPanelStyle() {
 }
 
 void TerminalProductDock::setSnapshot(CanvasTopologySnapshot snapshot) {
-    QSet<QString> requiredIds;
-    for (const auto& stream : snapshot.requiredMeasurements) requiredIds.insert(stream.streamId);
-    m_model->setStreams(std::move(snapshot.reportStreams), std::move(requiredIds));
+    QSet<QString> editableIds;
+    for (const auto& stream : snapshot.reportStreams) editableIds.insert(stream.streamId);
+    m_model->setStreams(std::move(snapshot.reportStreams), std::move(editableIds));
 }
 
 void TerminalProductDock::selectGraphicsItem(const QGraphicsItem* item) {
@@ -249,15 +249,14 @@ void TerminalProductDock::setScenarioName(const QString& name) {
 }
 
 void TerminalProductDock::updateSummary() {
-    const int total = m_model->requiredCount();
     const int complete = m_model->completedCount();
-    m_progressLabel->setText(total == 0 ? "暂无物流" : QString("%1 / %2 完成").arg(complete).arg(total));
+    m_progressLabel->setText(m_model->rowCount() == 0
+        ? "暂无物流" : QString("已录入 %1 条").arg(complete));
 }
 
 void TerminalProductDock::updateCalculationState() {
-    const int total = m_model->requiredCount();
-    const bool inputsComplete = total > 0 && m_model->completedCount() == total;
-    m_calculateButton->setEnabled(inputsComplete);
+    const bool hasCompleteInput = m_model->completedCount() > 0;
+    m_calculateButton->setEnabled(hasCompleteInput);
     const auto* result = m_document.calculationResult();
     if (result && result->complete) {
         m_calculationStatus->setText(result->fullySolved
@@ -268,8 +267,9 @@ void TerminalProductDock::updateCalculationState() {
         m_calculationStatus->setText(QString("计算未完成 · %1 个问题").arg(result->issues.size()));
         m_calculateButton->setText("重新计算");
     } else {
-        m_calculationStatus->setText(inputsComplete ? "所需物流数据已完整，可以开始计算"
-                                                    : "请先填写终端产品、合流支路及回流支路的质量和各组分品位");
+        m_calculationStatus->setText(hasCompleteInput
+            ? "可以尝试计算 · 是否足够将由方程组自动判断"
+            : "可填写总入料或任意产品物流的质量和各组分品位");
         m_calculateButton->setText("计算");
     }
 }

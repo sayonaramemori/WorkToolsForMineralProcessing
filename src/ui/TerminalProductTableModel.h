@@ -26,11 +26,11 @@ public:
 
     void setStreams(QVector<CanvasStreamDescriptor> streams);
     void setStreams(QVector<CanvasStreamDescriptor> streams,
-                    QSet<QString> measurementStreamIds);
+                    QSet<QString> editableStreamIds);
     [[nodiscard]] const CanvasStreamDescriptor* streamAt(int row) const;
     [[nodiscard]] int rowForGraphicsItem(const QGraphicsItem* item) const;
     [[nodiscard]] int completedCount() const;
-    [[nodiscard]] int requiredCount() const { return m_measurementStreamIds.size(); }
+    [[nodiscard]] int editableCount() const { return m_editableStreamIds.size(); }
     [[nodiscard]] int gradeColumn(const QString& componentId) const;
     [[nodiscard]] int dryMassShareColumn() const;
     [[nodiscard]] int componentShareColumn(const QString& componentId) const;
@@ -42,7 +42,7 @@ public:
 private:
     FlowsheetDocument& m_document;
     QVector<CanvasStreamDescriptor> m_streams;
-    QSet<QString> m_measurementStreamIds;
+    QSet<QString> m_editableStreamIds;
 };
 
 } // namespace afs

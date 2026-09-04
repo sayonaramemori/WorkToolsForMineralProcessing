@@ -903,7 +903,7 @@ bool ProjectSerializer::load(FlowsheetScene& scene, FlowsheetDocument& document,
                     else if (measurement.dryMassSharePercent || share)
                         allocations.insert(stream.streamId, {-1.0, -1.0});
                 }
-                for (const auto& stream : snapshot.requiredMeasurements) {
+                for (const auto& stream : snapshot.reportStreams) {
                     const auto measurement = scenario.measurements.value(stream.streamId);
                     const auto grade = measurement.grade(component.id);
                     if (!measurement.dryMass || !grade) continue;

@@ -100,6 +100,9 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
                                 topology::PortRef{junction->id(), topology::PortKind::MergeOutput},
                                 topology::PortRef{junction->targetUnit()->unit().id,
                                                   topology::PortKind::Feed}});
+        result.reportStreams.append({
+            junction->outputStreamId(),
+            QString("单元 %1 汇合入料").arg(junction->targetUnit()->unit().id), junction});
     }
     result.reportStreams += result.productStreams;
     for (const auto& terminal : result.terminalProducts) {

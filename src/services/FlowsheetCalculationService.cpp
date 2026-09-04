@@ -24,7 +24,7 @@ topology::CalculationResult FlowsheetCalculationService::calculate(
             else if (measurement.dryMassSharePercent || componentShare)
                 allocations.insert(stream.streamId, {-1.0, -1.0});
         }
-        for (const auto& stream : snapshot.requiredMeasurements) {
+        for (const auto& stream : snapshot.reportStreams) {
             const auto measurement = document.measurement(stream.streamId);
             const auto grade = measurement.grade(component.id);
             if (!measurement.dryMass || !grade) continue;

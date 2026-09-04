@@ -63,13 +63,14 @@ int main(int argc, char** argv) {
     FlowsheetDocument document;
     TerminalProductTableModel model(document);
     model.setStreams(connected.terminalProducts);
-    if (!model.data(model.index(0, TerminalProductTableModel::MassColumn),
-                    Qt::BackgroundRole).canConvert<QBrush>()
-        || !model.data(model.index(0, TerminalProductTableModel::GradeColumn),
-                       Qt::BackgroundRole).canConvert<QBrush>()) return 39;
-    if (!model.setData(model.index(0, TerminalProductTableModel::MassColumn), "12.5", Qt::EditRole)) return 7;
     if (model.data(model.index(0, TerminalProductTableModel::MassColumn),
-                   Qt::BackgroundRole).isValid()) return 40;
+                   Qt::BackgroundRole).isValid()
+        || model.data(model.index(0, TerminalProductTableModel::GradeColumn),
+                      Qt::BackgroundRole).isValid()) return 39;
+    if (!model.setData(model.index(0, TerminalProductTableModel::MassColumn), "12.5", Qt::EditRole)) return 7;
+    if (model.data(model.index(0, TerminalProductTableModel::MassColumn), Qt::BackgroundRole).isValid()
+        || !model.data(model.index(0, TerminalProductTableModel::GradeColumn),
+                       Qt::BackgroundRole).canConvert<QBrush>()) return 40;
     if (!model.setData(model.index(0, TerminalProductTableModel::GradeColumn), "8.2", Qt::EditRole)) return 8;
     if (model.data(model.index(0, TerminalProductTableModel::GradeColumn),
                    Qt::BackgroundRole).isValid()) return 41;
@@ -91,19 +92,21 @@ int main(int argc, char** argv) {
     if (!model.setData(model.index(0, zincGradeColumn), "1.6", Qt::EditRole)
         || !document.measurement(id).completeFor(document.componentIds())) return 52;
 
-    QSet<QString> requiredIds;
-    for (const auto& product : connected.terminalProducts) requiredIds.insert(product.streamId);
-    model.setStreams(connected.reportStreams, requiredIds);
+    QSet<QString> editableIds;
+    for (const auto& product : connected.reportStreams) editableIds.insert(product.streamId);
+    model.setStreams(connected.reportStreams, editableIds);
     const int intermediateRow = model.rowForGraphicsItem(stream);
     if (intermediateRow < 0
         || model.data(model.index(intermediateRow, TerminalProductTableModel::MassColumn),
                       Qt::BackgroundRole).isValid()
-        || model.flags(model.index(intermediateRow, TerminalProductTableModel::MassColumn))
+        || !model.flags(model.index(intermediateRow, TerminalProductTableModel::MassColumn))
             .testFlag(Qt::ItemIsEditable)
         || !model.flags(model.index(intermediateRow, TerminalProductTableModel::ProductNameColumn))
             .testFlag(Qt::ItemIsEditable)
-        || model.setData(model.index(intermediateRow, TerminalProductTableModel::MassColumn),
-                         "99", Qt::EditRole)) return 37;
+        || !model.setData(model.index(intermediateRow, TerminalProductTableModel::MassColumn),
+                          "99", Qt::EditRole)
+        || !model.data(model.index(intermediateRow, TerminalProductTableModel::GradeColumn),
+                       Qt::BackgroundRole).canConvert<QBrush>()) return 37;
 
     if (!scene.disconnectProduct(stream)) return 11;
     auto disconnected = CanvasTopologyBuilder::build(scene);
@@ -141,6 +144,18 @@ int main(int argc, char** argv) {
                     - 1.4) > 0.001
         || std::abs(result.components["component-2"].values["calculation:feed"].gradePercent()
                     - 0.65) > 0.001) return 50;
+
+    FlowsheetDocument flexibleDocument;
+    flexibleDocument.setDryMass("calculation:feed", 100.0);
+    flexibleDocument.setGradePercent("calculation:feed", 2.0);
+    flexibleDocument.setDryMass("calculation:left", 30.0);
+    flexibleDocument.setGradePercent("calculation:left", 5.0);
+    const auto flexibleResult = FlowsheetCalculationService::calculate(
+        calculationScene, flexibleDocument);
+    if (!flexibleResult.complete || !flexibleResult.fullySolved
+        || std::abs(flexibleResult.values["calculation:right"].dryMass - 70.0) > 0.001
+        || std::abs(flexibleResult.values["calculation:right"].gradePercent()
+                    - (0.5 / 70.0 * 100.0)) > 0.001) return 53;
 
     FlowsheetDocument resultDocument;
     TerminalProductDock resultDock(resultDocument);
@@ -262,7 +277,7 @@ int main(int argc, char** argv) {
     TerminalProductDock closedDock(closedDocument);
     closedDock.setSnapshot(closedSnapshot);
     if (closedDock.model()->rowCount() != closedSnapshot.reportStreams.size()
-        || closedDock.model()->requiredCount() != 3) return 27;
+        || closedDock.model()->editableCount() != closedSnapshot.reportStreams.size()) return 27;
     closedDocument.setDryMass("closed-upper:left", 10.0);
     closedDocument.setGradePercent("closed-upper:left", 5.0);
     closedDocument.setDryMass("closed-lower:right", 40.0);

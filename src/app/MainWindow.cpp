@@ -60,6 +60,11 @@ MainWindow::MainWindow() {
     m_view->setViewportUpdateMode(QGraphicsView::MinimalViewportUpdate);
     setCentralWidget(m_view);
 
+    m_selectionStatusLabel = new QLabel(tr("当前未选中浮选单元"), this);
+    m_selectionStatusLabel->setMinimumWidth(260);
+    m_selectionStatusLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    statusBar()->addPermanentWidget(m_selectionStatusLabel, 1);
+
     m_document = new FlowsheetDocument(this);
     m_annotationManager = new AnnotationManager(
         *static_cast<FlowsheetScene*>(m_scene), *m_document, this);
@@ -464,6 +469,32 @@ void MainWindow::syncCanvasSelectionToTable() {
     const auto selected = m_scene->selectedItems();
     m_terminalDock->selectGraphicsItem(selected.isEmpty() ? nullptr : selected.first());
     refreshSelectedResult();
+    refreshSelectionStatus();
+}
+
+void MainWindow::refreshSelectionStatus() {
+    FlotationUnitItem* selectedUnit = nullptr;
+    int selectedUnitCount = 0;
+    for (auto* item : m_scene->selectedItems()) {
+        if (auto* unit = dynamic_cast<FlotationUnitItem*>(item)) {
+            if (!selectedUnit) selectedUnit = unit;
+            ++selectedUnitCount;
+        }
+    }
+    if (!selectedUnit) {
+        m_selectionStatusLabel->setText(tr("当前未选中浮选单元"));
+        return;
+    }
+    QString type;
+    switch (selectedUnit->unit().kind) {
+    case UnitKind::Flotation: type = tr("浮选单元"); break;
+    case UnitKind::BinarySplitter: type = tr("二分流器"); break;
+    case UnitKind::ThreeProductFlotation: type = tr("三产品浮选单元"); break;
+    }
+    QString text = tr("当前已选中：“%1 %2”").arg(type, selectedUnit->unit().id);
+    if (selectedUnitCount > 1)
+        text += tr("（共 %1 个单元）").arg(selectedUnitCount);
+    m_selectionStatusLabel->setText(text);
 }
 
 void MainWindow::calculateFlowsheet() {
