@@ -43,7 +43,8 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
                                     topology::PortRef{unit->unit().id, topology::PortKind::Feed}});
             result.reportStreams.append({
                 unit->unit().id + ":feed",
-                QString("合计（单元 %1 入料）").arg(unit->unit().id), unit->inputLine()});
+                QString("合计（单元 %1 入料）").arg(unit->unit().id), unit->inputLine(),
+                false, false, true});
         }
         const auto products = unit->products();
         for (int index = 0; index < products.size(); ++index) {
@@ -62,10 +63,14 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
             }
             result.graph.addStream({product->streamId(),
                                     topology::PortRef{unit->unit().id, sourcePort}, target});
-            const CanvasStreamDescriptor descriptor{
+            CanvasStreamDescriptor descriptor{
                 product->streamId(),
                 QString("单元 %1 - %2产品").arg(unit->unit().id, productSideLabel(side)),
                 product, product->mergeJunction() != nullptr};
+            descriptor.terminal = !target.has_value();
+            descriptor.feed = target.has_value() && target->port == topology::PortKind::Feed;
+            descriptor.recycle = product->feedJunction()
+                || (product->mergeJunction() && product->mergeJunction()->feedJunction());
             result.productStreams.append(descriptor);
             if (!target) {
                 result.terminalProducts.append(descriptor);
@@ -82,8 +87,11 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
         }
         result.graph.addStream({merge->outputStreamId(),
                                 topology::PortRef{merge->id(), topology::PortKind::MergeOutput}, target});
-        const CanvasStreamDescriptor descriptor{
+        CanvasStreamDescriptor descriptor{
             merge->outputStreamId(), QString("合流产品 · %1").arg(merge->id()), merge};
+        descriptor.terminal = !target.has_value();
+        descriptor.feed = target.has_value() && target->port == topology::PortKind::Feed;
+        descriptor.recycle = merge->feedJunction() != nullptr;
         result.productStreams.append(descriptor);
         if (!target)
             result.terminalProducts.append(descriptor);
@@ -94,7 +102,8 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
                                     topology::PortRef{junction->id(), topology::PortKind::MergeInput}});
             result.reportStreams.append({
                 junction->externalFeedStreamId(),
-                QString("合计（单元 %1 外部入料）").arg(junction->targetUnit()->unit().id), junction});
+                QString("合计（单元 %1 外部入料）").arg(junction->targetUnit()->unit().id),
+                junction, false, false, true});
         }
         result.graph.addStream({junction->outputStreamId(),
                                 topology::PortRef{junction->id(), topology::PortKind::MergeOutput},
@@ -102,7 +111,8 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
                                                   topology::PortKind::Feed}});
         result.reportStreams.append({
             junction->outputStreamId(),
-            QString("单元 %1 汇合入料").arg(junction->targetUnit()->unit().id), junction});
+            QString("单元 %1 汇合入料").arg(junction->targetUnit()->unit().id),
+            junction, false, false, true});
     }
     result.reportStreams += result.productStreams;
     for (const auto& terminal : result.terminalProducts) {

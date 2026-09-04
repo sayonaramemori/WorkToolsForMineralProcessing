@@ -15,6 +15,9 @@ struct CanvasStreamDescriptor {
     QString displayName;
     QGraphicsItem* graphicsItem{nullptr};
     bool mergeBranch{false};
+    bool terminal{false};
+    bool feed{false};
+    bool recycle{false};
 };
 
 struct CanvasTopologySnapshot {

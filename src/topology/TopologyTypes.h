@@ -109,6 +109,8 @@ struct CalculationResult {
     QHash<StreamId, ProductMetrics> relativeToExternalFeed;
     QHash<QString, ComponentCalculationResult> components;
     QVector<TopologyIssue> issues;
+    int dryMassDegreesOfFreedom{0};
+    int componentMassDegreesOfFreedom{0};
     // complete means the overall balance is available; fullySolved additionally
     // means every internal stream has a unique value.
     bool complete{false};

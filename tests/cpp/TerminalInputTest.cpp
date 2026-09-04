@@ -16,6 +16,8 @@
 #include <QApplication>
 #include <QBrush>
 #include <QTableWidget>
+#include <QTableView>
+#include <QComboBox>
 #include <QGraphicsSimpleTextItem>
 #include <QKeyEvent>
 
@@ -153,9 +155,30 @@ int main(int argc, char** argv) {
     const auto flexibleResult = FlowsheetCalculationService::calculate(
         calculationScene, flexibleDocument);
     if (!flexibleResult.complete || !flexibleResult.fullySolved
+        || flexibleResult.dryMassDegreesOfFreedom != 0
+        || flexibleResult.componentMassDegreesOfFreedom != 0
         || std::abs(flexibleResult.values["calculation:right"].dryMass - 70.0) > 0.001
         || std::abs(flexibleResult.values["calculation:right"].gradePercent()
                     - (0.5 / 70.0 * 100.0)) > 0.001) return 53;
+
+    FlowsheetDocument filterDocument;
+    filterDocument.setDryMass("calculation:feed", 100.0);
+    filterDocument.setGradePercent("calculation:feed", 2.0);
+    const auto insufficient = FlowsheetCalculationService::calculate(
+        calculationScene, filterDocument);
+    if (insufficient.dryMassDegreesOfFreedom != 1
+        || insufficient.componentMassDegreesOfFreedom != 1) return 54;
+    TerminalProductDock filterDock(filterDocument);
+    filterDock.setSnapshot(calculationSnapshot);
+    auto* filterCombo = filterDock.findChild<QComboBox*>("streamFilterCombo");
+    auto* filterTable = filterDock.findChild<QTableView*>("terminalProductTable");
+    if (!filterCombo || !filterTable || filterTable->model()->rowCount() != 3) return 55;
+    filterCombo->setCurrentText("已填写");
+    if (filterTable->model()->rowCount() != 1) return 56;
+    filterCombo->setCurrentText("终端产品");
+    if (filterTable->model()->rowCount() != 2) return 57;
+    filterCombo->setCurrentText("浮选入料");
+    if (filterTable->model()->rowCount() != 1) return 58;
 
     FlowsheetDocument resultDocument;
     TerminalProductDock resultDock(resultDocument);

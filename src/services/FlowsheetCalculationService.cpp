@@ -4,11 +4,18 @@
 #include "editor/FlowsheetScene.h"
 #include "topology/OpenCircuitCalculator.h"
 
+#include <algorithm>
+
 namespace afs {
 
 topology::CalculationResult FlowsheetCalculationService::calculate(
     const FlowsheetScene& scene, const FlowsheetDocument& document) {
     const auto snapshot = CanvasTopologyBuilder::build(scene);
+    return calculate(snapshot, document);
+}
+
+topology::CalculationResult FlowsheetCalculationService::calculate(
+    const CanvasTopologySnapshot& snapshot, const FlowsheetDocument& document) {
     topology::CalculationResult combined;
     bool first = true;
     for (const auto& component : document.components()) {
@@ -38,6 +45,10 @@ topology::CalculationResult FlowsheetCalculationService::calculate(
             result.relativeToExternalFeed, result.complete, result.fullySolved});
         if (!result.complete) combined.complete = false;
         if (!result.fullySolved) combined.fullySolved = false;
+        combined.dryMassDegreesOfFreedom = std::max(
+            combined.dryMassDegreesOfFreedom, result.dryMassDegreesOfFreedom);
+        combined.componentMassDegreesOfFreedom = std::max(
+            combined.componentMassDegreesOfFreedom, result.componentMassDegreesOfFreedom);
         if (!first && component.id != document.components().front().id) {
             for (auto issue : result.issues) {
                 issue.message = QStringLiteral("%1：%2").arg(component.name, issue.message);

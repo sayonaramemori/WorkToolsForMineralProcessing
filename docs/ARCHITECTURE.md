@@ -116,7 +116,7 @@
 非画布界面组件：
 
 - `TerminalProductTableModel`：全部产品物流表模型；根据项目组分动态生成品位与组分占比列，必填实测物流可编辑质量和各组分品位；
-- `TerminalProductDock`：面板装配、填写进度和计算按钮状态；
+- `TerminalProductDock`：面板装配、物流类别筛选、填写进度、自由度诊断和计算按钮状态；
 - `ResultDetailsView`：物流和浮选单元结果表；
 - `TerminalProductStyle`：面板主题样式生成；
 - `ResultMetricMenu`：结果标注指标选择菜单。
@@ -170,6 +170,8 @@ recycle product┘
 普通产品流或产品合并节点的 `MergeOutput` 连接到入料汇合节点的 `MergeInput`；新鲜入料是该节点的另一条外部输入，入料汇合节点的 `MergeOutput` 连接目标浮选单元的 `Feed` 端口。已接入回流的产品合并输出不再属于终端产品，断开后恢复。拓扑排序检测到有向环时将其标记为闭路警告，而不是结构错误。
 
 `CanvasTopologySnapshot::requiredMeasurements` 保留一组传统的建议取样组合，供拓扑测试和后续取样建议功能使用，但不再限制右侧表格输入。表格允许编辑 `reportStreams` 中的全部物流，计算服务也从全部报表物流收集完整的实测值；是否足够由线性方程组的秩决定。
+
+`CanvasStreamDescriptor` 保存终端、入料和回流类别，`StreamFilterProxyModel` 据此筛选而不依赖显示名称。求解结果同时携带干质量和组分质量的自由度，右侧提示栏使用两者较大值呈现当前仍缺少的独立约束数量。
 
 `OpenCircuitCalculator` 将每条物流的干质量和组分质量分别作为未知量，把浮选节点守恒、汇流节点守恒、实测值及支路占比组装为两个线性方程组。求解采用带绝对值选主元的 Gauss-Jordan 消元；行最简形用于识别矛盾方程、自由变量，以及整体欠定时仍可唯一确定的局部物流。只有干质量和组分质量都唯一时，物流才进入结果集。该方法不依赖节点遍历顺序，可以直接处理多个相互耦合的闭路；外部新鲜入料也由全网方程联立反算。
 

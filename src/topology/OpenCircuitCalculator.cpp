@@ -46,6 +46,7 @@ ProductMetrics metrics(const StreamValue& product, const StreamValue& feed) {
 struct ScalarSolution {
     QVector<std::optional<double>> values;
     bool inconsistent{false};
+    int degreesOfFreedom{0};
 };
 
 ScalarSolution solveScalarSystem(
@@ -135,6 +136,7 @@ ScalarSolution solveScalarSystem(
     }
 
     ScalarSolution result{QVector<std::optional<double>>(variableCount)};
+    result.degreesOfFreedom = variableCount - pivotColumns.size();
     for (const auto& row : matrix) {
         bool zero = true;
         for (int column = 0; column < variableCount; ++column)
@@ -213,6 +215,8 @@ CalculationResult OpenCircuitCalculator::calculate(
     const auto externalIds = graph.externalFeedStreams();
     const auto drySolution = solveScalarSystem(graph, knownValues, allocations, false);
     const auto componentSolution = solveScalarSystem(graph, knownValues, allocations, true);
+    result.dryMassDegreesOfFreedom = drySolution.degreesOfFreedom;
+    result.componentMassDegreesOfFreedom = componentSolution.degreesOfFreedom;
     if (drySolution.inconsistent || componentSolution.inconsistent) {
         addIssue(result, IssueCode::InconsistentBalance, QStringLiteral("equation-system"),
                  QStringLiteral("实测值、支路占比与流程守恒方程相互矛盾"));

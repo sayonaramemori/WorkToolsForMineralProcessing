@@ -4,6 +4,9 @@
 #include "ui/ResultDetailsView.h"
 #include "ui/TerminalProductStyle.h"
 #include "ui/TerminalProductTableModel.h"
+#include "services/FlowsheetCalculationService.h"
+
+#include <algorithm>
 
 #include <QAbstractItemView>
 #include <QApplication>
@@ -16,13 +19,47 @@
 #include <QInputDialog>
 #include <QPainter>
 #include <QPushButton>
+#include <QComboBox>
 #include <QSet>
+#include <QSortFilterProxyModel>
 #include <QStyledItemDelegate>
 #include <QStyle>
 #include <QTableView>
 #include <QVBoxLayout>
 
 namespace afs {
+
+class StreamFilterProxyModel final : public QSortFilterProxyModel {
+public:
+    enum Mode { All, Entered, NeedsInput, Terminal, Feed, Recycle };
+    using QSortFilterProxyModel::QSortFilterProxyModel;
+    void setMode(Mode mode) {
+        beginFilterChange();
+        m_mode = mode;
+        endFilterChange(Direction::Rows);
+    }
+
+protected:
+    bool filterAcceptsRow(int row, const QModelIndex& parent) const override {
+        if (m_mode == All) return true;
+        const auto* model = qobject_cast<const TerminalProductTableModel*>(sourceModel());
+        const auto* stream = model ? model->streamAt(row) : nullptr;
+        if (!model || !stream) return false;
+        const QString status = model->index(row, model->statusColumn(), parent)
+                                   .data(Qt::DisplayRole).toString();
+        if (m_mode == Entered) return status == QStringLiteral("实测值")
+            || status == QStringLiteral("填写中");
+        if (m_mode == NeedsInput) return status == QStringLiteral("填写中")
+            || status == QStringLiteral("可填写");
+        if (m_mode == Terminal) return stream->terminal;
+        if (m_mode == Feed) return stream->feed;
+        return stream->recycle;
+    }
+
+private:
+    Mode m_mode{All};
+};
+
 namespace {
 
 class NumberDelegate final : public QStyledItemDelegate {
@@ -83,7 +120,9 @@ public:
 
 TerminalProductDock::TerminalProductDock(FlowsheetDocument& document, QWidget* parent)
     : QDockWidget("物流实测参数", parent), m_table(new QTableView(this)),
-      m_model(new TerminalProductTableModel(document, this)), m_progressLabel(new QLabel(this)),
+      m_model(new TerminalProductTableModel(document, this)),
+      m_filterModel(new StreamFilterProxyModel(this)), m_filterCombo(new QComboBox(this)),
+      m_progressLabel(new QLabel(this)),
       m_panel(new QWidget(this)), m_document(document), m_calculateButton(new QPushButton("计算", this)),
       m_calculationStatus(new QLabel(this)), m_resultDetails(new ResultDetailsView(document, this)) {
     setObjectName("terminalProductDock");
@@ -118,11 +157,25 @@ TerminalProductDock::TerminalProductDock(FlowsheetDocument& document, QWidget* p
     m_calculationStatus->setObjectName("calculationStatus");
     m_calculationStatus->setWordWrap(true);
     layout->addWidget(m_calculationStatus);
+    auto* filterRow = new QHBoxLayout;
+    filterRow->addWidget(new QLabel("显示", m_panel));
+    m_filterCombo->setObjectName("streamFilterCombo");
+    m_filterCombo->addItem("全部物流", StreamFilterProxyModel::All);
+    m_filterCombo->addItem("已填写", StreamFilterProxyModel::Entered);
+    m_filterCombo->addItem("待补充", StreamFilterProxyModel::NeedsInput);
+    m_filterCombo->addItem("终端产品", StreamFilterProxyModel::Terminal);
+    m_filterCombo->addItem("浮选入料", StreamFilterProxyModel::Feed);
+    m_filterCombo->addItem("回流", StreamFilterProxyModel::Recycle);
+    filterRow->addWidget(m_filterCombo);
+    filterRow->addStretch();
+    layout->addLayout(filterRow);
     layout->addWidget(m_table, 1);
     layout->addWidget(m_resultDetails);
 
     m_table->setObjectName("terminalProductTable");
-    m_table->setModel(m_model);
+    m_filterModel->setSourceModel(m_model);
+    m_filterModel->setDynamicSortFilter(true);
+    m_table->setModel(m_filterModel);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
     m_table->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
@@ -142,7 +195,8 @@ TerminalProductDock::TerminalProductDock(FlowsheetDocument& document, QWidget* p
     updateCalculationState();
 
     connect(m_table, &QTableView::clicked, this, [this](const QModelIndex& index) {
-        if (const auto* stream = m_model->streamAt(index.row()))
+        const QModelIndex source = m_filterModel->mapToSource(index);
+        if (const auto* stream = m_model->streamAt(source.row()))
             emit graphicsItemRequested(stream->graphicsItem);
     });
     connect(m_model, &QAbstractItemModel::dataChanged, this, [this] {
@@ -152,6 +206,11 @@ TerminalProductDock::TerminalProductDock(FlowsheetDocument& document, QWidget* p
         updateSummary(); updateCalculationState();
     });
     connect(m_calculateButton, &QPushButton::clicked, this, &TerminalProductDock::calculationRequested);
+    connect(m_filterCombo, &QComboBox::currentIndexChanged, this, [this](int index) {
+        m_filterModel->setMode(static_cast<StreamFilterProxyModel::Mode>(
+            m_filterCombo->itemData(index).toInt()));
+        updateSummary();
+    });
     connect(componentsButton, &QPushButton::clicked, this, &TerminalProductDock::editComponents);
     connect(&m_document, &FlowsheetDocument::componentsChanged, this, [this] {
         configureColumns(); updateSummary(); updateCalculationState();
@@ -215,16 +274,19 @@ void TerminalProductDock::applyPanelStyle() {
 }
 
 void TerminalProductDock::setSnapshot(CanvasTopologySnapshot snapshot) {
+    m_snapshot = std::move(snapshot);
     QSet<QString> editableIds;
-    for (const auto& stream : snapshot.reportStreams) editableIds.insert(stream.streamId);
-    m_model->setStreams(std::move(snapshot.reportStreams), std::move(editableIds));
+    for (const auto& stream : m_snapshot.reportStreams) editableIds.insert(stream.streamId);
+    m_model->setStreams(m_snapshot.reportStreams, std::move(editableIds));
 }
 
 void TerminalProductDock::selectGraphicsItem(const QGraphicsItem* item) {
     const int row = m_model->rowForGraphicsItem(item);
     if (row < 0) { m_table->clearSelection(); return; }
-    const QModelIndex target = m_model->index(row, TerminalProductTableModel::MassColumn);
-    m_table->selectRow(row);
+    const QModelIndex source = m_model->index(row, TerminalProductTableModel::MassColumn);
+    const QModelIndex target = m_filterModel->mapFromSource(source);
+    if (!target.isValid()) { m_table->clearSelection(); return; }
+    m_table->selectRow(target.row());
     m_table->setCurrentIndex(target);
     m_table->scrollTo(target);
 }
@@ -251,7 +313,8 @@ void TerminalProductDock::setScenarioName(const QString& name) {
 void TerminalProductDock::updateSummary() {
     const int complete = m_model->completedCount();
     m_progressLabel->setText(m_model->rowCount() == 0
-        ? "暂无物流" : QString("已录入 %1 条").arg(complete));
+        ? "暂无物流" : QString("显示 %1/%2 · 已录入 %3")
+              .arg(m_filterModel->rowCount()).arg(m_model->rowCount()).arg(complete));
 }
 
 void TerminalProductDock::updateCalculationState() {
@@ -264,12 +327,32 @@ void TerminalProductDock::updateCalculationState() {
             : "全流程平衡已完成 · 部分中间物流未唯一求解");
         m_calculateButton->setText("重新计算");
     } else if (result) {
-        m_calculationStatus->setText(QString("计算未完成 · %1 个问题").arg(result->issues.size()));
+        const int missing = std::max(result->dryMassDegreesOfFreedom,
+                                     result->componentMassDegreesOfFreedom);
+        const bool conflict = std::any_of(result->issues.cbegin(), result->issues.cend(),
+            [](const auto& issue) {
+                return issue.code == topology::IssueCode::InconsistentBalance
+                    || issue.code == topology::IssueCode::InvalidMeasurement;
+            });
+        m_calculationStatus->setText(conflict
+            ? QString("计算未完成 · 输入数据或支路占比相互矛盾")
+            : missing > 0
+                ? QString("计算未完成 · 方程组仍有 %1 个独立自由度，请补充实测物流")
+                      .arg(missing)
+                : QString("计算未完成 · %1 个流程问题").arg(result->issues.size()));
         m_calculateButton->setText("重新计算");
     } else {
-        m_calculationStatus->setText(hasCompleteInput
-            ? "可以尝试计算 · 是否足够将由方程组自动判断"
-            : "可填写总入料或任意产品物流的质量和各组分品位");
+        const auto preview = FlowsheetCalculationService::calculate(m_snapshot, m_document);
+        const int missing = std::max(preview.dryMassDegreesOfFreedom,
+                                     preview.componentMassDegreesOfFreedom);
+        m_calculationStatus->setText(m_model->rowCount() == 0
+            ? "请先在画布中建立流程"
+            : missing > 0
+                ? QString("当前方程组还有 %1 个独立自由度 · 可补充任意实测物流")
+                      .arg(missing)
+                : hasCompleteInput
+                    ? "当前约束已足够，可以计算"
+                    : "可填写总入料或任意产品物流的质量和各组分品位");
         m_calculateButton->setText("计算");
     }
 }

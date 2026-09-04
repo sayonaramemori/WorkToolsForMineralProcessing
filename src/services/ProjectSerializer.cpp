@@ -918,6 +918,11 @@ bool ProjectSerializer::load(FlowsheetScene& scene, FlowsheetDocument& document,
                     result.complete, result.fullySolved});
                 combined.complete = combined.complete && result.complete;
                 combined.fullySolved = combined.fullySolved && result.fullySolved;
+                combined.dryMassDegreesOfFreedom = std::max(
+                    combined.dryMassDegreesOfFreedom, result.dryMassDegreesOfFreedom);
+                combined.componentMassDegreesOfFreedom = std::max(
+                    combined.componentMassDegreesOfFreedom,
+                    result.componentMassDegreesOfFreedom);
             }
             scenario.calculationResult = std::move(combined);
         }
