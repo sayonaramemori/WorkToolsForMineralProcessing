@@ -51,6 +51,8 @@
 5. 药剂位置调整统一调用 `AnnotationManager::nudgeSelectedReagents()`；不要在图元或场景过滤器中再次处理方向键。
 6. 补充方案切换、项目往返、主题和导出测试。
 
+自定义文字的内容和字体属性必须通过 `AnnotationItem::setRecord()` 同步。该入口始终在 `prepareGeometryChange()` 后重新测量文本边界；不能只调用可能因文字内容未变化而提前返回的 `setText()`。
+
 ## 试验方案
 
 - `ExperimentScenario` 不保存拓扑副本，只保存随试验变化的数据；

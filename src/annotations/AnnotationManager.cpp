@@ -308,7 +308,7 @@ void AnnotationManager::synchronizeNotes() {
             connect(item, &AnnotationItem::recordEdited, &m_document,
                     &FlowsheetDocument::setAnnotationRecord);
         } else {
-            item->setText(record.text);
+            item->setRecord(record);
         }
         item->setTextSettings(m_document.annotationTextSettings());
         item->setAnchor({}, record.manualOffset);

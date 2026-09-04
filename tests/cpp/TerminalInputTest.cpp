@@ -219,6 +219,11 @@ int main(int argc, char** argv) {
     largeNoteRecord.notePointSize = 48;
     AnnotationItem largeNote(largeNoteRecord, largeNoteRecord.text);
     if (largeNote.boundingRect().height() < 100.0) return 44;
+    AnnotationItem resizedNote(userNote, userNote.text);
+    const QSizeF smallNoteSize = resizedNote.boundingRect().size();
+    resizedNote.setRecord(largeNoteRecord);
+    if (resizedNote.boundingRect().width() <= smallNoteSize.width()
+        || resizedNote.boundingRect().height() <= smallNoteSize.height()) return 45;
     resultDocument.setAnnotationRecord(userNote);
     annotationManager.synchronize();
     AnnotationItem* noteItem = nullptr;

@@ -138,6 +138,13 @@ void AnnotationItem::setText(QString text) {
     update();
 }
 
+void AnnotationItem::setRecord(AnnotationRecord record) {
+    m_record = std::move(record);
+    m_text = m_record.text;
+    updateBounds();
+    update();
+}
+
 void AnnotationItem::setTextSettings(AnnotationTextSettings settings) {
     m_textSettings = std::move(settings);
     updateBounds();
@@ -171,8 +178,7 @@ void AnnotationItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) {
     }
     auto edited = m_record;
     if (editUserNote(nullptr, edited, m_textSettings, tr("编辑文字标注"))) {
-        m_record = std::move(edited);
-        setText(m_record.text);
+        setRecord(std::move(edited));
         emit recordEdited(m_record);
     }
     event->accept();

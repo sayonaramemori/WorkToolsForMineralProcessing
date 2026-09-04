@@ -23,6 +23,7 @@ public:
     [[nodiscard]] const QString& text() const { return m_text; }
 
     void setText(QString text);
+    void setRecord(AnnotationRecord record);
     void setAnchor(const QPointF& sceneAnchor, const QPointF& defaultOffset);
     void refreshAppearance();
     void setTextSettings(AnnotationTextSettings settings);
