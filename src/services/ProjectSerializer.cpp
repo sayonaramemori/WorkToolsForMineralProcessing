@@ -23,10 +23,13 @@
 namespace afs {
 namespace {
 
-constexpr int kFormatVersion = 7;
+constexpr int kFormatVersion = 8;
 constexpr qint64 kMaximumProjectBytes = 64 * 1024 * 1024;
 
-struct UnitData { FlotationUnit unit; };
+struct UnitData {
+    FlotationUnit unit;
+    QHash<QString, double> terminalLengths;
+};
 struct DirectConnectionData {
     QString sourceStreamId;
     QString targetUnitId;
@@ -241,6 +244,23 @@ bool parseProject(const QByteArray& contents, ProjectData& data, QString* error)
                     setError(error, "二分流器比例无效"); return false;
                 }
                 item.unit.leftSplitPercent = split;
+            }
+        }
+        const auto terminalLengths = object.value("terminalLengths");
+        if (!terminalLengths.isUndefined()) {
+            if (!terminalLengths.isObject()) {
+                setError(error, "终端产品线长度记录无效"); return false;
+            }
+            const auto lengths = terminalLengths.toObject();
+            const QStringList allowedKeys = item.unit.kind == UnitKind::ThreeProductFlotation
+                ? QStringList{"left", "middle", "right"} : QStringList{"left", "right"};
+            for (auto it = lengths.constBegin(); it != lengths.constEnd(); ++it) {
+                double length = 0.0;
+                if (!allowedKeys.contains(it.key()) || !finiteNumber(it.value(), length)
+                    || length < 30.0 || length > 5000.0) {
+                    setError(error, "终端产品线长度记录无效"); return false;
+                }
+                item.terminalLengths.insert(it.key(), length);
             }
         }
         data.units.append(std::move(item));
@@ -576,7 +596,12 @@ bool applyProject(const ProjectData& data, FlowsheetScene& scene, QString* error
         auto* unit = new FlotationUnitItem(item.unit);
         scene.addItem(unit);
         units.insert(item.unit.id, unit);
-        for (auto* product : unit->products()) products.insert(product->streamId(), product);
+        for (auto* product : unit->products()) {
+            products.insert(product->streamId(), product);
+            const QString key = productSideSuffix(product->side()).mid(1);
+            if (item.terminalLengths.contains(key))
+                product->setTerminalLength(item.terminalLengths.value(key));
+        }
     }
     for (const auto& item : data.connections) {
         auto* source = findProduct(products, item.sourceStreamId);
@@ -705,6 +730,12 @@ bool ProjectSerializer::save(const FlowsheetScene& scene, const FlowsheetDocumen
             {"kind", unitKindKey(value.kind)}};
         if (value.kind == UnitKind::BinarySplitter)
             unitObject.insert("leftSplitPercent", value.leftSplitPercent);
+        QJsonObject terminalLengths;
+        for (auto* product : unit->products())
+            if (product->terminalLengthOverride())
+                terminalLengths.insert(productSideSuffix(product->side()).mid(1),
+                                       *product->terminalLengthOverride());
+        if (!terminalLengths.isEmpty()) unitObject.insert("terminalLengths", terminalLengths);
         unitArray.append(unitObject);
         for (auto* product : unit->products()) {
             if (product->targetUnit()) {

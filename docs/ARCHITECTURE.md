@@ -36,6 +36,8 @@
 
 产品物流使用稳定 ID：`<unit-id>:left`、`<unit-id>:middle`（仅三产品单元）、`<unit-id>:right`；外部入料使用 `<unit-id>:feed`；合流输出使用 `<merge-id>:output`。
 
+`ProductLineItem::terminalLengthOverride` 保存单条产品线的可选终端长度；没有覆盖值时继续使用单元 `bodyHeight`。该参数同时决定未连接箭头、产品合流和回流来源的端点位置，但不改变浮选单元或其他产品线。
+
 产品侧别的稳定后缀、中文标签和横向方向由 `ProductLineItem.h` 中的侧别辅助函数统一提供。画布适配器、连接几何和标注不得各自拼接 `:left/:middle/:right` 或复制侧别判断。
 
 ### `src/editor`

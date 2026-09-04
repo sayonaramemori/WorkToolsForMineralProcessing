@@ -458,8 +458,8 @@ void FlowsheetScene::sourceWidthChanged(FlotationUnitItem* source, double oldWid
 
 bool FlowsheetScene::adjustConnectionLength(ProductLineItem* product, double delta) {
     if (!product || !product->isConnected()) return false;
-    constexpr double minimumLength = 100.0;
-    constexpr double maximumLength = 1200.0;
+    constexpr double minimumLength = 50.0;
+    constexpr double maximumLength = 5000.0;
     auto* source = product->sourceUnit();
     auto* target = product->targetUnit();
     const double currentLength = target->scenePos().y() - source->scenePos().y();

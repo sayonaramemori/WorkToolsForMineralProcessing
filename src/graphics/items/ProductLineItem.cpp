@@ -42,7 +42,7 @@ double ProductLineItem::sideX() const {
 }
 
 QPointF ProductLineItem::unconnectedEndScenePosition() const {
-    return m_sourceUnit->mapToScene(QPointF(sideX(), m_sourceUnit->unit().bodyHeight));
+    return m_sourceUnit->mapToScene(QPointF(sideX(), terminalLength()));
 }
 
 QPointF ProductLineItem::sourceAnchorScenePosition() const {
@@ -95,7 +95,7 @@ void ProductLineItem::setDropHighlighted(bool highlighted) {
 void ProductLineItem::updatePath() {
     prepareGeometryChange();
     const double x = sideX();
-    QPointF end(x, m_sourceUnit->unit().bodyHeight);
+    QPointF end(x, terminalLength());
     if (m_dragging) {
         end = m_dragEnd;
     } else if (m_targetUnit) {
@@ -129,6 +129,28 @@ void ProductLineItem::updatePath() {
 void ProductLineItem::setManualRouteY(std::optional<double> y) {
     m_manualRouteY = y;
     updatePath();
+}
+
+double ProductLineItem::terminalLength() const {
+    return m_terminalLength.value_or(m_sourceUnit->unit().bodyHeight);
+}
+
+bool ProductLineItem::setTerminalLength(std::optional<double> length) {
+    if (length && (!std::isfinite(*length) || *length < 30.0 || *length > 5000.0))
+        return false;
+    if (m_terminalLength == length) return false;
+    m_terminalLength = length;
+    updatePath();
+    return true;
+}
+
+bool ProductLineItem::adjustTerminalLength(double delta) {
+    if (!isAvailable() || !std::isfinite(delta)) return false;
+    const double adjusted = std::clamp(terminalLength() + delta, 30.0, 5000.0);
+    if (qFuzzyCompare(adjusted, terminalLength())) return false;
+    m_terminalLength = adjusted;
+    updatePath();
+    return true;
 }
 
 void ProductLineItem::setProductName(const QString& name) {

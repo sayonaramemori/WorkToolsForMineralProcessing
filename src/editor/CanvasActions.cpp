@@ -13,9 +13,14 @@ ResizeSelectionResult CanvasActions::resizeSelection(FlowsheetScene& scene, doub
         if (auto* unit = dynamic_cast<FlotationUnitItem*>(selected)) {
             if (unit->adjustWidth(delta)) ++result.resizedUnits;
             result.lastUnitWidth = unit->unit().width;
-        } else if (auto* product = dynamic_cast<ProductLineItem*>(selected);
-                   product && product->isConnected()) {
-            if (scene.adjustConnectionLength(product, delta)) ++result.resizedConnections;
+        } else if (auto* product = dynamic_cast<ProductLineItem*>(selected)) {
+            const bool resized = product->isConnected()
+                ? scene.adjustConnectionLength(product, delta)
+                : product->adjustTerminalLength(delta);
+            if (resized) {
+                ++result.resizedConnections;
+                if (!product->isConnected()) scene.notifyRouteChanged();
+            }
         }
     }
     return result;

@@ -502,20 +502,20 @@ void MainWindow::resizeSelectedUnits(double delta) {
     const auto result = CanvasActions::resizeSelection(*flowsheet, delta);
     if (result.resizedConnections > 0 && result.resizedUnits > 0) {
         statusBar()->showMessage(
-            tr("已调整 %1 个浮选单元宽度和 %2 条连接线长度")
+            tr("已调整 %1 个浮选单元宽度和 %2 条产品线长度")
                 .arg(result.resizedUnits).arg(result.resizedConnections),
             3000);
     } else if (result.resizedConnections > 0) {
-        statusBar()->showMessage(tr("已调整 %1 条合并连接线长度").arg(result.resizedConnections), 3000);
+        statusBar()->showMessage(tr("已调整 %1 条产品线长度").arg(result.resizedConnections), 3000);
     } else if (result.resizedUnits > 0) {
         statusBar()->showMessage(
             tr("已调整 %1 个浮选单元，当前横向长度：%2")
                 .arg(result.resizedUnits).arg(result.lastUnitWidth, 0, 'f', 0),
             3000);
     } else if (m_scene->selectedItems().isEmpty()) {
-        statusBar()->showMessage(tr("请先选中需要调整长度的浮选单元"), 3000);
+        statusBar()->showMessage(tr("请先选中浮选单元或产品线"), 3000);
     } else {
-        statusBar()->showMessage(tr("所选对象未连接，或已达到允许的最小/最大长度"), 3000);
+        statusBar()->showMessage(tr("所选对象不支持此操作，或已达到允许的最小/最大长度"), 3000);
     }
 }
 

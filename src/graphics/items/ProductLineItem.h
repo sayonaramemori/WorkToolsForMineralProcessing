@@ -66,6 +66,12 @@ public:
     void setTextSettings(const AnnotationTextSettings& settings);
     [[nodiscard]] std::optional<double> manualRouteY() const { return m_manualRouteY; }
     void setManualRouteY(std::optional<double> y);
+    [[nodiscard]] double terminalLength() const;
+    [[nodiscard]] std::optional<double> terminalLengthOverride() const {
+        return m_terminalLength;
+    }
+    bool adjustTerminalLength(double delta);
+    bool setTerminalLength(std::optional<double> length);
 
 protected:
     QVariant itemChange(GraphicsItemChange change, const QVariant& value) override;
@@ -93,6 +99,7 @@ private:
     bool m_dropHighlighted{false};
     bool m_routeEditing{false};
     std::optional<double> m_manualRouteY;
+    std::optional<double> m_terminalLength;
     QGraphicsSimpleTextItem* m_nameLabel{nullptr};
     AnnotationTextSettings m_textSettings;
 

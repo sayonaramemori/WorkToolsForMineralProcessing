@@ -75,5 +75,13 @@ int main(int argc, char** argv) {
     if (!threeProduct->products()[1]->isConnected()
         || downstream->inputLine()->sourceProduct() != threeProduct->products()[1]
         || !closePoint(downstream->pos(), QPointF(0, 222))) return 18;
+
+    const double originalTerminalLength = product->terminalLength();
+    if (!product->adjustTerminalLength(4000.0)
+        || std::abs(product->terminalLength() - (originalTerminalLength + 4000.0)) > 0.001
+        || !product->adjustTerminalLength(4000.0)
+        || std::abs(product->terminalLength() - 5000.0) > 0.001
+        || !product->adjustTerminalLength(-10000.0)
+        || std::abs(product->terminalLength() - 30.0) > 0.001) return 19;
     return 0;
 }

@@ -76,6 +76,7 @@
 - 项目格式 v4 保存普通线 `routeY`、合流 `mergeY` 和各入料来源的 `routeX`；v7 增加回流来源 `routeY`，载入器继续接受不含这些字段的旧项目；
 - 回流支路选择必须基于各自的路径轮廓；横向和纵向控制柄只修改对应轴，选中来源用于高亮及确定药剂标注归属；
 - 修改布线路径后运行 `connection_test`、`merge_test`、`project_io_test` 和导出测试。
+- 终端产品长度属于 `ProductLineItem`，只能对 `isAvailable()` 的产品通过快捷键调整，范围为 30～5000；项目格式 v8 在单元的 `terminalLengths` 对象中按产品侧别保存覆盖值。
 
 ## 二分流器
 
