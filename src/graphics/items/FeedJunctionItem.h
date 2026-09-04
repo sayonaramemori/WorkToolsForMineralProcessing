@@ -87,6 +87,7 @@ private:
     QPainterPath m_commonPath;
     QPainterPath m_arrowPath;
     QHash<QString, QPainterPath> m_sourcePaths;
+    QHash<QString, QPainterPath> m_sourceArrowPaths;
     QHash<QString, QPointF> m_sourceAnnotationAnchors;
     QHash<QString, QPointF> m_verticalHandles;
     QHash<QString, QPointF> m_horizontalHandles;

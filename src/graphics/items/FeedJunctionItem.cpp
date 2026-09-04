@@ -24,6 +24,8 @@ namespace afs {
 namespace {
 constexpr double kRouteClearance = 80.0;
 constexpr double kJunctionRadius = 4.5;
+constexpr double kRouteArrowLength = 11.0;
+constexpr double kRouteArrowHalfWidth = 5.0;
 }
 
 FeedJunctionItem::FeedJunctionItem(QString id, ProductLineItem* recycleProduct,
@@ -93,6 +95,16 @@ void FeedJunctionItem::appendSourcePath(QPainterPath& path, const QString& strea
     sourcePath.lineTo(m_junctionPosition);
     path.addPath(sourcePath);
     m_sourcePaths.insert(streamId, sourcePath);
+    const double direction = m_junctionPosition.x() >= corridorX ? 1.0 : -1.0;
+    const double arrowX = corridorX + (m_junctionPosition.x() - corridorX) * 0.68;
+    QPainterPath sourceArrow;
+    sourceArrow.moveTo(arrowX + direction * kRouteArrowLength / 2.0, entryY);
+    sourceArrow.lineTo(arrowX - direction * kRouteArrowLength / 2.0,
+                       entryY - kRouteArrowHalfWidth);
+    sourceArrow.lineTo(arrowX - direction * kRouteArrowLength / 2.0,
+                       entryY + kRouteArrowHalfWidth);
+    sourceArrow.closeSubpath();
+    m_sourceArrowPaths.insert(streamId, sourceArrow);
     m_sourceAnnotationAnchors.insert(
         streamId, QPointF(corridorX, (end.y() + entryY) / 2.0));
     m_verticalHandles.insert(streamId, QPointF(corridorX, (end.y() + entryY) / 2.0));
@@ -141,6 +153,7 @@ void FeedJunctionItem::updatePath() {
     m_linePath = QPainterPath();
     m_commonPath = QPainterPath();
     m_sourcePaths.clear();
+    m_sourceArrowPaths.clear();
     m_sourceAnnotationAnchors.clear();
     m_verticalHandles.clear();
     m_horizontalHandles.clear();
@@ -183,6 +196,7 @@ void FeedJunctionItem::updatePath() {
 
     QPainterPath bounds = m_linePath;
     bounds.addPath(m_arrowPath);
+    for (const auto& sourceArrow : m_sourceArrowPaths) bounds.addPath(sourceArrow);
     bounds.addEllipse(m_junctionPosition, kJunctionRadius, kJunctionRadius);
     setPath(bounds);
     update();
@@ -218,6 +232,10 @@ void FeedJunctionItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*,
         }
         painter->setPen(QPen(branchColor, width, Qt::SolidLine, Qt::SquareCap, Qt::MiterJoin));
         painter->drawPath(it.value());
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(branchColor);
+        painter->drawPath(m_sourceArrowPaths.value(it.key()));
+        painter->setBrush(Qt::NoBrush);
     }
     painter->setPen(Qt::NoPen);
     painter->setBrush(color);
