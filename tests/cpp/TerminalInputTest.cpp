@@ -187,6 +187,14 @@ int main(int argc, char** argv) {
     QKeyEvent deleteMeasurement(QEvent::KeyPress, Qt::Key_Delete, Qt::NoModifier);
     QApplication::sendEvent(filterTable, &deleteMeasurement);
     if (filterDocument.measurement("calculation:feed").dryMass) return 67;
+    filterTable->setCurrentIndex(filterTable->model()->index(
+        0, TerminalProductTableModel::GradeColumn));
+    filterDock.selectGraphicsItem(calculationUnit->inputLine());
+    if (filterTable->currentIndex().column() != TerminalProductTableModel::GradeColumn)
+        return 68;
+    QKeyEvent deleteGrade(QEvent::KeyPress, Qt::Key_Delete, Qt::NoModifier);
+    QApplication::sendEvent(filterTable, &deleteGrade);
+    if (filterDocument.measurement("calculation:feed").gradePercent) return 69;
 
     FlowsheetScene propagationScene;
     auto* cleaner = new FlotationUnitItem({"cleaner", {0, 0}});

@@ -358,6 +358,8 @@ void TerminalProductDock::rebuildInterestMenu() {
 void TerminalProductDock::selectGraphicsItem(const QGraphicsItem* item) {
     const int row = m_model->rowForGraphicsItem(item);
     if (row < 0) { m_table->clearSelection(); return; }
+    const QModelIndex current = m_filterModel->mapToSource(m_table->currentIndex());
+    if (current.isValid() && current.row() == row) return;
     const QModelIndex source = m_model->index(row, TerminalProductTableModel::MassColumn);
     const QModelIndex target = m_filterModel->mapFromSource(source);
     if (!target.isValid()) { m_table->clearSelection(); return; }
