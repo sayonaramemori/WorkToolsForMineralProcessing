@@ -9,6 +9,33 @@
 namespace afs {
 namespace {
 
+std::optional<topology::StreamValue> globalFeedFromTerminalProducts(
+    const CanvasTopologySnapshot& completeSnapshot,
+    const FlowsheetDocument& document,
+    const QString& componentId,
+    const topology::CalculationResult& partialResult) {
+    topology::StreamValue sum;
+    const auto terminalIds = completeSnapshot.graph.terminalProductStreams();
+    if (terminalIds.isEmpty()) return std::nullopt;
+    for (const auto& streamId : terminalIds) {
+        auto value = partialResult.values.constFind(streamId);
+        if (value != partialResult.values.cend()) {
+            sum.dryMass += value->dryMass;
+            sum.componentMass += value->componentMass;
+            continue;
+        }
+        const auto measurement = document.measurement(streamId);
+        const auto grade = measurement.grade(componentId);
+        if (!measurement.dryMass || !grade) return std::nullopt;
+        const auto measured = topology::StreamValue::fromMassAndGrade(
+            *measurement.dryMass, *grade);
+        if (!measured) return std::nullopt;
+        sum.dryMass += measured->dryMass;
+        sum.componentMass += measured->componentMass;
+    }
+    return sum;
+}
+
 CanvasTopologySnapshot scopedSnapshot(const CanvasTopologySnapshot& source,
                                       const QSet<QString>& objectScope) {
     if (objectScope.isEmpty()) return source;
@@ -107,6 +134,19 @@ topology::CalculationResult FlowsheetCalculationService::calculate(
         }
         auto result = topology::OpenCircuitCalculator::calculate(
             snapshot.graph, knownValues, allocations, !objectScope.isEmpty());
+        if (!objectScope.isEmpty()
+            && completeSnapshot.graph.externalFeedStreams().size() == 1) {
+            const auto externalFeedId = completeSnapshot.graph.externalFeedStreams().front();
+            if (snapshot.graph.stream(externalFeedId) && !knownValues.contains(externalFeedId)) {
+                const auto globalFeed = globalFeedFromTerminalProducts(
+                    completeSnapshot, document, component.id, result);
+                if (globalFeed) {
+                    knownValues.insert(externalFeedId, *globalFeed);
+                    result = topology::OpenCircuitCalculator::calculate(
+                        snapshot.graph, knownValues, allocations, true);
+                }
+            }
+        }
         if (first) { combined = result; first = false; }
         combined.components.insert(component.id, {result.values, result.flotationPerformance,
             result.relativeToExternalFeed, result.complete, result.fullySolved});

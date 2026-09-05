@@ -251,6 +251,37 @@ int main(int argc, char** argv) {
     processFeedAnnotations.synchronize();
     if (processFeedAnnotations.annotationCount() != 3) return 73;
 
+    FlowsheetScene boundaryScene;
+    auto* boundaryA = new FlotationUnitItem({"boundary-a", {0, 0}});
+    auto* boundaryB = new FlotationUnitItem({"boundary-b", {400, 300}});
+    auto* boundaryC = new FlotationUnitItem({"boundary-c", {800, 600}});
+    boundaryScene.addItem(boundaryA);
+    boundaryScene.addItem(boundaryB);
+    boundaryScene.addItem(boundaryC);
+    if (!boundaryScene.connectProduct(boundaryA->products().at(1), boundaryB->inputLine())
+        || !boundaryScene.connectProduct(boundaryB->products().at(1), boundaryC->inputLine())
+        || !boundaryScene.connectProduct(boundaryC->products().at(0), boundaryA->inputLine()))
+        return 74;
+    FlowsheetDocument boundaryDocument;
+    boundaryDocument.setDryMass("boundary-a:left", 1600.0);
+    boundaryDocument.setGradePercent("boundary-a:left", 3.2125);
+    boundaryDocument.setDryMass("boundary-b:left", 1000.0);
+    boundaryDocument.setGradePercent("boundary-b:left", 1.0);
+    boundaryDocument.setDryMass("boundary-c:right", 4000.0);
+    boundaryDocument.setGradePercent("boundary-c:right", 0.6);
+    boundaryDocument.setDryMass("boundary-c:left", 700.0);
+    boundaryDocument.setGradePercent("boundary-c:left", 0.8);
+    const auto boundaryResult = FlowsheetCalculationService::calculate(
+        boundaryScene, boundaryDocument, QSet<QString>{"boundary-a"});
+    const auto boundaryJunction = boundaryA->inputLine()->feedJunction();
+    if (!boundaryJunction
+        || !boundaryResult.values.contains(boundaryJunction->externalFeedStreamId())
+        || !boundaryResult.values.contains(boundaryJunction->outputStreamId())
+        || std::abs(boundaryResult.values[boundaryJunction->externalFeedStreamId()].dryMass
+                    - 6600.0) > 0.001
+        || std::abs(boundaryResult.values[boundaryJunction->outputStreamId()].dryMass
+                    - 7300.0) > 0.001) return 75;
+
     TerminalProductDock interestDock(filterDocument);
     interestDock.setSnapshot(connected);
     auto* interestButton = interestDock.findChild<QPushButton*>("interestObjectButton");
