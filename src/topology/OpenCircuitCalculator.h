@@ -15,7 +15,8 @@ public:
     static CalculationResult calculate(
         const TopologyGraph& graph,
         const QHash<StreamId, StreamValue>& knownValues,
-        const QHash<StreamId, BranchAllocation>& allocations = {});
+        const QHash<StreamId, BranchAllocation>& allocations = {},
+        bool scopedCalculation = false);
 };
 
 } // namespace afs::topology

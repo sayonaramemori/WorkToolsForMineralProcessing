@@ -201,6 +201,12 @@ int main(int argc, char** argv) {
         || std::abs(propagationResult.values["cleaner:right"].dryMass - 100.0) > 0.001
         || std::abs(propagationResult.values["cleaner:right"].gradePercent() - 2.05) > 0.001)
         return 60;
+    const auto scopedResult = FlowsheetCalculationService::calculate(
+        propagationScene, propagationDocument, QSet<QString>{"scavenger"});
+    if (!scopedResult.complete || !scopedResult.fullySolved
+        || scopedResult.values.size() != 3
+        || !scopedResult.values.contains("cleaner:right")
+        || scopedResult.values.contains("cleaner:left")) return 64;
 
     TerminalProductDock interestDock(filterDocument);
     interestDock.setSnapshot(connected);
@@ -213,7 +219,8 @@ int main(int argc, char** argv) {
         if (action->data().toString() == "first") { firstUnitAction = action; break; }
     if (!firstUnitAction) return 62;
     firstUnitAction->setChecked(true);
-    if (interestTable->model()->rowCount() != 3) return 63;
+    if (interestTable->model()->rowCount() != 3
+        || interestDock.calculationScope() != QSet<QString>{"first"}) return 63;
 
     FlowsheetDocument resultDocument;
     TerminalProductDock resultDock(resultDocument);

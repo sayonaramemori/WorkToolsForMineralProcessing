@@ -298,14 +298,20 @@ void TerminalProductDock::setSnapshot(CanvasTopologySnapshot snapshot) {
     for (const auto& stream : m_snapshot.reportStreams) editableIds.insert(stream.streamId);
     m_model->setStreams(m_snapshot.reportStreams, std::move(editableIds));
     rebuildInterestMenu();
+    if (!m_interestedOwners.isEmpty()) m_document.invalidateCalculation();
 }
 
 void TerminalProductDock::rebuildInterestMenu() {
     m_interestMenu->clear();
+    QSet<QString> validSelection;
     for (const auto& object : m_snapshot.interestObjects) {
         auto* action = m_interestMenu->addAction(object.displayName);
         action->setCheckable(true);
         action->setData(object.id);
+        if (m_interestedOwners.contains(object.id)) {
+            action->setChecked(true);
+            validSelection.insert(object.id);
+        }
         connect(action, &QAction::toggled, this, [this] {
             QSet<QString> selected;
             int count = 0;
@@ -314,9 +320,12 @@ void TerminalProductDock::rebuildInterestMenu() {
                 selected.insert(candidate->data().toString());
                 ++count;
             }
+            const bool scopeChanged = selected != m_interestedOwners;
+            m_interestedOwners = selected;
             m_filterModel->setInterestedOwners(std::move(selected));
             m_interestButton->setText(count == 0
                 ? "关注对象：全部" : QString("关注对象：%1 个").arg(count));
+            if (scopeChanged) m_document.invalidateCalculation();
             updateSummary();
         });
     }
@@ -324,6 +333,10 @@ void TerminalProductDock::rebuildInterestMenu() {
         auto* empty = m_interestMenu->addAction("暂无可选对象");
         empty->setEnabled(false);
     }
+    m_interestedOwners = std::move(validSelection);
+    m_filterModel->setInterestedOwners(m_interestedOwners);
+    m_interestButton->setText(m_interestedOwners.isEmpty()
+        ? "关注对象：全部" : QString("关注对象：%1 个").arg(m_interestedOwners.size()));
 }
 
 void TerminalProductDock::selectGraphicsItem(const QGraphicsItem* item) {
@@ -369,7 +382,10 @@ void TerminalProductDock::updateCalculationState() {
     const auto* result = m_document.calculationResult();
     if (result && result->complete) {
         m_calculationStatus->setText(result->fullySolved
-            ? "平衡计算成功 · 选择画布对象查看详细结果"
+            ? (m_interestedOwners.isEmpty()
+                ? "平衡计算成功 · 选择画布对象查看详细结果"
+                : QString("局部平衡计算成功 · 已计算 %1 个关注对象")
+                      .arg(m_interestedOwners.size()))
             : "全流程平衡已完成 · 部分中间物流未唯一求解");
         m_calculateButton->setText("重新计算");
     } else if (result) {
@@ -388,7 +404,8 @@ void TerminalProductDock::updateCalculationState() {
                 : QString("计算未完成 · %1 个流程问题").arg(result->issues.size()));
         m_calculateButton->setText("重新计算");
     } else {
-        const auto preview = FlowsheetCalculationService::calculate(m_snapshot, m_document);
+        const auto preview = FlowsheetCalculationService::calculate(
+            m_snapshot, m_document, m_interestedOwners);
         const int missing = std::max(preview.dryMassDegreesOfFreedom,
                                      preview.componentMassDegreesOfFreedom);
         m_calculationStatus->setText(m_model->rowCount() == 0

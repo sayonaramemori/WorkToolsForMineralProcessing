@@ -499,11 +499,16 @@ void MainWindow::refreshSelectionStatus() {
 
 void MainWindow::calculateFlowsheet() {
     auto result = FlowsheetCalculationService::calculate(
-        *static_cast<FlowsheetScene*>(m_scene), *m_document);
+        *static_cast<FlowsheetScene*>(m_scene), *m_document,
+        m_terminalDock->calculationScope());
     const bool complete = result.complete;
     const int issueCount = result.issues.size();
     m_document->setCalculationResult(std::move(result));
-    statusBar()->showMessage(complete ? tr("平衡计算成功")
+    statusBar()->showMessage(complete
+        ? (m_terminalDock->calculationScope().isEmpty()
+            ? tr("平衡计算成功")
+            : tr("局部平衡计算成功，共 %1 个关注对象")
+                  .arg(m_terminalDock->calculationScope().size()))
                                       : tr("计算未完成，共发现 %1 个问题").arg(issueCount), 5000);
 }
 

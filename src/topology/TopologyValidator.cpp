@@ -29,7 +29,8 @@ bool validTargetPort(NodeKind kind, PortKind port) {
 }
 }
 
-QVector<TopologyIssue> TopologyValidator::validate(const TopologyGraph& graph) {
+QVector<TopologyIssue> TopologyValidator::validate(const TopologyGraph& graph,
+                                                   bool allowMultipleExternalFeeds) {
     QVector<TopologyIssue> issues;
     for (const auto& streamId : graph.streamIds()) {
         const auto* stream = graph.stream(streamId);
@@ -85,7 +86,7 @@ QVector<TopologyIssue> TopologyValidator::validate(const TopologyGraph& graph) {
 
     if (graph.externalFeedStreams().isEmpty())
         addError(issues, IssueCode::NoExternalFeed, {}, QStringLiteral("拓扑图没有外部入料流"));
-    else if (graph.externalFeedStreams().size() != 1)
+    else if (graph.externalFeedStreams().size() != 1 && !allowMultipleExternalFeeds)
         addError(issues, IssueCode::MultipleExternalFeeds, {},
                  QStringLiteral("项目只允许一个主流程，必须恰好有一条外部入料流"));
     if (graph.terminalProductStreams().isEmpty())

@@ -7,6 +7,45 @@
 #include <algorithm>
 
 namespace afs {
+namespace {
+
+CanvasTopologySnapshot scopedSnapshot(const CanvasTopologySnapshot& source,
+                                      const QSet<QString>& objectScope) {
+    if (objectScope.isEmpty()) return source;
+    CanvasTopologySnapshot result;
+    result.interestObjects = source.interestObjects;
+    for (const auto& nodeId : source.graph.nodeIds()) {
+        if (!objectScope.contains(nodeId)) continue;
+        if (source.graph.nodeKind(nodeId) == topology::NodeKind::Flotation)
+            result.graph.addFlotationNode(*source.graph.flotationNode(nodeId));
+        else
+            result.graph.addMergeNode(*source.graph.mergeNode(nodeId));
+    }
+    QSet<QString> retainedStreams;
+    for (const auto& streamId : source.graph.streamIds()) {
+        const auto* stream = source.graph.stream(streamId);
+        const bool sourceSelected = stream->source
+            && objectScope.contains(stream->source->nodeId);
+        const bool targetSelected = stream->target
+            && objectScope.contains(stream->target->nodeId);
+        if (!sourceSelected && !targetSelected) continue;
+        result.graph.addStream({streamId,
+            sourceSelected ? stream->source : std::nullopt,
+            targetSelected ? stream->target : std::nullopt});
+        retainedStreams.insert(streamId);
+    }
+    const auto appendRetained = [&retainedStreams](const auto& input, auto& output) {
+        for (const auto& descriptor : input)
+            if (retainedStreams.contains(descriptor.streamId)) output.append(descriptor);
+    };
+    appendRetained(source.reportStreams, result.reportStreams);
+    appendRetained(source.productStreams, result.productStreams);
+    appendRetained(source.terminalProducts, result.terminalProducts);
+    appendRetained(source.requiredMeasurements, result.requiredMeasurements);
+    return result;
+}
+
+} // namespace
 
 topology::CalculationResult FlowsheetCalculationService::calculate(
     const FlowsheetScene& scene, const FlowsheetDocument& document) {
@@ -16,6 +55,19 @@ topology::CalculationResult FlowsheetCalculationService::calculate(
 
 topology::CalculationResult FlowsheetCalculationService::calculate(
     const CanvasTopologySnapshot& snapshot, const FlowsheetDocument& document) {
+    return calculate(snapshot, document, {});
+}
+
+topology::CalculationResult FlowsheetCalculationService::calculate(
+    const FlowsheetScene& scene, const FlowsheetDocument& document,
+    const QSet<QString>& objectScope) {
+    return calculate(CanvasTopologyBuilder::build(scene), document, objectScope);
+}
+
+topology::CalculationResult FlowsheetCalculationService::calculate(
+    const CanvasTopologySnapshot& completeSnapshot, const FlowsheetDocument& document,
+    const QSet<QString>& objectScope) {
+    const auto snapshot = scopedSnapshot(completeSnapshot, objectScope);
     topology::CalculationResult combined;
     bool first = true;
     for (const auto& component : document.components()) {
@@ -39,7 +91,7 @@ topology::CalculationResult FlowsheetCalculationService::calculate(
                 knownValues.insert(stream.streamId, *value);
         }
         auto result = topology::OpenCircuitCalculator::calculate(
-            snapshot.graph, knownValues, allocations);
+            snapshot.graph, knownValues, allocations, !objectScope.isEmpty());
         if (first) { combined = result; first = false; }
         combined.components.insert(component.id, {result.values, result.flotationPerformance,
             result.relativeToExternalFeed, result.complete, result.fullySolved});

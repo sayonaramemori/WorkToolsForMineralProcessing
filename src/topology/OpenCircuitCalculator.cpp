@@ -167,9 +167,10 @@ ScalarSolution solveScalarSystem(
 CalculationResult OpenCircuitCalculator::calculate(
     const TopologyGraph& graph,
     const QHash<StreamId, StreamValue>& knownValues,
-    const QHash<StreamId, BranchAllocation>& allocations) {
+    const QHash<StreamId, BranchAllocation>& allocations,
+    bool scopedCalculation) {
     CalculationResult result;
-    result.issues = TopologyValidator::validate(graph);
+    result.issues = TopologyValidator::validate(graph, scopedCalculation);
     if (TopologyValidator::hasErrors(result.issues)) return result;
 
     for (const auto& nodeId : graph.nodeIds()) {
@@ -299,8 +300,9 @@ CalculationResult OpenCircuitCalculator::calculate(
     bool allTerminalValuesKnown = true;
     for (const auto& streamId : terminalIds)
         allTerminalValuesKnown = allTerminalValuesKnown && result.values.contains(streamId);
-    const bool externalFeedKnown = externalIds.size() == 1
-        && result.values.contains(externalIds.front());
+    bool externalFeedKnown = scopedCalculation ? !externalIds.isEmpty() : externalIds.size() == 1;
+    for (const auto& streamId : externalIds)
+        externalFeedKnown = externalFeedKnown && result.values.contains(streamId);
     result.fullySolved = !TopologyValidator::hasErrors(result.issues)
         && result.values.size() == graph.streamIds().size();
     result.complete = !TopologyValidator::hasErrors(result.issues)

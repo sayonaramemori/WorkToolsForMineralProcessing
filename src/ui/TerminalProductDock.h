@@ -3,6 +3,7 @@
 #include "adapters/CanvasTopologyBuilder.h"
 
 #include <QDockWidget>
+#include <QSet>
 
 class QTableView;
 class QGraphicsItem;
@@ -32,6 +33,7 @@ public:
     void clearResultDetails();
     void setScenarioName(const QString& name);
     [[nodiscard]] TerminalProductTableModel* model() const { return m_model; }
+    [[nodiscard]] const QSet<QString>& calculationScope() const { return m_interestedOwners; }
 
 signals:
     void graphicsItemRequested(QGraphicsItem* item);
@@ -51,6 +53,7 @@ private:
     QLabel* m_calculationStatus;
     ResultDetailsView* m_resultDetails;
     CanvasTopologySnapshot m_snapshot;
+    QSet<QString> m_interestedOwners;
 
     void updateSummary();
     void applyPanelStyle();

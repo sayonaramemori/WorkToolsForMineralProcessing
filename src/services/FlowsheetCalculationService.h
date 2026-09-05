@@ -2,6 +2,8 @@
 
 #include "topology/TopologyTypes.h"
 
+#include <QSet>
+
 namespace afs {
 
 class FlowsheetDocument;
@@ -14,6 +16,12 @@ public:
         const FlowsheetScene& scene, const FlowsheetDocument& document);
     static topology::CalculationResult calculate(
         const CanvasTopologySnapshot& snapshot, const FlowsheetDocument& document);
+    static topology::CalculationResult calculate(
+        const FlowsheetScene& scene, const FlowsheetDocument& document,
+        const QSet<QString>& objectScope);
+    static topology::CalculationResult calculate(
+        const CanvasTopologySnapshot& snapshot, const FlowsheetDocument& document,
+        const QSet<QString>& objectScope);
 };
 
 } // namespace afs
