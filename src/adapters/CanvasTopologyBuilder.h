@@ -3,6 +3,7 @@
 #include "topology/TopologyGraph.h"
 
 #include <QVector>
+#include <QStringList>
 
 class QGraphicsItem;
 
@@ -18,6 +19,12 @@ struct CanvasStreamDescriptor {
     bool terminal{false};
     bool feed{false};
     bool recycle{false};
+    QStringList ownerIds;
+};
+
+struct CanvasInterestObject {
+    QString id;
+    QString displayName;
 };
 
 struct CanvasTopologySnapshot {
@@ -26,6 +33,7 @@ struct CanvasTopologySnapshot {
     QVector<CanvasStreamDescriptor> productStreams;
     QVector<CanvasStreamDescriptor> terminalProducts;
     QVector<CanvasStreamDescriptor> requiredMeasurements;
+    QVector<CanvasInterestObject> interestObjects;
 };
 
 class CanvasTopologyBuilder final {

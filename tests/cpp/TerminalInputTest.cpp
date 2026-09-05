@@ -18,6 +18,9 @@
 #include <QTableWidget>
 #include <QTableView>
 #include <QComboBox>
+#include <QPushButton>
+#include <QAction>
+#include <QMenu>
 #include <QGraphicsSimpleTextItem>
 #include <QKeyEvent>
 
@@ -179,6 +182,38 @@ int main(int argc, char** argv) {
     if (filterTable->model()->rowCount() != 2) return 57;
     filterCombo->setCurrentText("浮选入料");
     if (filterTable->model()->rowCount() != 1) return 58;
+
+    FlowsheetScene propagationScene;
+    auto* cleaner = new FlotationUnitItem({"cleaner", {0, 0}});
+    auto* scavenger = new FlotationUnitItem({"scavenger", {400, 300}});
+    propagationScene.addItem(cleaner);
+    propagationScene.addItem(scavenger);
+    if (!propagationScene.connectProduct(cleaner->products().at(1), scavenger->inputLine()))
+        return 59;
+    FlowsheetDocument propagationDocument;
+    propagationDocument.setDryMass("scavenger:left", 35.0);
+    propagationDocument.setGradePercent("scavenger:left", 4.0);
+    propagationDocument.setDryMass("scavenger:right", 65.0);
+    propagationDocument.setGradePercent("scavenger:right", 1.0);
+    const auto propagationResult = FlowsheetCalculationService::calculate(
+        propagationScene, propagationDocument);
+    if (!propagationResult.values.contains("cleaner:right")
+        || std::abs(propagationResult.values["cleaner:right"].dryMass - 100.0) > 0.001
+        || std::abs(propagationResult.values["cleaner:right"].gradePercent() - 2.05) > 0.001)
+        return 60;
+
+    TerminalProductDock interestDock(filterDocument);
+    interestDock.setSnapshot(connected);
+    auto* interestButton = interestDock.findChild<QPushButton*>("interestObjectButton");
+    auto* interestTable = interestDock.findChild<QTableView*>("terminalProductTable");
+    if (!interestButton || !interestButton->menu() || !interestTable
+        || interestTable->model()->rowCount() != 5) return 61;
+    QAction* firstUnitAction = nullptr;
+    for (auto* action : interestButton->menu()->actions())
+        if (action->data().toString() == "first") { firstUnitAction = action; break; }
+    if (!firstUnitAction) return 62;
+    firstUnitAction->setChecked(true);
+    if (interestTable->model()->rowCount() != 3) return 63;
 
     FlowsheetDocument resultDocument;
     TerminalProductDock resultDock(resultDocument);

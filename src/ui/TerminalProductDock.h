@@ -10,6 +10,7 @@ class QLabel;
 class QWidget;
 class QPushButton;
 class QComboBox;
+class QMenu;
 
 namespace afs {
 
@@ -41,6 +42,8 @@ private:
     TerminalProductTableModel* m_model;
     StreamFilterProxyModel* m_filterModel;
     QComboBox* m_filterCombo;
+    QPushButton* m_interestButton;
+    QMenu* m_interestMenu;
     QLabel* m_progressLabel;
     QWidget* m_panel;
     FlowsheetDocument& m_document;
@@ -54,6 +57,7 @@ private:
     void updateCalculationState();
     void configureColumns();
     void editComponents();
+    void rebuildInterestMenu();
 };
 
 } // namespace afs

@@ -20,6 +20,8 @@
 #include <QPainter>
 #include <QPushButton>
 #include <QComboBox>
+#include <QMenu>
+#include <QAction>
 #include <QSet>
 #include <QSortFilterProxyModel>
 #include <QStyledItemDelegate>
@@ -38,13 +40,24 @@ public:
         m_mode = mode;
         endFilterChange(Direction::Rows);
     }
+    void setInterestedOwners(QSet<QString> ids) {
+        beginFilterChange();
+        m_interestedOwners = std::move(ids);
+        endFilterChange(Direction::Rows);
+    }
 
 protected:
     bool filterAcceptsRow(int row, const QModelIndex& parent) const override {
-        if (m_mode == All) return true;
         const auto* model = qobject_cast<const TerminalProductTableModel*>(sourceModel());
         const auto* stream = model ? model->streamAt(row) : nullptr;
         if (!model || !stream) return false;
+        if (!m_interestedOwners.isEmpty()) {
+            bool belongs = false;
+            for (const auto& ownerId : stream->ownerIds)
+                if (m_interestedOwners.contains(ownerId)) { belongs = true; break; }
+            if (!belongs) return false;
+        }
+        if (m_mode == All) return true;
         const QString status = model->index(row, model->statusColumn(), parent)
                                    .data(Qt::DisplayRole).toString();
         if (m_mode == Entered) return status == QStringLiteral("实测值")
@@ -58,6 +71,7 @@ protected:
 
 private:
     Mode m_mode{All};
+    QSet<QString> m_interestedOwners;
 };
 
 namespace {
@@ -122,6 +136,8 @@ TerminalProductDock::TerminalProductDock(FlowsheetDocument& document, QWidget* p
     : QDockWidget("物流实测参数", parent), m_table(new QTableView(this)),
       m_model(new TerminalProductTableModel(document, this)),
       m_filterModel(new StreamFilterProxyModel(this)), m_filterCombo(new QComboBox(this)),
+      m_interestButton(new QPushButton("关注对象：全部", this)),
+      m_interestMenu(new QMenu(this)),
       m_progressLabel(new QLabel(this)),
       m_panel(new QWidget(this)), m_document(document), m_calculateButton(new QPushButton("计算", this)),
       m_calculationStatus(new QLabel(this)), m_resultDetails(new ResultDetailsView(document, this)) {
@@ -167,6 +183,9 @@ TerminalProductDock::TerminalProductDock(FlowsheetDocument& document, QWidget* p
     m_filterCombo->addItem("浮选入料", StreamFilterProxyModel::Feed);
     m_filterCombo->addItem("回流", StreamFilterProxyModel::Recycle);
     filterRow->addWidget(m_filterCombo);
+    m_interestButton->setObjectName("interestObjectButton");
+    m_interestButton->setMenu(m_interestMenu);
+    filterRow->addWidget(m_interestButton);
     filterRow->addStretch();
     layout->addLayout(filterRow);
     layout->addWidget(m_table, 1);
@@ -278,6 +297,33 @@ void TerminalProductDock::setSnapshot(CanvasTopologySnapshot snapshot) {
     QSet<QString> editableIds;
     for (const auto& stream : m_snapshot.reportStreams) editableIds.insert(stream.streamId);
     m_model->setStreams(m_snapshot.reportStreams, std::move(editableIds));
+    rebuildInterestMenu();
+}
+
+void TerminalProductDock::rebuildInterestMenu() {
+    m_interestMenu->clear();
+    for (const auto& object : m_snapshot.interestObjects) {
+        auto* action = m_interestMenu->addAction(object.displayName);
+        action->setCheckable(true);
+        action->setData(object.id);
+        connect(action, &QAction::toggled, this, [this] {
+            QSet<QString> selected;
+            int count = 0;
+            for (auto* candidate : m_interestMenu->actions()) {
+                if (!candidate->isChecked()) continue;
+                selected.insert(candidate->data().toString());
+                ++count;
+            }
+            m_filterModel->setInterestedOwners(std::move(selected));
+            m_interestButton->setText(count == 0
+                ? "关注对象：全部" : QString("关注对象：%1 个").arg(count));
+            updateSummary();
+        });
+    }
+    if (m_snapshot.interestObjects.isEmpty()) {
+        auto* empty = m_interestMenu->addAction("暂无可选对象");
+        empty->setEnabled(false);
+    }
 }
 
 void TerminalProductDock::selectGraphicsItem(const QGraphicsItem* item) {

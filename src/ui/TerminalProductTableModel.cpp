@@ -136,7 +136,8 @@ QVariant TerminalProductTableModel::data(const QModelIndex& index, int role) con
             : hasAnyMeasurement ? QColor(210, 125, 25)
             : hasCalculatedValue ? QColor(40, 110, 180) : QColor(120, 120, 120));
     if (role == Qt::ToolTipRole) {
-        if (index.column() == MassColumn) return QString("请输入非负干质量；留空表示未知");
+        if (index.column() == MassColumn)
+            return QString("请输入非负干质量；也可将同一基准下的产率作为相对量输入；留空表示未知");
         if (isGradeColumn(index.column())) return QString("请输入 0–100 之间的组分品位；留空表示未知");
         if (index.column() == dryMassShareColumn() || isComponentShareColumn(index.column()))
             return stream.mergeBranch
@@ -151,7 +152,7 @@ QVariant TerminalProductTableModel::headerData(int section, Qt::Orientation orie
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole) return {};
     if (section == NameColumn) return QString("产品物流");
     if (section == ProductNameColumn) return QString("产品名称");
-    if (section == MassColumn) return QString("干质量");
+    if (section == MassColumn) return QString("干质量/相对量");
     if (isGradeColumn(section)) {
         const int i = section - FirstGradeColumn;
         return QString("%1 / %").arg(m_document.components()[i].name);
