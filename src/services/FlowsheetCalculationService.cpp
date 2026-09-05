@@ -12,10 +12,25 @@ namespace {
 CanvasTopologySnapshot scopedSnapshot(const CanvasTopologySnapshot& source,
                                       const QSet<QString>& objectScope) {
     if (objectScope.isEmpty()) return source;
+    QSet<QString> expandedScope = objectScope;
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (const auto& streamId : source.graph.streamIds()) {
+            const auto* stream = source.graph.stream(streamId);
+            if (!stream->source || !stream->target
+                || !expandedScope.contains(stream->target->nodeId)
+                || source.graph.nodeKind(stream->source->nodeId) != topology::NodeKind::Merge)
+                continue;
+            if (expandedScope.contains(stream->source->nodeId)) continue;
+            expandedScope.insert(stream->source->nodeId);
+            changed = true;
+        }
+    }
     CanvasTopologySnapshot result;
     result.interestObjects = source.interestObjects;
     for (const auto& nodeId : source.graph.nodeIds()) {
-        if (!objectScope.contains(nodeId)) continue;
+        if (!expandedScope.contains(nodeId)) continue;
         if (source.graph.nodeKind(nodeId) == topology::NodeKind::Flotation)
             result.graph.addFlotationNode(*source.graph.flotationNode(nodeId));
         else
@@ -25,9 +40,9 @@ CanvasTopologySnapshot scopedSnapshot(const CanvasTopologySnapshot& source,
     for (const auto& streamId : source.graph.streamIds()) {
         const auto* stream = source.graph.stream(streamId);
         const bool sourceSelected = stream->source
-            && objectScope.contains(stream->source->nodeId);
+            && expandedScope.contains(stream->source->nodeId);
         const bool targetSelected = stream->target
-            && objectScope.contains(stream->target->nodeId);
+            && expandedScope.contains(stream->target->nodeId);
         if (!sourceSelected && !targetSelected) continue;
         result.graph.addStream({streamId,
             sourceSelected ? stream->source : std::nullopt,

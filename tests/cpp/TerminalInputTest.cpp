@@ -5,6 +5,7 @@
 #include "document/FlowsheetDocument.h"
 #include "editor/FlowsheetScene.h"
 #include "graphics/items/FlotationUnitItem.h"
+#include "graphics/items/FeedJunctionItem.h"
 #include "graphics/items/InputLineItem.h"
 #include "graphics/items/ProductLineItem.h"
 #include "ui/TerminalProductTableModel.h"
@@ -370,6 +371,11 @@ int main(int argc, char** argv) {
     const auto closedResult = FlowsheetCalculationService::calculate(closedScene, closedDocument);
     if (!closedResult.complete || closedResult.values.size() != closedSnapshot.graph.streamIds().size())
         return 28;
+    const auto scopedClosedResult = FlowsheetCalculationService::calculate(
+        closedScene, closedDocument, QSet<QString>{"closed-upper", "closed-lower"});
+    if (!scopedClosedResult.complete || !scopedClosedResult.fullySolved
+        || !scopedClosedResult.values.contains(
+            closedUpper->inputLine()->feedJunction()->externalFeedStreamId())) return 70;
     closedDocument.setCalculationResult(closedResult);
     AnnotationManager closedAnnotations(closedScene, closedDocument);
     closedAnnotations.synchronize();
