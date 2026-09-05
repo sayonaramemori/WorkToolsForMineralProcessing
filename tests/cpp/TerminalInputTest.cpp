@@ -62,7 +62,7 @@ int main(int argc, char** argv) {
     if (connected.productStreams.size() != 4) return 36;
     if (connected.reportStreams.size() != 5
         || connected.reportStreams.front().streamId != "first:feed"
-        || !connected.reportStreams.front().displayName.contains("合计")) return 38;
+        || !connected.reportStreams.front().displayName.contains("主入料")) return 38;
     const auto* graphStream = connected.graph.stream("first:right");
     if (!graphStream || !graphStream->target || graphStream->target->nodeId != "second") return 6;
 

@@ -138,6 +138,16 @@ int main(int argc, char** argv) {
         || !topology::TopologyAlgorithms::sort(occupiedSnapshot.graph).hasCycle
         || topology::TopologyValidator::hasErrors(
             topology::TopologyValidator::validate(occupiedSnapshot.graph))) return 32;
+    const CanvasStreamDescriptor* processDescriptor = nullptr;
+    const CanvasStreamDescriptor* recycleDescriptor = nullptr;
+    for (const auto& descriptor : occupiedSnapshot.reportStreams) {
+        if (descriptor.streamId == normalFeed->streamId()) processDescriptor = &descriptor;
+        if (descriptor.streamId == downstreamRecycle->streamId()) recycleDescriptor = &descriptor;
+    }
+    if (!processDescriptor || !processDescriptor->feed || processDescriptor->recycle
+        || !processDescriptor->displayName.contains("主入料")
+        || !recycleDescriptor || recycleDescriptor->feed || !recycleDescriptor->recycle
+        || !recycleDescriptor->displayName.contains("回流")) return 38;
     if (!occupiedFeedScene.disconnectRecycle(occupiedJunction)
         || normalFeed->targetUnit() != stageB || normalFeed->feedJunction()
         || stageB->inputLine()->sourceProduct() != normalFeed

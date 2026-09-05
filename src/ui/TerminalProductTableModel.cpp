@@ -150,7 +150,7 @@ QVariant TerminalProductTableModel::data(const QModelIndex& index, int role) con
 
 QVariant TerminalProductTableModel::headerData(int section, Qt::Orientation orientation, int role) const {
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole) return {};
-    if (section == NameColumn) return QString("产品物流");
+    if (section == NameColumn) return QString("物流/入料定义");
     if (section == ProductNameColumn) return QString("产品名称");
     if (section == MassColumn) return QString("干质量/相对量");
     if (isGradeColumn(section)) {
