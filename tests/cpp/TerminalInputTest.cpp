@@ -201,6 +201,11 @@ int main(int argc, char** argv) {
         || std::abs(propagationResult.values["cleaner:right"].dryMass - 100.0) > 0.001
         || std::abs(propagationResult.values["cleaner:right"].gradePercent() - 2.05) > 0.001)
         return 60;
+    if (propagationResult.complete) return 65;
+    propagationDocument.setCalculationResult(propagationResult);
+    AnnotationManager partialAnnotations(propagationScene, propagationDocument);
+    partialAnnotations.synchronize();
+    if (partialAnnotations.annotationCount() != propagationResult.values.size()) return 66;
     const auto scopedResult = FlowsheetCalculationService::calculate(
         propagationScene, propagationDocument, QSet<QString>{"scavenger"});
     if (!scopedResult.complete || !scopedResult.fullySolved

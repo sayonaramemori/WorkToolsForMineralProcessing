@@ -241,7 +241,7 @@ void AnnotationManager::synchronize() {
     synchronizeReagents();
     synchronizeNotes();
     const auto* result = m_document.calculationResult();
-    if (!result || !result->complete) {
+    if (!result || result->values.isEmpty()) {
         for (auto* item : m_items) item->setVisible(false);
         return;
     }
@@ -408,7 +408,8 @@ void AnnotationManager::clearGraphicsItems() {
 void AnnotationManager::setAnnotationsVisible(bool visible) {
     m_visible = visible;
     for (auto* item : m_items) item->setVisible(visible && m_settings.anyVisible() && item->record().visible
-        && m_document.calculationResult() && m_document.calculationResult()->complete);
+        && m_document.calculationResult()
+        && m_document.calculationResult()->values.contains(item->record().ownerId));
 }
 
 void AnnotationManager::setMetricVisible(ResultMetric metric, bool visible) {
