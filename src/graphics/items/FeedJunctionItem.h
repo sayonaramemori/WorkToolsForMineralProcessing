@@ -57,6 +57,9 @@ public:
     [[nodiscard]] QPointF recycleAnchor() const { return m_recycleAnchor; }
     [[nodiscard]] QPointF externalFeedAnchor() const { return m_externalFeedAnchor; }
     [[nodiscard]] QPointF outputAnchor() const { return m_outputAnchor; }
+    [[nodiscard]] QPointF processAnnotationAnchor() const {
+        return m_processAnnotationAnchor;
+    }
 
     [[nodiscard]] QPainterPath shape() const override;
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option,
@@ -83,6 +86,7 @@ private:
     QPointF m_recycleAnchor;
     QPointF m_externalFeedAnchor;
     QPointF m_outputAnchor;
+    QPointF m_processAnnotationAnchor;
     QPainterPath m_linePath;
     QPainterPath m_commonPath;
     QPainterPath m_arrowPath;

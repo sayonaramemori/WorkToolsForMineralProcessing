@@ -173,6 +173,8 @@ recycle product┘
 
 报表层明确区分 `主入料`、`回流支路` 与 `总入料（含回流）`。正常上游产品即使与回流共用 `FeedJunctionItem`，仍依据 `processProduct/processMerge` 判为主入料，不能仅凭存在 `feedJunction` 判为回流。
 
+`FeedJunctionItem` 分别提供主入料支路、回流支路、外部入料和总入料的指标锚点；`AnnotationManager` 必须先识别 `processProduct/processMerge`，避免主入料因共享汇流图元而丢失结果标注。
+
 `CanvasStreamDescriptor` 保存终端、入料、回流类别以及相关对象 ID，`StreamFilterProxyModel` 据此组合“物流类别”和“关注对象”两层筛选而不依赖显示名称。求解结果同时携带干质量和组分质量的自由度，右侧提示栏使用两者较大值呈现当前仍缺少的独立约束数量。
 
 关注对象非空时，`FlowsheetCalculationService` 构造诱导子图：保留选中节点及所有相邻物流，移除物流在未选中一侧的端点，使其成为局部边界。子图允许存在多个边界入料，但不会改变完整项目“仅一个主流程”的拓扑校验规则。

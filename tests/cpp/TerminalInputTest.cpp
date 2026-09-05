@@ -227,6 +227,30 @@ int main(int argc, char** argv) {
         || !scopedResult.values.contains("cleaner:right")
         || scopedResult.values.contains("cleaner:left")) return 64;
 
+    FlowsheetScene processFeedScene;
+    auto* processSource = new FlotationUnitItem({"process-source", {0, 0}});
+    auto* processTarget = new FlotationUnitItem({"process-target", {400, 300}});
+    auto* recycleSource = new FlotationUnitItem({"recycle-source", {800, 600}});
+    processFeedScene.addItem(processSource);
+    processFeedScene.addItem(processTarget);
+    processFeedScene.addItem(recycleSource);
+    auto* processStream = processSource->products().at(1);
+    auto* recycleStream = recycleSource->products().at(0);
+    if (!processFeedScene.connectProduct(processStream, processTarget->inputLine())
+        || !processFeedScene.connectProduct(recycleStream, processTarget->inputLine())) return 71;
+    FlowsheetDocument processFeedDocument;
+    processFeedDocument.setDryMass(processStream->streamId(), 100.0);
+    processFeedDocument.setGradePercent(processStream->streamId(), 2.0);
+    processFeedDocument.setDryMass(recycleStream->streamId(), 20.0);
+    processFeedDocument.setGradePercent(recycleStream->streamId(), 1.0);
+    auto processFeedResult = FlowsheetCalculationService::calculate(
+        processFeedScene, processFeedDocument, QSet<QString>{"process-target"});
+    if (!processFeedResult.values.contains(processStream->streamId())) return 72;
+    processFeedDocument.setCalculationResult(std::move(processFeedResult));
+    AnnotationManager processFeedAnnotations(processFeedScene, processFeedDocument);
+    processFeedAnnotations.synchronize();
+    if (processFeedAnnotations.annotationCount() != 3) return 73;
+
     TerminalProductDock interestDock(filterDocument);
     interestDock.setSnapshot(connected);
     auto* interestButton = interestDock.findChild<QPushButton*>("interestObjectButton");

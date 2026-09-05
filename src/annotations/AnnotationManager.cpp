@@ -179,6 +179,18 @@ bool AnnotationManager::anchorForStream(const QString& streamId, QPointF& anchor
                                         QPointF& defaultOffset) const {
     for (auto* graphicsItem : m_scene.items()) {
         if (auto* feed = dynamic_cast<FeedJunctionItem*>(graphicsItem)) {
+            if (feed->processProduct()
+                && feed->processProduct()->streamId() == streamId) {
+                anchor = feed->processAnnotationAnchor();
+                defaultOffset = QPointF(14, -25);
+                return true;
+            }
+            if (feed->processMerge()
+                && feed->processMerge()->outputStreamId() == streamId) {
+                anchor = feed->processAnnotationAnchor();
+                defaultOffset = QPointF(14, -25);
+                return true;
+            }
             for (auto* product : feed->recycleProducts())
                 if (product->streamId() == streamId) {
                     anchor = feed->sourceAnnotationAnchor(streamId);

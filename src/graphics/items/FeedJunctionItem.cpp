@@ -175,9 +175,12 @@ void FeedJunctionItem::updatePath() {
                          left ? leftIndex++ : rightIndex++, entryIndex++);
     }
     if (hasExternalFeed()) {
+        m_processAnnotationAnchor = QPointF();
         m_commonPath.moveTo(freshFeedStart);
     } else {
         const QPointF processStart = processSourceAnchor();
+        m_processAnnotationAnchor = QPointF(
+            processStart.x(), (processStart.y() + m_junctionPosition.y()) / 2.0);
         m_commonPath.moveTo(processStart);
         m_commonPath.lineTo(processStart.x(), m_junctionPosition.y());
         m_commonPath.lineTo(m_junctionPosition);
