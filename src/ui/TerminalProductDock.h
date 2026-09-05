@@ -61,6 +61,7 @@ private:
     void configureColumns();
     void editComponents();
     void rebuildInterestMenu();
+    bool eventFilter(QObject* watched, QEvent* event) override;
 };
 
 } // namespace afs

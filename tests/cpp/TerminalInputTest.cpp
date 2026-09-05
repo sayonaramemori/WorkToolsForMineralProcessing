@@ -182,6 +182,11 @@ int main(int argc, char** argv) {
     if (filterTable->model()->rowCount() != 2) return 57;
     filterCombo->setCurrentText("浮选入料");
     if (filterTable->model()->rowCount() != 1) return 58;
+    filterTable->setCurrentIndex(filterTable->model()->index(
+        0, TerminalProductTableModel::MassColumn));
+    QKeyEvent deleteMeasurement(QEvent::KeyPress, Qt::Key_Delete, Qt::NoModifier);
+    QApplication::sendEvent(filterTable, &deleteMeasurement);
+    if (filterDocument.measurement("calculation:feed").dryMass) return 67;
 
     FlowsheetScene propagationScene;
     auto* cleaner = new FlotationUnitItem({"cleaner", {0, 0}});

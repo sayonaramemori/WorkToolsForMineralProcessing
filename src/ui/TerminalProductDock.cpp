@@ -22,6 +22,7 @@
 #include <QComboBox>
 #include <QMenu>
 #include <QAction>
+#include <QKeyEvent>
 #include <QSet>
 #include <QSortFilterProxyModel>
 #include <QStyledItemDelegate>
@@ -201,6 +202,7 @@ TerminalProductDock::TerminalProductDock(FlowsheetDocument& document, QWidget* p
     m_table->setShowGrid(false);
     m_table->setAlternatingRowColors(true);
     m_table->setCornerButtonEnabled(false);
+    m_table->installEventFilter(this);
     m_table->verticalHeader()->hide();
     m_table->verticalHeader()->setDefaultSectionSize(44);
     m_table->horizontalHeader()->setMinimumHeight(38);
@@ -262,6 +264,20 @@ void TerminalProductDock::configureColumns() {
                                       new NumberDelegate(100.0, m_table));
     m_table->setColumnWidth(m_model->statusColumn(), 82);
     m_table->setItemDelegateForColumn(m_model->statusColumn(), new StatusDelegate(m_table));
+}
+
+bool TerminalProductDock::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == m_table && event->type() == QEvent::KeyPress) {
+        auto* key = static_cast<QKeyEvent*>(event);
+        if (key->key() == Qt::Key_Delete) {
+            const QModelIndex current = m_table->currentIndex();
+            if (current.isValid() && current.flags().testFlag(Qt::ItemIsEditable)) {
+                m_table->model()->setData(current, QVariant(), Qt::EditRole);
+                return true;
+            }
+        }
+    }
+    return QDockWidget::eventFilter(watched, event);
 }
 
 void TerminalProductDock::editComponents() {
