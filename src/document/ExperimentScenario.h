@@ -10,12 +10,15 @@
 
 namespace afs {
 
+enum class CalculationMode { Strict, DataReconciliation };
+
 struct ExperimentScenario {
     QString id;
     QString name;
     QHash<QString, StreamMeasurement> measurements;
     QHash<QString, AnnotationRecord> reagentAnnotations;
     std::optional<topology::CalculationResult> calculationResult;
+    CalculationMode calculationMode{CalculationMode::Strict};
 };
 
 } // namespace afs

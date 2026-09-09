@@ -138,6 +138,16 @@ int main(int argc, char** argv) {
         || !topology::TopologyAlgorithms::sort(occupiedSnapshot.graph).hasCycle
         || topology::TopologyValidator::hasErrors(
             topology::TopologyValidator::validate(occupiedSnapshot.graph))) return 32;
+
+    // Ctrl+B on a selected source branch removes only that source. The other
+    // recycle source and the original process feed remain connected.
+    if (!occupiedJunction->selectSourceStream(downstreamRecycle->streamId())) return 39;
+    if (CanvasActions::disconnectSelection(occupiedFeedScene) != 1) return 40;
+    if (downstreamRecycle->feedJunction() || !downstreamRecycle->isAvailable()
+        || secondRecycle->feedJunction() != occupiedJunction
+        || occupiedJunction->recycleProducts().size() != 1
+        || occupiedJunction->processProduct() != normalFeed
+        || stageB->inputLine()->feedJunction() != occupiedJunction) return 41;
     const CanvasStreamDescriptor* processDescriptor = nullptr;
     const CanvasStreamDescriptor* recycleDescriptor = nullptr;
     for (const auto& descriptor : occupiedSnapshot.reportStreams) {
@@ -151,7 +161,7 @@ int main(int argc, char** argv) {
     if (!occupiedFeedScene.disconnectRecycle(occupiedJunction)
         || normalFeed->targetUnit() != stageB || normalFeed->feedJunction()
         || stageB->inputLine()->sourceProduct() != normalFeed
-        || downstreamRecycle->feedJunction() || secondRecycle->feedJunction()) return 33;
+        || secondRecycle->feedJunction()) return 33;
 
     // Two independent recycle junctions in the same main flow must coexist.
     FlowsheetScene multiLoopScene;
@@ -183,5 +193,25 @@ int main(int argc, char** argv) {
     if (!multiLoopResult.complete || !multiLoopResult.fullySolved
         || std::abs(multiLoopResult.values[firstLoop->externalFeedStreamId()].dryMass - 50.0)
             > 0.001) return 37;
+
+    // Removing the normal upstream source keeps remaining recycle inputs and
+    // turns the target junction's main input into an external feed.
+    FlowsheetScene deleteSourceScene;
+    auto* deleteSource = new FlotationUnitItem({"delete-source", {0, 0}});
+    auto* deleteTarget = new FlotationUnitItem({"delete-target", {400, 300}});
+    auto* deleteRecycle = new FlotationUnitItem({"delete-recycle", {800, 600}});
+    deleteSourceScene.addItem(deleteSource);
+    deleteSourceScene.addItem(deleteTarget);
+    deleteSourceScene.addItem(deleteRecycle);
+    if (!deleteSourceScene.connectProduct(
+            deleteSource->products().at(1), deleteTarget->inputLine())
+        || !deleteSourceScene.connectProduct(
+            deleteRecycle->products().at(0), deleteTarget->inputLine())) return 42;
+    auto* retainedFeed = deleteTarget->inputLine()->feedJunction();
+    auto* retainedRecycle = deleteRecycle->products().at(0);
+    if (!retainedFeed || !deleteSourceScene.removeUnit(deleteSource)
+        || deleteTarget->inputLine()->feedJunction() != retainedFeed
+        || !retainedFeed->hasExternalFeed()
+        || retainedRecycle->feedJunction() != retainedFeed) return 43;
     return 0;
 }

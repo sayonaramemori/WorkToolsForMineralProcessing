@@ -8,6 +8,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QSet>
 #include <QString>
 
 namespace afs {
@@ -29,9 +30,14 @@ public:
     }
     void setAnnotationTextSettings(AnnotationTextSettings settings);
     void setDryMass(const QString& streamId, std::optional<double> value);
+    void setDryMassStdDev(const QString& streamId, std::optional<double> value);
     void setGradePercent(const QString& streamId, std::optional<double> value);
     void setGradePercent(const QString& streamId, const QString& componentId,
                          std::optional<double> value);
+    void setGradeStdDev(const QString& streamId, const QString& componentId,
+                        std::optional<double> value);
+    [[nodiscard]] CalculationMode calculationMode() const;
+    void setCalculationMode(CalculationMode mode);
     void setComponentSharePercent(const QString& streamId, const QString& componentId,
                                   std::optional<double> value);
     void setDryMassSharePercent(const QString& streamId, std::optional<double> value);
@@ -60,6 +66,7 @@ public:
     bool renameScenario(int index, QString name);
     bool removeScenario(int index);
     void replaceScenarios(QVector<ExperimentScenario> scenarios, int currentIndex);
+    void removeUnknownStreams(const QSet<QString>& validStreamIds);
 
 signals:
     void projectChanged();
@@ -70,6 +77,7 @@ signals:
     void calculationChanged();
     void scenariosChanged();
     void currentScenarioChanged();
+    void calculationModeChanged();
 
 private:
     QHash<QString, QString> m_productNames;

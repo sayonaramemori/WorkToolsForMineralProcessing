@@ -13,10 +13,12 @@
 #include "services/RasterExporter.h"
 #include "services/ExcelDataExporter.h"
 #include "services/ProjectSerializer.h"
+#include "services/ProjectUndoManager.h"
 #include "services/SvgExporter.h"
 #include "services/FlowsheetCalculationService.h"
 #include "services/ThemeService.h"
 #include "ui/TerminalProductDock.h"
+#include "ui/OperationLogDock.h"
 #include "ui/ResultMetricMenu.h"
 #include "ui/ScenarioComparisonDialog.h"
 
@@ -47,6 +49,7 @@
 #include <QStatusBar>
 #include <QToolBar>
 #include <QToolButton>
+#include <QUndoStack>
 #include <QVBoxLayout>
 
 namespace afs {
@@ -71,8 +74,18 @@ MainWindow::MainWindow() {
     m_view->setVerticalNudgeHandler([this](qreal delta) {
         return m_annotationManager->nudgeSelectedReagents(delta);
     });
+    m_view->setDeleteHandler([this] { return deleteSelectedUnits(); });
     m_terminalDock = new TerminalProductDock(*m_document, this);
     addDockWidget(Qt::RightDockWidgetArea, m_terminalDock);
+
+    m_operationLog = new OperationLogDock(this);
+    addDockWidget(Qt::BottomDockWidgetArea, m_operationLog);
+    setCorner(Qt::BottomRightCorner, Qt::RightDockWidgetArea);
+    resizeDocks({m_operationLog}, {130}, Qt::Vertical);
+    connect(statusBar(), &QStatusBar::messageChanged, this,
+            [this](const QString& message) {
+                if (!message.isEmpty()) appendOperationLog(message);
+            });
     connect(static_cast<FlowsheetScene*>(m_scene), &FlowsheetScene::topologyChanged,
             this, [this] { refreshTerminalProducts(); });
     connect(static_cast<FlowsheetScene*>(m_scene), &FlowsheetScene::topologyChanged,
@@ -120,15 +133,37 @@ MainWindow::MainWindow() {
     };
 
     auto* projectMenu = new QMenu(tr("项目管理"), toolbar);
+    auto* newAction = projectMenu->addAction(tr("新建项目"));
+    newAction->setShortcut(QKeySequence::New);
+    connect(newAction, &QAction::triggered, this, [this] { newProject(); });
+    projectMenu->addSeparator();
     auto* saveAction = projectMenu->addAction(tr("保存项目"));
     saveAction->setShortcut(QKeySequence::Save);
     connect(saveAction, &QAction::triggered, this, [this] { saveProject(); });
+    auto* saveAsAction = projectMenu->addAction(tr("项目另存为"));
+    saveAsAction->setShortcut(QKeySequence::SaveAs);
+    connect(saveAsAction, &QAction::triggered, this, [this] { saveProjectAs(); });
+    projectMenu->addSeparator();
     auto* importAction = projectMenu->addAction(tr("导入项目"));
     importAction->setShortcut(QKeySequence::Open);
     connect(importAction, &QAction::triggered, this, [this] { importProject(); });
     addMenuButton(tr("项目管理"), projectMenu);
 
     auto* flowMenu = new QMenu(tr("流程编辑"), toolbar);
+    auto* undoAction = flowMenu->addAction(tr("撤销"));
+    undoAction->setShortcut(QKeySequence::Undo);
+    connect(undoAction, &QAction::triggered, this, [this] {
+        if (m_undoManager) m_undoManager->undo();
+    });
+    auto* redoAction = flowMenu->addAction(tr("重做"));
+    redoAction->setShortcuts({QKeySequence::Redo, QKeySequence("Ctrl+Shift+Z")});
+    connect(redoAction, &QAction::triggered, this, [this] {
+        if (m_undoManager) m_undoManager->redo();
+    });
+    flowMenu->addSeparator();
+    auto* deleteUnitAction = flowMenu->addAction(tr("删除选中单元"));
+    connect(deleteUnitAction, &QAction::triggered, this, [this] { deleteSelectedUnits(); });
+    flowMenu->addSeparator();
     auto* addAction = flowMenu->addAction(tr("添加浮选单元"));
     connect(addAction, &QAction::triggered, this, [this] { addFlotationUnit(); });
     auto* addThreeProductAction = flowMenu->addAction(tr("添加三产品浮选单元"));
@@ -191,6 +226,17 @@ MainWindow::MainWindow() {
             m_annotationManager, &AnnotationManager::setMetricVisible);
     connect(metricButton, &ResultMetricMenu::metricLabelModeChanged,
             m_annotationManager, &AnnotationManager::setMetricLabelMode);
+    connect(metricButton, &ResultMetricMenu::massUnitChanged,
+            m_annotationManager, &AnnotationManager::setMassUnit);
+    connect(metricButton, &ResultMetricMenu::customMassUnitChanged,
+            m_annotationManager, &AnnotationManager::setCustomMassUnit);
+    metricButton->setMassUnit(m_document->annotationTextSettings().massUnit,
+                              m_document->annotationTextSettings().customMassUnit);
+    connect(m_document, &FlowsheetDocument::annotationTextSettingsChanged,
+            metricButton, [this, metricButton] {
+                metricButton->setMassUnit(m_document->annotationTextSettings().massUnit,
+                                          m_document->annotationTextSettings().customMassUnit);
+            });
     displayMenu->addMenu(metricButton->metricMenu());
 
     displayMenu->addSeparator();
@@ -217,8 +263,43 @@ MainWindow::MainWindow() {
     setWindowTitle(tr("浮选单元编辑器"));
     setProjectDirty(true);
     resize(1200, 760);
+    m_undoManager = new ProjectUndoManager(
+        *static_cast<FlowsheetScene*>(m_scene), *m_document,
+        [this] {
+            m_loadingProject = true;
+            m_annotationManager->clearGraphicsItems();
+            m_scene->clearSelection();
+        },
+        [this] {
+            m_loadingProject = false;
+            updateNextUnitId();
+            static_cast<FlowsheetScene*>(m_scene)->refreshAppearance();
+            refreshSelectionStatus();
+            setProjectDirty(true);
+        }, this);
+    connect(static_cast<FlowsheetScene*>(m_scene), &FlowsheetScene::topologyChanged,
+            m_undoManager, [this] { m_undoManager->scheduleCheckpoint("编辑流程拓扑"); });
+    connect(static_cast<FlowsheetScene*>(m_scene), &FlowsheetScene::geometryChanged,
+            m_undoManager, [this] { m_undoManager->scheduleCheckpoint("调整流程图"); });
+    connect(m_document, &FlowsheetDocument::projectChanged,
+            m_undoManager, [this] { m_undoManager->scheduleCheckpoint("编辑项目数据"); });
+    connect(m_undoManager, &ProjectUndoManager::restoreFailed, this,
+            [this](const QString& error) {
+                QMessageBox::warning(this, tr("撤销失败"), error);
+            });
+    undoAction->setEnabled(false);
+    redoAction->setEnabled(false);
+    connect(m_undoManager->stack(), &QUndoStack::canUndoChanged,
+            undoAction, &QAction::setEnabled);
+    connect(m_undoManager->stack(), &QUndoStack::canRedoChanged,
+            redoAction, &QAction::setEnabled);
+    m_undoManager->initialize();
     statusBar()->showMessage(
         tr("单击选择，拖动图元；滚轮缩放画布，按住鼠标中键拖动画布"));
+}
+
+void MainWindow::appendOperationLog(const QString& message) {
+    if (m_operationLog) m_operationLog->appendMessage(message);
 }
 
 void MainWindow::refreshScenarioUi() {
@@ -303,84 +384,6 @@ void MainWindow::addBinarySplitter() {
     static_cast<FlowsheetScene*>(m_scene)->notifyTopologyChanged();
 }
 
-bool MainWindow::saveProject() {
-    QString path = m_projectPath;
-    if (path.isEmpty()) {
-        path = QFileDialog::getSaveFileName(
-            this, tr("保存浮选项目"), "flotation-project.afs.json",
-            tr("AutoFlotationSheet 项目 (*.afs.json);;JSON 文件 (*.json)"));
-        if (path.isEmpty()) return false;
-        if (!path.endsWith(".json", Qt::CaseInsensitive)) path += ".afs.json";
-    }
-
-    QString error;
-    if (!ProjectSerializer::save(
-            *static_cast<FlowsheetScene*>(m_scene), *m_document, path, &error)) {
-        QMessageBox::warning(this, tr("保存项目失败"), error);
-        return false;
-    }
-    m_projectPath = path;
-    setProjectDirty(false);
-    statusBar()->showMessage(tr("项目已保存：%1").arg(path), 8000);
-    return true;
-}
-
-void MainWindow::importProject() {
-    const QString path = QFileDialog::getOpenFileName(
-        this, tr("导入浮选项目"), {},
-        tr("AutoFlotationSheet 项目 (*.afs.json *.json);;所有文件 (*)"));
-    if (path.isEmpty()) return;
-
-    // 场景清空会销毁标注图元，先让管理器释放其非拥有型索引。
-    // 若校验失败，旧文档仍在，再同步即可恢复原标注。
-    m_annotationManager->clearGraphicsItems();
-    QString error;
-    m_loadingProject = true;
-    const bool loaded = ProjectSerializer::load(
-        *static_cast<FlowsheetScene*>(m_scene), *m_document, path, &error);
-    m_loadingProject = false;
-    if (!loaded) {
-        m_annotationManager->synchronize();
-        QMessageBox::warning(this, tr("导入项目失败"), error);
-        return;
-    }
-
-    m_projectPath = path;
-    setProjectDirty(false);
-    updateNextUnitId();
-    m_scene->clearSelection();
-    static_cast<FlowsheetScene*>(m_scene)->refreshAppearance();
-    const QRectF bounds = m_scene->itemsBoundingRect().adjusted(-60, -60, 60, 60);
-    if (!bounds.isEmpty()) m_view->fitInView(bounds, Qt::KeepAspectRatio);
-    statusBar()->showMessage(tr("项目已导入：%1").arg(path), 8000);
-}
-
-void MainWindow::setProjectDirty(bool dirty) {
-    m_projectDirty = dirty;
-    const QString name = m_projectPath.isEmpty()
-        ? tr("未命名项目") : QFileInfo(m_projectPath).fileName();
-    setWindowTitle(tr("浮选单元编辑器 · %1%2")
-        .arg(name, m_projectDirty ? QStringLiteral(" *") : QString()));
-}
-
-void MainWindow::closeEvent(QCloseEvent* event) {
-    if (!m_projectDirty) {
-        event->accept();
-        return;
-    }
-    const auto choice = QMessageBox::warning(
-        this, tr("保存项目"), tr("当前项目有未保存的更改，是否在退出前保存？"),
-        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
-        QMessageBox::Save);
-    if (choice == QMessageBox::Cancel) {
-        event->ignore();
-    } else if (choice == QMessageBox::Save) {
-        saveProject() ? event->accept() : event->ignore();
-    } else {
-        event->accept();
-    }
-}
-
 void MainWindow::updateNextUnitId() {
     QSet<QString> ids;
     for (auto* item : m_scene->items()) {
@@ -462,7 +465,8 @@ void MainWindow::editAnnotationTextStyle() {
     if (dialog.exec() != QDialog::Accepted) return;
     m_document->setAnnotationTextSettings({
         pointSize->value(), bold->isChecked(),
-        followTheme->isChecked() ? QColor() : selectedColor});
+        followTheme->isChecked() ? QColor() : selectedColor,
+        current.massUnit, current.customMassUnit});
 }
 
 void MainWindow::syncCanvasSelectionToTable() {
@@ -499,17 +503,23 @@ void MainWindow::refreshSelectionStatus() {
 
 void MainWindow::calculateFlowsheet() {
     auto result = FlowsheetCalculationService::calculate(
-        *static_cast<FlowsheetScene*>(m_scene), *m_document,
-        m_terminalDock->calculationScope());
+        *static_cast<FlowsheetScene*>(m_scene), *m_document);
     const bool complete = result.complete;
     const int issueCount = result.issues.size();
     m_document->setCalculationResult(std::move(result));
-    statusBar()->showMessage(complete
-        ? (m_terminalDock->calculationScope().isEmpty()
-            ? tr("平衡计算成功")
-            : tr("局部平衡计算成功，共 %1 个关注对象")
-                  .arg(m_terminalDock->calculationScope().size()))
-                                      : tr("计算未完成，共发现 %1 个问题").arg(issueCount), 5000);
+    if (!complete) {
+        const auto* storedResult = m_document->calculationResult();
+        if (storedResult) {
+            for (const auto& issue : storedResult->issues) {
+                appendOperationLog(tr("%1：%2")
+                    .arg(issue.severity == topology::IssueSeverity::Error
+                             ? tr("错误") : tr("提示"),
+                         issue.message));
+            }
+        }
+    }
+    statusBar()->showMessage(complete ? tr("平衡计算成功")
+        : tr("计算未完成，共发现 %1 个问题").arg(issueCount), 5000);
 }
 
 void MainWindow::refreshSelectedResult() {
@@ -561,132 +571,6 @@ void MainWindow::disconnectSelectedLines() {
     statusBar()->showMessage(disconnected > 0
         ? tr("已断开 %1 条浮选单元连接线").arg(disconnected)
         : tr("请先选中已连接的产品线、产品汇流或入料回流汇合点"), 3000);
-}
-
-void MainWindow::exportScene() {
-    const QString svgFilter = tr("SVG 文件 (*.svg)");
-    const QString pngFilter = tr("PNG 图像 (*.png)");
-    const QString jpegFilter = tr("JPEG 图像 (*.jpg *.jpeg)");
-    QString selectedFilter = svgFilter;
-    QString path = QFileDialog::getSaveFileName(
-        this, tr("导出流程图"), "flotation-flowsheet",
-        QStringList{svgFilter, pngFilter, jpegFilter}.join(";;"), &selectedFilter);
-    if (path.isEmpty()) return;
-
-    QString suffix = QFileInfo(path).suffix().toLower();
-    if (suffix.isEmpty()) {
-        suffix = selectedFilter == pngFilter ? "png"
-            : selectedFilter == jpegFilter ? "jpg" : "svg";
-        path += "." + suffix;
-    }
-
-    qreal rasterScale = 1.0;
-    if (suffix == "png" || suffix == "jpg" || suffix == "jpeg") {
-        const QStringList qualities{
-            tr("标准（1×）"), tr("高清（2×，推荐）"),
-            tr("超清（3×）"), tr("超清（4×）")};
-        bool accepted = false;
-        const QString quality = QInputDialog::getItem(
-            this, tr("栅格图像清晰度"),
-            tr("选择输出倍率；倍率越高，文字越清晰，文件也越大。"),
-            qualities, 1, false, &accepted);
-        if (!accepted) return;
-        rasterScale = quality == qualities[0] ? 1.0
-            : quality == qualities[1] ? 2.0
-            : quality == qualities[2] ? 3.0 : 4.0;
-    }
-
-    const bool screenWasDark = m_darkTheme;
-    if (screenWasDark) applyTheme(false, false);
-    const QBrush screenBackground = m_scene->backgroundBrush();
-    m_scene->setBackgroundBrush(Qt::white);
-    bool exported = false;
-    if (suffix == "svg") {
-        exported = SvgExporter::exportScene(*m_scene, path, tr("浮选工艺流程图"));
-    } else if (suffix == "png") {
-        exported = RasterExporter::exportScene(*m_scene, path, "png", rasterScale);
-    } else if (suffix == "jpg" || suffix == "jpeg") {
-        exported = RasterExporter::exportScene(*m_scene, path, "jpeg", rasterScale);
-    }
-
-    m_scene->setBackgroundBrush(screenBackground);
-    if (screenWasDark) applyTheme(true, false);
-    statusBar()->showMessage(
-        exported ? tr("已导出：%1").arg(path) : tr("导出失败，请检查文件格式和保存路径"),
-        8000);
-}
-
-void MainWindow::exportExcelData() {
-    const auto snapshot = CanvasTopologyBuilder::build(*static_cast<FlowsheetScene*>(m_scene));
-    QString path = QFileDialog::getSaveFileName(
-        this, tr("导出方案数据"), "flotation-scenarios.xlsx", tr("Excel 工作簿 (*.xlsx)"));
-    if (path.isEmpty()) return;
-    if (!path.endsWith(".xlsx", Qt::CaseInsensitive)) path += ".xlsx";
-    QString error;
-    if (!ExcelDataExporter::exportWorkbook(*m_document, snapshot, path, &error)) {
-        QMessageBox::warning(this, tr("导出 Excel 失败"), error);
-        return;
-    }
-    statusBar()->showMessage(tr("方案数据已导出：%1").arg(path), 8000);
-}
-
-void MainWindow::editExcelExportOrder() {
-    const auto snapshot = CanvasTopologyBuilder::build(*static_cast<FlowsheetScene*>(m_scene));
-    if (snapshot.reportStreams.isEmpty()) {
-        QMessageBox::information(this, tr("Excel 导出顺序"), tr("当前流程没有可排序的物流。"));
-        return;
-    }
-    QDialog dialog(this);
-    dialog.setWindowTitle(tr("Excel 导出顺序"));
-    dialog.resize(520, 520);
-    auto* layout = new QVBoxLayout(&dialog);
-    auto* hint = new QLabel(tr("拖动调整导出顺序。总入料、最终产品和中间产品均可自由排序。"),
-                            &dialog);
-    hint->setWordWrap(true);
-    layout->addWidget(hint);
-    auto* list = new QListWidget(&dialog);
-    list->setDragDropMode(QAbstractItemView::InternalMove);
-    list->setDefaultDropAction(Qt::MoveAction);
-    list->setSelectionMode(QAbstractItemView::SingleSelection);
-    layout->addWidget(list, 1);
-
-    QHash<QString, CanvasStreamDescriptor> byId;
-    for (const auto& stream : snapshot.reportStreams) byId.insert(stream.streamId, stream);
-    const auto appendItem = [this, list](const CanvasStreamDescriptor& stream) {
-        const QString configuredName = m_document->productName(stream.streamId).simplified();
-        const QString label = configuredName.isEmpty()
-            ? stream.displayName : QString("%1（%2）").arg(configuredName, stream.displayName);
-        auto* item = new QListWidgetItem(label, list);
-        item->setData(Qt::UserRole, stream.streamId);
-        item->setToolTip(tr("物流 ID：%1").arg(stream.streamId));
-    };
-    QSet<QString> added;
-    for (const auto& id : m_document->exportStreamOrder()) {
-        const auto found = byId.constFind(id);
-        if (found == byId.cend()) continue;
-        appendItem(found.value()); added.insert(id);
-    }
-    for (const auto& stream : snapshot.reportStreams) {
-        if (added.contains(stream.streamId)) continue;
-        appendItem(stream); added.insert(stream.streamId);
-    }
-
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
-                                         &dialog);
-    auto* reset = buttons->addButton(tr("恢复流程顺序"), QDialogButtonBox::ResetRole);
-    connect(reset, &QPushButton::clicked, &dialog, [list, snapshot, appendItem] {
-        list->clear();
-        for (const auto& stream : snapshot.reportStreams) appendItem(stream);
-    });
-    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    layout->addWidget(buttons);
-    if (dialog.exec() != QDialog::Accepted) return;
-    QStringList order;
-    for (int row = 0; row < list->count(); ++row)
-        order.append(list->item(row)->data(Qt::UserRole).toString());
-    m_document->setExportStreamOrder(std::move(order));
-    statusBar()->showMessage(tr("Excel 导出顺序已更新"), 3000);
 }
 
 void MainWindow::applyTheme(bool dark, bool saveSetting) {

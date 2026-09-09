@@ -9,11 +9,13 @@ namespace afs {
 class CanvasView final : public QGraphicsView {
 public:
     using VerticalNudgeHandler = std::function<bool(qreal)>;
+    using DeleteHandler = std::function<bool()>;
 
     explicit CanvasView(QGraphicsScene* scene, QWidget* parent = nullptr);
     void setVerticalNudgeHandler(VerticalNudgeHandler handler) {
         m_verticalNudgeHandler = std::move(handler);
     }
+    void setDeleteHandler(DeleteHandler handler) { m_deleteHandler = std::move(handler); }
 
 protected:
     void wheelEvent(QWheelEvent* event) override;
@@ -29,6 +31,7 @@ private:
     bool m_panning{false};
     QPoint m_lastPanPosition;
     VerticalNudgeHandler m_verticalNudgeHandler;
+    DeleteHandler m_deleteHandler;
 };
 
 } // namespace afs

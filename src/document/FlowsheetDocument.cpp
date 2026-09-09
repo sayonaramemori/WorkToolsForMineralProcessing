@@ -6,7 +6,8 @@
 namespace afs {
 
 FlowsheetDocument::FlowsheetDocument(QObject* parent) : QObject(parent) {
-    m_scenarios.append({"scenario-1", "基准方案", {}, {}, std::nullopt});
+    m_scenarios.append({"scenario-1", "基准方案", {}, {}, std::nullopt,
+                        CalculationMode::Strict});
 }
 
 ExperimentScenario& FlowsheetDocument::currentScenario() { return m_scenarios[m_currentScenarioIndex]; }
@@ -46,9 +47,14 @@ void FlowsheetDocument::setProductName(const QString& streamId, QString name) {
 
 void FlowsheetDocument::setAnnotationTextSettings(AnnotationTextSettings settings) {
     settings.pointSize = std::clamp(settings.pointSize, 7, 36);
+    settings.customMassUnit = settings.customMassUnit.simplified().left(16);
+    if (settings.massUnit == MassUnit::Custom && settings.customMassUnit.isEmpty())
+        settings.massUnit = MassUnit::Gram;
     if (m_annotationTextSettings.pointSize == settings.pointSize
         && m_annotationTextSettings.bold == settings.bold
-        && m_annotationTextSettings.color == settings.color) return;
+        && m_annotationTextSettings.color == settings.color
+        && m_annotationTextSettings.massUnit == settings.massUnit
+        && m_annotationTextSettings.customMassUnit == settings.customMassUnit) return;
     m_annotationTextSettings = std::move(settings);
     emit projectChanged();
     emit annotationTextSettingsChanged();
@@ -61,6 +67,14 @@ void FlowsheetDocument::setDryMass(const QString& streamId, std::optional<double
     invalidateCalculation();
     emit projectChanged();
     emit measurementChanged(streamId);
+}
+
+void FlowsheetDocument::setDryMassStdDev(const QString& streamId,
+                                         std::optional<double> value) {
+    auto& item = currentScenario().measurements[streamId];
+    if (item.dryMassStdDev == value) return;
+    item.dryMassStdDev = value;
+    invalidateCalculation(); emit projectChanged(); emit measurementChanged(streamId);
 }
 
 void FlowsheetDocument::setGradePercent(const QString& streamId, std::optional<double> value) {
@@ -77,6 +91,25 @@ void FlowsheetDocument::setGradePercent(const QString& streamId, const QString& 
     invalidateCalculation();
     emit projectChanged();
     emit measurementChanged(streamId);
+}
+
+void FlowsheetDocument::setGradeStdDev(const QString& streamId, const QString& componentId,
+                                       std::optional<double> value) {
+    auto& item = currentScenario().measurements[streamId];
+    if (item.gradeStdDev(componentId) == value) return;
+    if (value) item.gradeStdDevs.insert(componentId, *value);
+    else item.gradeStdDevs.remove(componentId);
+    invalidateCalculation(); emit projectChanged(); emit measurementChanged(streamId);
+}
+
+CalculationMode FlowsheetDocument::calculationMode() const {
+    return currentScenario().calculationMode;
+}
+
+void FlowsheetDocument::setCalculationMode(CalculationMode mode) {
+    if (currentScenario().calculationMode == mode) return;
+    currentScenario().calculationMode = mode;
+    invalidateCalculation(); emit projectChanged(); emit calculationModeChanged();
 }
 
 void FlowsheetDocument::setDryMassSharePercent(
@@ -192,6 +225,7 @@ void FlowsheetDocument::replaceProjectData(
     }
     m_scenarios = {std::move(scenario)};
     m_currentScenarioIndex = 0;
+    m_nextScenarioId = 2;
     m_productNames = std::move(productNames);
     m_exportStreamOrder = std::move(exportStreamOrder);
     m_annotationTextSettings = std::move(annotationTextSettings);
@@ -200,6 +234,7 @@ void FlowsheetDocument::replaceProjectData(
     emit annotationTextSettingsChanged();
     emit scenariosChanged();
     emit currentScenarioChanged();
+    emit calculationModeChanged();
 }
 
 QString FlowsheetDocument::currentScenarioName() const { return currentScenario().name; }
@@ -209,6 +244,7 @@ bool FlowsheetDocument::setCurrentScenario(int index) {
     m_currentScenarioIndex = index;
     emit projectChanged();
     emit currentScenarioChanged(); emit calculationChanged(); emit measurementChanged({});
+    emit calculationModeChanged();
     return true;
 }
 
@@ -239,6 +275,7 @@ bool FlowsheetDocument::removeScenario(int index) {
                                       static_cast<int>(m_scenarios.size()) - 1);
     emit projectChanged();
     emit scenariosChanged(); emit currentScenarioChanged(); emit calculationChanged(); emit measurementChanged({});
+    emit calculationModeChanged();
     return true;
 }
 
@@ -254,6 +291,44 @@ void FlowsheetDocument::replaceScenarios(QVector<ExperimentScenario> scenarios, 
     }
     m_nextScenarioId = maximum + 1;
     emit scenariosChanged(); emit currentScenarioChanged(); emit calculationChanged(); emit measurementChanged({});
+    emit calculationModeChanged();
+}
+
+void FlowsheetDocument::removeUnknownStreams(const QSet<QString>& validStreamIds) {
+    bool changed = false;
+    for (auto it = m_productNames.begin(); it != m_productNames.end();) {
+        if (!validStreamIds.contains(it.key())) {
+            it = m_productNames.erase(it); changed = true;
+        } else ++it;
+    }
+    for (auto& scenario : m_scenarios) {
+        bool scenarioChanged = false;
+        for (auto it = scenario.measurements.begin(); it != scenario.measurements.end();) {
+            if (!validStreamIds.contains(it.key())) {
+                it = scenario.measurements.erase(it); changed = scenarioChanged = true;
+            } else ++it;
+        }
+        for (auto it = scenario.reagentAnnotations.begin();
+             it != scenario.reagentAnnotations.end();) {
+            if (it->ownerKind == AnnotationOwnerKind::Stream
+                && !validStreamIds.contains(it->ownerId)) {
+                it = scenario.reagentAnnotations.erase(it); changed = scenarioChanged = true;
+            } else ++it;
+        }
+        if (scenarioChanged) scenario.calculationResult.reset();
+    }
+    for (auto it = m_sharedAnnotations.begin(); it != m_sharedAnnotations.end();) {
+        if (it->ownerKind == AnnotationOwnerKind::Stream
+            && !validStreamIds.contains(it->ownerId)) {
+            it = m_sharedAnnotations.erase(it); changed = true;
+        } else ++it;
+    }
+    if (!changed) return;
+    emit projectChanged();
+    emit productNameChanged({});
+    emit scenariosChanged();
+    emit calculationChanged();
+    emit measurementChanged({});
 }
 
 } // namespace afs

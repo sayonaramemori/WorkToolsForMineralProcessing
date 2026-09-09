@@ -12,7 +12,9 @@ struct StreamMeasurement {
     std::optional<double> gradePercent;
     std::optional<double> dryMassSharePercent;
     std::optional<double> componentSharePercent;
+    std::optional<double> dryMassStdDev;
     QHash<QString, double> gradePercents;
+    QHash<QString, double> gradeStdDevs;
     QHash<QString, double> componentSharePercents;
 
     [[nodiscard]] bool complete() const { return dryMass.has_value() && gradePercent.has_value(); }
@@ -25,6 +27,11 @@ struct StreamMeasurement {
         const auto found = componentSharePercents.constFind(componentId);
         if (found != componentSharePercents.cend()) return found.value();
         return componentId == QStringLiteral("component-1") ? componentSharePercent : std::nullopt;
+    }
+    [[nodiscard]] std::optional<double> gradeStdDev(const QString& componentId) const {
+        const auto found = gradeStdDevs.constFind(componentId);
+        return found == gradeStdDevs.cend() ? std::nullopt
+                                            : std::optional<double>(found.value());
     }
     [[nodiscard]] bool completeFor(const QStringList& componentIds) const {
         if (!dryMass) return false;

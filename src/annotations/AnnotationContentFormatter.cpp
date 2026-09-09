@@ -16,7 +16,10 @@ QString AnnotationContentFormatter::formatStreamResult(
     const QString yieldLabel = symbols ? QStringLiteral("γ") : QStringLiteral("产率");
     const QString recoveryLabel = symbols ? QStringLiteral("ε") : QStringLiteral("回收率");
     if (settings.showDryMass)
-        lines.append(QString("%1  %2").arg(massLabel).arg(value.dryMass, 0, 'f', decimals));
+        lines.append(QString("%1  %2 %3").arg(massLabel)
+            .arg(value.dryMass, 0, 'f', decimals)
+            .arg(settings.massUnit == MassUnit::Custom
+                     ? settings.customMassUnit : massUnitSymbol(settings.massUnit)));
     if (settings.showGrade) {
         if (components.isEmpty())
             lines.append(QString("%1  %2 %").arg(gradeLabel).arg(value.gradePercent(), 0, 'f', decimals));

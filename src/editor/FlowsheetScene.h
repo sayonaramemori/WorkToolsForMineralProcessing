@@ -26,7 +26,9 @@ public:
     bool connectMerge(MergeJunctionItem* merge, InputLineItem* input);
     bool connectMergeDirect(MergeJunctionItem* merge, InputLineItem* input);
     bool disconnectMerge(MergeJunctionItem* merge);
+    bool disconnectFeedSource(FeedJunctionItem* junction, const QString& streamId);
     bool disconnectRecycle(FeedJunctionItem* junction);
+    bool removeUnit(FlotationUnitItem* unit);
     MergeJunctionItem* mergeProducts(ProductLineItem* first, ProductLineItem* second,
                                      const QString& id = {});
     bool addProductToMerge(ProductLineItem* product, MergeJunctionItem* junction);

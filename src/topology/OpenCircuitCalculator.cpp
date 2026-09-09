@@ -1,9 +1,10 @@
 #include "topology/OpenCircuitCalculator.h"
+#include "topology/LinearSystemSolver.h"
 #include "topology/TopologyValidator.h"
+#include "topology/WeightedLeastSquaresSolver.h"
 
 #include <algorithm>
 #include <cmath>
-#include <QSet>
 
 namespace afs::topology {
 namespace {
@@ -43,17 +44,13 @@ ProductMetrics metrics(const StreamValue& product, const StreamValue& feed) {
     };
 }
 
-struct ScalarSolution {
-    QVector<std::optional<double>> values;
-    bool inconsistent{false};
-    int degreesOfFreedom{0};
-};
-
-ScalarSolution solveScalarSystem(
+LinearSystemSolution solveScalarSystem(
     const TopologyGraph& graph,
     const QHash<StreamId, StreamValue>& knownValues,
     const QHash<StreamId, BranchAllocation>& allocations,
-    bool componentMass) {
+    const QVector<LinearBalanceConstraint>& constraints,
+    bool componentMass,
+    const QHash<StreamId, StreamUncertainty>& uncertainties) {
     const auto streamIds = graph.streamIds();
     const int variableCount = streamIds.size();
     QHash<StreamId, int> columns;
@@ -91,10 +88,16 @@ ScalarSolution solveScalarSystem(
             }
         }
     }
-    for (auto it = knownValues.cbegin(); it != knownValues.cend(); ++it) {
+    for (const auto& constraint : constraints) {
         auto row = equation();
-        row[columns[it.key()]] = 1.0;
-        row[variableCount] = componentMass ? it->componentMass : it->dryMass;
+        for (auto it = constraint.coefficients.cbegin();
+             it != constraint.coefficients.cend(); ++it) {
+            const auto column = columns.constFind(it.key());
+            if (column != columns.cend()) row[*column] += it.value();
+        }
+        row[variableCount] = componentMass
+            ? constraint.rightHandSide.componentMass
+            : constraint.rightHandSide.dryMass;
         matrix.append(std::move(row));
     }
     for (const auto& nodeId : graph.nodeIds()) {
@@ -114,53 +117,28 @@ ScalarSolution solveScalarSystem(
         }
     }
 
-    constexpr double epsilon = 1e-10;
-    QVector<int> pivotColumns;
-    int pivotRow = 0;
-    for (int column = 0; column < variableCount && pivotRow < matrix.size(); ++column) {
-        int best = pivotRow;
-        for (int row = pivotRow + 1; row < matrix.size(); ++row)
-            if (std::abs(matrix[row][column]) > std::abs(matrix[best][column])) best = row;
-        if (std::abs(matrix[best][column]) <= epsilon) continue;
-        if (best != pivotRow) matrix.swapItemsAt(best, pivotRow);
-        const double pivot = matrix[pivotRow][column];
-        for (int index = column; index <= variableCount; ++index) matrix[pivotRow][index] /= pivot;
-        for (int row = 0; row < matrix.size(); ++row) {
-            if (row == pivotRow || std::abs(matrix[row][column]) <= epsilon) continue;
-            const double factor = matrix[row][column];
-            for (int index = column; index <= variableCount; ++index)
-                matrix[row][index] -= factor * matrix[pivotRow][index];
+    if (uncertainties.isEmpty()) {
+        for (auto it = knownValues.cbegin(); it != knownValues.cend(); ++it) {
+            auto row = equation();
+            row[columns[it.key()]] = 1.0;
+            row[variableCount] = componentMass ? it->componentMass : it->dryMass;
+            matrix.append(std::move(row));
         }
-        pivotColumns.append(column);
-        ++pivotRow;
+        return LinearSystemSolver::solve(std::move(matrix), variableCount);
     }
 
-    ScalarSolution result{QVector<std::optional<double>>(variableCount)};
-    result.degreesOfFreedom = variableCount - pivotColumns.size();
-    for (const auto& row : matrix) {
-        bool zero = true;
-        for (int column = 0; column < variableCount; ++column)
-            zero = zero && std::abs(row[column]) <= epsilon;
-        if (zero && std::abs(row[variableCount]) > 1e-8) {
-            result.inconsistent = true;
-            return result;
+    QVector<std::optional<double>> observations(variableCount);
+    QVector<std::optional<double>> standardDeviations(variableCount);
+    for (int column = 0; column < variableCount; ++column) {
+        const auto known = knownValues.constFind(streamIds[column]);
+        const auto uncertainty = uncertainties.constFind(streamIds[column]);
+        if (known != knownValues.cend() && uncertainty != uncertainties.cend()) {
+            observations[column] = componentMass ? known->componentMass : known->dryMass;
+            standardDeviations[column] = componentMass
+                ? uncertainty->componentMassStdDev : uncertainty->dryMassStdDev;
         }
     }
-    QSet<int> pivots(pivotColumns.cbegin(), pivotColumns.cend());
-    for (int row = 0; row < pivotColumns.size(); ++row) {
-        bool dependsOnFreeVariable = false;
-        for (int column = 0; column < variableCount; ++column)
-            if (!pivots.contains(column) && std::abs(matrix[row][column]) > epsilon) {
-                dependsOnFreeVariable = true;
-                break;
-            }
-        if (!dependsOnFreeVariable) {
-            double value = matrix[row][variableCount];
-            if (std::abs(value) <= epsilon) value = 0.0;
-            result.values[pivotColumns[row]] = value;
-        }
-    }
-    return result;
+    return WeightedLeastSquaresSolver::solve(matrix, observations, standardDeviations);
 }
 }
 
@@ -168,7 +146,9 @@ CalculationResult OpenCircuitCalculator::calculate(
     const TopologyGraph& graph,
     const QHash<StreamId, StreamValue>& knownValues,
     const QHash<StreamId, BranchAllocation>& allocations,
-    bool scopedCalculation) {
+    bool scopedCalculation,
+    const QVector<LinearBalanceConstraint>& constraints,
+    const QHash<StreamId, StreamUncertainty>& uncertainties) {
     CalculationResult result;
     result.issues = TopologyValidator::validate(graph, scopedCalculation);
     if (TopologyValidator::hasErrors(result.issues)) return result;
@@ -214,10 +194,35 @@ CalculationResult OpenCircuitCalculator::calculate(
 
     const auto terminalIds = graph.terminalProductStreams();
     const auto externalIds = graph.externalFeedStreams();
-    const auto drySolution = solveScalarSystem(graph, knownValues, allocations, false);
-    const auto componentSolution = solveScalarSystem(graph, knownValues, allocations, true);
+    for (const auto& constraint : constraints) {
+        for (auto it = constraint.coefficients.cbegin();
+             it != constraint.coefficients.cend(); ++it) {
+            if (!graph.stream(it.key()) || !std::isfinite(it.value())) {
+                addIssue(result, IssueCode::InvalidMeasurement, constraint.id,
+                         QStringLiteral("附加平衡约束引用了无效物流或系数"));
+                break;
+            }
+        }
+        if (!validValue(constraint.rightHandSide))
+            addIssue(result, IssueCode::InvalidMeasurement, constraint.id,
+                     QStringLiteral("附加平衡约束的边界值无效"));
+    }
+    if (TopologyValidator::hasErrors(result.issues)) return result;
+    const auto drySolution = solveScalarSystem(graph, knownValues, allocations, constraints, false,
+                                               uncertainties);
+    const auto componentSolution = solveScalarSystem(graph, knownValues, allocations, constraints, true,
+                                                     uncertainties);
+    result.reconciled = !uncertainties.isEmpty();
     result.dryMassDegreesOfFreedom = drySolution.degreesOfFreedom;
     result.componentMassDegreesOfFreedom = componentSolution.degreesOfFreedom;
+    if (!uncertainties.isEmpty()) {
+        result.dryMassDegreesOfFreedom = std::count_if(
+            drySolution.values.cbegin(), drySolution.values.cend(),
+            [](const auto& value) { return !value.has_value(); });
+        result.componentMassDegreesOfFreedom = std::count_if(
+            componentSolution.values.cbegin(), componentSolution.values.cend(),
+            [](const auto& value) { return !value.has_value(); });
+    }
     if (drySolution.inconsistent || componentSolution.inconsistent) {
         addIssue(result, IssueCode::InconsistentBalance, QStringLiteral("equation-system"),
                  QStringLiteral("实测值、支路占比与流程守恒方程相互矛盾"));
@@ -225,6 +230,7 @@ CalculationResult OpenCircuitCalculator::calculate(
         return result;
     }
     result.values.clear();
+    bool physicalSolutionInvalid = false;
     const auto streamIds = graph.streamIds();
     for (int index = 0; index < streamIds.size(); ++index) {
         if (!drySolution.values[index] || !componentSolution.values[index]) continue;
@@ -240,9 +246,41 @@ CalculationResult OpenCircuitCalculator::calculate(
                 : stream && stream->target ? stream->target->nodeId : streamIds[index];
             addIssue(result, IssueCode::InconsistentBalance, objectId,
                      QStringLiteral("方程解得到负质量或组分质量超出总质量"));
+            physicalSolutionInvalid = true;
             continue;
         }
         result.values.insert(streamIds[index], value);
+    }
+    if (result.reconciled) {
+        for (auto it = knownValues.cbegin(); it != knownValues.cend(); ++it) {
+            if (!result.values.contains(it.key()) || !uncertainties.contains(it.key())) continue;
+            const auto delta = StreamValue{result.values[it.key()].dryMass - it->dryMass,
+                result.values[it.key()].componentMass - it->componentMass};
+            const auto sigma = uncertainties.value(it.key());
+            ReconciliationResidual residual{delta.dryMass, delta.componentMass,
+                delta.dryMass / sigma.dryMassStdDev,
+                delta.componentMass / sigma.componentMassStdDev};
+            result.maximumAbsoluteStandardizedResidual = std::max({
+                result.maximumAbsoluteStandardizedResidual,
+                std::abs(residual.dryMassStandardized),
+                std::abs(residual.componentMassStandardized)});
+            result.residuals.insert(it.key(), residual);
+        }
+        if (result.maximumAbsoluteStandardizedResidual > 3.0)
+            addWarning(result, IssueCode::InconsistentBalance, QStringLiteral("reconciliation"),
+                QStringLiteral("协调后存在超过 3σ 的测量残差，请检查异常样品"));
+    }
+
+    if (physicalSolutionInvalid) {
+        // Values from one exact solution are coupled.  Once any derived value
+        // is physically impossible, none of its sibling derived values are
+        // trustworthy. Preserve only independently supplied measurements.
+        result.values.clear();
+        for (auto it = knownValues.cbegin(); it != knownValues.cend(); ++it)
+            if (validValue(it.value())) result.values.insert(it.key(), it.value());
+        result.complete = false;
+        result.fullySolved = false;
+        return result;
     }
 
     for (const auto& nodeId : graph.nodeIds()) {

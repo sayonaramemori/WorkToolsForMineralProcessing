@@ -36,11 +36,11 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
                                       unit->unit().kind == UnitKind::ThreeProductFlotation});
     }
     for (auto* merge : merges) {
-        result.graph.addMergeNode({merge->id()});
+        result.graph.addMergeNode({merge->id(), topology::MergeRole::ProductMerge});
         result.interestObjects.append({merge->id(), QString("产品汇流 · %1").arg(merge->id())});
     }
     for (auto* junction : feedJunctions) {
-        result.graph.addMergeNode({junction->id()});
+        result.graph.addMergeNode({junction->id(), topology::MergeRole::FeedJunction});
         result.interestObjects.append({junction->id(), QString("入料汇流 · %1").arg(junction->id())});
     }
 

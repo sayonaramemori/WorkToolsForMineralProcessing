@@ -15,6 +15,8 @@ class CanvasView;
 class FlowsheetDocument;
 class TerminalProductDock;
 class AnnotationManager;
+class OperationLogDock;
+class ProjectUndoManager;
 
 class MainWindow final : public QMainWindow {
 public:
@@ -38,11 +40,18 @@ private:
     QString m_projectPath;
     QComboBox* m_scenarioCombo{nullptr};
     QLabel* m_selectionStatusLabel{nullptr};
+    OperationLogDock* m_operationLog{nullptr};
+    ProjectUndoManager* m_undoManager{nullptr};
 
     void addFlotationUnit();
     void addThreeProductUnit();
     void addBinarySplitter();
+    void newProject();
+    bool deleteSelectedUnits();
+    bool confirmSaveBeforeDestructiveAction();
     bool saveProject();
+    bool saveProjectAs();
+    bool saveProjectTo(const QString& path);
     void importProject();
     void updateNextUnitId();
     void resizeSelectedUnits(double delta);
@@ -64,6 +73,7 @@ private:
     void deleteScenario();
     void compareScenarios();
     void setProjectDirty(bool dirty = true);
+    void appendOperationLog(const QString& message);
 };
 
 } // namespace afs

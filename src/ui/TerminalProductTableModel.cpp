@@ -29,6 +29,9 @@ TerminalProductTableModel::TerminalProductTableModel(FlowsheetDocument& document
     connect(&document, &FlowsheetDocument::componentsChanged, this, [this] {
         beginResetModel(); endResetModel();
     });
+    connect(&document, &FlowsheetDocument::calculationModeChanged, this, [this] {
+        beginResetModel(); endResetModel();
+    });
 }
 
 int TerminalProductTableModel::rowCount(const QModelIndex& parent) const {
@@ -36,36 +39,43 @@ int TerminalProductTableModel::rowCount(const QModelIndex& parent) const {
 }
 
 int TerminalProductTableModel::columnCount(const QModelIndex& parent) const {
-    return parent.isValid() ? 0 : 5 + 2 * m_document.components().size();
+    if (parent.isValid()) return 0;
+    return m_document.calculationMode() == CalculationMode::DataReconciliation
+        ? 5 + 2 * m_document.components().size()
+        : 4 + m_document.components().size();
 }
 
 int TerminalProductTableModel::gradeColumn(const QString& componentId) const {
     for (int i = 0; i < m_document.components().size(); ++i)
-        if (m_document.components()[i].id == componentId) return FirstGradeColumn + i;
+        if (m_document.components()[i].id == componentId)
+            return (m_document.calculationMode() == CalculationMode::DataReconciliation ? 4 : 3)
+                + (m_document.calculationMode() == CalculationMode::DataReconciliation ? 2 * i : i);
     return -1;
 }
-int TerminalProductTableModel::dryMassShareColumn() const {
-    return FirstGradeColumn + m_document.components().size();
-}
-int TerminalProductTableModel::componentShareColumn(const QString& componentId) const {
+int TerminalProductTableModel::gradeStdDevColumn(const QString& componentId) const {
     const int grade = gradeColumn(componentId);
-    return grade < 0 ? -1 : dryMassShareColumn() + 1 + grade - FirstGradeColumn;
+    return m_document.calculationMode() == CalculationMode::DataReconciliation ? grade + 1 : -1;
 }
 int TerminalProductTableModel::statusColumn() const {
-    return dryMassShareColumn() + 1 + m_document.components().size();
+    return columnCount() - 1;
 }
 bool TerminalProductTableModel::isGradeColumn(int column) const {
-    return column >= FirstGradeColumn && column < dryMassShareColumn();
+    for (const auto& component : m_document.components())
+        if (gradeColumn(component.id) == column) return true;
+    return false;
 }
-bool TerminalProductTableModel::isComponentShareColumn(int column) const {
-    return column > dryMassShareColumn() && column < statusColumn();
+bool TerminalProductTableModel::isUncertaintyColumn(int column) const {
+    if (m_document.calculationMode() != CalculationMode::DataReconciliation) return false;
+    if (column == MassStdDevColumn) return true;
+    for (const auto& component : m_document.components())
+        if (gradeStdDevColumn(component.id) == column) return true;
+    return false;
 }
 QString TerminalProductTableModel::componentIdForColumn(int column) const {
-    int componentIndex = -1;
-    if (isGradeColumn(column)) componentIndex = column - FirstGradeColumn;
-    else if (isComponentShareColumn(column)) componentIndex = column - dryMassShareColumn() - 1;
-    return componentIndex >= 0 && componentIndex < m_document.components().size()
-        ? m_document.components()[componentIndex].id : QString();
+    for (const auto& component : m_document.components())
+        if (gradeColumn(component.id) == column || gradeStdDevColumn(component.id) == column)
+            return component.id;
+    return {};
 }
 
 QVariant TerminalProductTableModel::data(const QModelIndex& index, int role) const {
@@ -86,34 +96,46 @@ QVariant TerminalProductTableModel::data(const QModelIndex& index, int role) con
         case NameColumn: return stream.displayName;
         case ProductNameColumn: return m_document.productName(stream.streamId);
         case MassColumn:
+            if (role == Qt::DisplayRole && hasCalculatedValue
+                && calculation->reconciled) return calculated.dryMass;
             if (measurement.dryMass) return *measurement.dryMass;
             return role == Qt::DisplayRole && hasCalculatedValue
                 ? QVariant(calculated.dryMass) : QVariant();
+        case MassStdDevColumn:
+            if (m_document.calculationMode() == CalculationMode::DataReconciliation
+                && measurement.dryMassStdDev) return *measurement.dryMassStdDev;
+            break;
         default: break;
+        }
+        if (isUncertaintyColumn(index.column())) {
+            const auto sigma = measurement.gradeStdDev(componentIdForColumn(index.column()));
+            return sigma ? QVariant(*sigma) : QVariant();
         }
         if (isGradeColumn(index.column())) {
             const QString componentId = componentIdForColumn(index.column());
             const auto grade = measurement.grade(componentId);
+            if (role == Qt::DisplayRole && calculation && calculation->reconciled) {
+                const auto component = calculation->components.constFind(componentId);
+                if (component != calculation->components.cend()
+                    && component->values.contains(stream.streamId))
+                    return component->values.value(stream.streamId).gradePercent();
+            }
             if (grade) return *grade;
             if (role == Qt::DisplayRole && calculation) {
                 const auto component = calculation->components.constFind(componentId);
                 if (component != calculation->components.cend()
                     && component->values.contains(stream.streamId))
                     return component->values.value(stream.streamId).gradePercent();
-                if (index.column() == FirstGradeColumn && hasCalculatedValue)
+                if (!m_document.components().isEmpty()
+                    && index.column() == gradeColumn(m_document.components().front().id)
+                    && hasCalculatedValue)
                     return calculated.gradePercent();
             }
             return {};
         }
-        if (index.column() == dryMassShareColumn())
-            return stream.mergeBranch && measurement.dryMassSharePercent
-                ? QVariant(*measurement.dryMassSharePercent) : QVariant();
-        if (isComponentShareColumn(index.column())) {
-            const auto share = measurement.componentShare(componentIdForColumn(index.column()));
-            return stream.mergeBranch && share ? QVariant(*share) : QVariant();
-        }
         if (index.column() == statusColumn())
-            return measurementComplete ? QString("实测值")
+            return hasCalculatedValue && calculation->reconciled ? QString("协调值")
+                : measurementComplete ? QString("实测值")
                 : hasAnyMeasurement ? QString("填写中")
                 : hasCalculatedValue ? QString("计算值") : QString("可填写");
         return {};
@@ -136,13 +158,20 @@ QVariant TerminalProductTableModel::data(const QModelIndex& index, int role) con
             : hasAnyMeasurement ? QColor(210, 125, 25)
             : hasCalculatedValue ? QColor(40, 110, 180) : QColor(120, 120, 120));
     if (role == Qt::ToolTipRole) {
+        if (calculation && calculation->reconciled && hasCalculatedValue
+            && calculation->residuals.contains(stream.streamId)) {
+            const auto residual = calculation->residuals.value(stream.streamId);
+            return QString("显示协调值；双击编辑原始实测值。质量修正 %1（%2σ）")
+                .arg(residual.dryMass, 0, 'g', 6)
+                .arg(residual.dryMassStandardized, 0, 'f', 2);
+        }
         if (index.column() == MassColumn)
-            return QString("请输入非负干质量；也可将同一基准下的产率作为相对量输入；留空表示未知");
+            return QString("请输入非负绝对干质量；留空表示未知");
+        if (index.column() == MassStdDevColumn)
+            return QString("质量测量的标准差；留空时默认采用实测质量的 1%");
+        if (isUncertaintyColumn(index.column()))
+            return QString("品位测量的标准差（百分点）；留空时默认采用 0.1");
         if (isGradeColumn(index.column())) return QString("请输入 0–100 之间的组分品位；留空表示未知");
-        if (index.column() == dryMassShareColumn() || isComponentShareColumn(index.column()))
-            return stream.mergeBranch
-                ? QString("可选：同一合流的干质量占比和组分占比必须分别合计 100%")
-                : QVariant();
         return QString("物流 ID：%1").arg(stream.streamId);
     }
     return {};
@@ -152,15 +181,19 @@ QVariant TerminalProductTableModel::headerData(int section, Qt::Orientation orie
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole) return {};
     if (section == NameColumn) return QString("物流/入料定义");
     if (section == ProductNameColumn) return QString("产品名称");
-    if (section == MassColumn) return QString("干质量/相对量");
+    if (section == MassColumn) return QString("绝对干质量");
+    if (section == MassStdDevColumn
+        && m_document.calculationMode() == CalculationMode::DataReconciliation)
+        return QString("质量 σ");
     if (isGradeColumn(section)) {
-        const int i = section - FirstGradeColumn;
-        return QString("%1 / %").arg(m_document.components()[i].name);
+        const QString id = componentIdForColumn(section);
+        for (const auto& component : m_document.components())
+            if (component.id == id) return QString("%1 / %").arg(component.name);
     }
-    if (section == dryMassShareColumn()) return QString("质量占比/%");
-    if (isComponentShareColumn(section)) {
-        const int i = section - dryMassShareColumn() - 1;
-        return QString("%1占比/%").arg(m_document.components()[i].name);
+    if (isUncertaintyColumn(section)) {
+        const QString id = componentIdForColumn(section);
+        for (const auto& component : m_document.components())
+            if (component.id == id) return QString("%1 σ").arg(component.name);
     }
     if (section == statusColumn()) return QString("状态");
     return {};
@@ -169,10 +202,9 @@ QVariant TerminalProductTableModel::headerData(int section, Qt::Orientation orie
 Qt::ItemFlags TerminalProductTableModel::flags(const QModelIndex& index) const {
     auto result = QAbstractTableModel::flags(index);
     if (index.column() == ProductNameColumn
-        || (m_streams[index.row()].mergeBranch
-            && (index.column() == dryMassShareColumn() || isComponentShareColumn(index.column())))
         || (m_editableStreamIds.contains(m_streams[index.row()].streamId)
-            && (index.column() == MassColumn || isGradeColumn(index.column()))))
+            && (index.column() == MassColumn || isGradeColumn(index.column())
+                || isUncertaintyColumn(index.column()))))
         result |= Qt::ItemIsEditable;
     return result;
 }
@@ -183,29 +215,32 @@ bool TerminalProductTableModel::setData(const QModelIndex& index, const QVariant
         m_document.setProductName(m_streams[index.row()].streamId, value.toString());
         return true;
     }
-    const bool shareColumn = index.column() == dryMassShareColumn()
-        || isComponentShareColumn(index.column());
-    if (index.column() != MassColumn && !isGradeColumn(index.column()) && !shareColumn) return false;
-    if (shareColumn && !m_streams[index.row()].mergeBranch) return false;
-    if (!shareColumn && !m_editableStreamIds.contains(m_streams[index.row()].streamId)) return false;
+    if (index.column() != MassColumn && !isGradeColumn(index.column())
+        && !isUncertaintyColumn(index.column())) return false;
+    if (!m_editableStreamIds.contains(m_streams[index.row()].streamId)) return false;
     const QString text = value.toString().trimmed();
     std::optional<double> number;
     if (!text.isEmpty()) {
         bool ok = false;
         const double parsed = text.toDouble(&ok);
         const bool valid = ok && parsed >= 0.0
-            && (!isGradeColumn(index.column()) || parsed <= 100.0)
-            && (!shareColumn || parsed <= 100.0);
+            && (!isGradeColumn(index.column()) || parsed <= 100.0);
         if (!valid) return false;
         number = parsed;
     }
     const auto& id = m_streams[index.row()].streamId;
     if (index.column() == MassColumn) m_document.setDryMass(id, number);
+    else if (index.column() == MassStdDevColumn
+             && m_document.calculationMode() == CalculationMode::DataReconciliation) {
+        if (number && *number <= 0.0) return false;
+        m_document.setDryMassStdDev(id, number);
+    }
+    else if (isUncertaintyColumn(index.column())) {
+        if (number && *number <= 0.0) return false;
+        m_document.setGradeStdDev(id, componentIdForColumn(index.column()), number);
+    }
     else if (isGradeColumn(index.column()))
         m_document.setGradePercent(id, componentIdForColumn(index.column()), number);
-    else if (index.column() == dryMassShareColumn())
-        m_document.setDryMassSharePercent(id, number);
-    else m_document.setComponentSharePercent(id, componentIdForColumn(index.column()), number);
     return true;
 }
 

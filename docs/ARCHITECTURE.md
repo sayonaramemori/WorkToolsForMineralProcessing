@@ -2,11 +2,15 @@
 
 项目采用 C++20、Qt 6 Widgets 和 xmake。设计目标是把画布交互、业务数据、计算拓扑和视觉标注分离，避免在 `QGraphicsItem::paint()` 或主窗口中堆积领域逻辑。
 
+新增代码的职责选择、允许依赖和关键入口详见 [`MODULE_BOUNDARIES.md`](MODULE_BOUNDARIES.md)。
+
 ## 模块目录
 
 ### `src/app`
 
 应用装配层。`MainWindow` 创建场景、视图、停靠面板和工具栏，并连接各模块的信号。顶部动作按项目、流程、方案、显示和导出职责组织为下拉菜单。主窗口可以协调用户用例，但不实现计算公式、连接算法、结果表格或标注绘制。
+
+主窗口实现按职责拆分：`MainWindow.cpp` 保留窗口装配、方案和画布交互，`MainWindowProject.cpp` 负责项目生命周期，`MainWindowExport.cpp` 负责流程图、Excel 导出和导出顺序。
 
 状态栏的选择提示使用永久 `QLabel`，由 `QGraphicsScene::selectionChanged` 驱动并根据 `UnitKind` 显示类型和稳定 ID；它与 `QStatusBar::showMessage()` 的临时操作消息相互独立。
 
@@ -22,6 +26,7 @@
 - 项目共享的 Excel 物流导出顺序（稳定物流 ID 列表）；
 - 项目级 `ComponentDefinition`：稳定组分 ID 和显示名称；
 - `ExperimentScenario`：单个试验方案的质量、按组分保存的品位/合流占比、药剂制度和最近计算结果；
+- `ExperimentScenario::calculationMode`：方案级求解策略，严格模式与数据协调模式互不改变对方的数值语义；
 - 当前方案及方案增删、复制、重命名、切换状态。
 
 修改质量或品位时只使当前方案结果失效；修改画布拓扑时使全部方案结果失效。图元不得自行保存另一份实验数据。
@@ -48,9 +53,12 @@
 
 - `FlowsheetScene` 管理连接、断开、合流、拆分、连通组件移动和几何刷新；
 - `CanvasActions` 对当前选择执行宽度、连接长度和断开操作；
+- `ProjectUndoManager` 监听拓扑、几何和文档编辑信号，以 200 ms 合并窗口生成完整项目内存快照，并通过 `QUndoStack` 提供撤销/重做；恢复期间屏蔽新快照记录；
 - `CanvasView` 管理视图级交互：以鼠标位置为中心进行 20%～400% 缩放、鼠标中键平移，以及方向键的优先分派。视图通过注入的处理器请求药剂微调，不识别具体标注类型。
 
 关系变化发出 `topologyChanged`，位置或尺寸变化发出 `geometryChanged`。前者会使计算失效，后者只更新标注锚点。
+
+删除单元由 `FlowsheetScene::removeUnit()` 统一解除直接连接、产品汇流和入料汇流引用。若被删除物流是入料汇流的正常主来源，汇流节点转为外部主入料并保留其他附加来源。场景删除完成后，`FlowsheetDocument::removeUnknownStreams()` 依据重建后的稳定物流 ID 集合清理所有方案中的孤立测量、产品名和物流标注。
 
 ### 正交布线与跨线桥
 
@@ -62,7 +70,7 @@
 
 `FlowsheetScene::drawForeground` 从可见物流图元的正交线段计算水平—垂直交点，在水平线一侧绘制跨线桥。桥形属于纯视图层，不生成端口、节点或物料流，也不参与拓扑计算。
 
-普通产品或产品合并输出连接到已占用入料时，`FlowsheetScene` 创建或扩展 `FeedJunctionItem`，且不自动移动目标单元。`FeedJunctionItem` 以集合保存任意数量的 `ProductLineItem` 和 `MergeJunctionItem` 附加来源；来源属于同一连通流程时构成回流。目标入料原先已经连接正常上游产品或合流输出时，汇合点会单独保存该端点，整体断开后自动恢复。
+普通产品或产品合并输出连接到已占用入料时，`FlowsheetScene` 创建或扩展 `FeedJunctionItem`，且不自动移动目标单元。`FeedJunctionItem` 以集合保存任意数量的 `ProductLineItem` 和 `MergeJunctionItem` 附加来源；来源属于同一连通流程时构成回流。目标入料原先已经连接正常上游产品或合流输出时，汇合点会单独保存该端点。`CanvasActions` 优先读取 `selectedSourceStreamId()`：具体来源已选中时调用 `disconnectFeedSource()` 只移除该来源，否则才整体拆除汇流点并恢复原正常上游端点。
 
 一个场景可以包含多个 `FeedJunctionItem`，用于表达独立、串联或嵌套回流环。连通分量遍历必须同时沿附加回流来源和汇合点保存的正常上游来源反向遍历，不能因直接入料线被汇合点替换而切断拓扑连通性。
 
@@ -77,7 +85,9 @@
 - `TopologyGraph`：节点、端口和物流；
 - `TopologyValidator`：端口、环路、连通性和终端检查；
 - `TopologyAlgorithms`：拓扑排序；
-- `OpenCircuitCalculator`：将单个组分的质量与组分守恒、实测值和支路占比组装为广义线性方程组并求解；`FlowsheetCalculationService` 对项目定义的每个组分分别调用计算器并聚合结果。
+- `OpenCircuitCalculator`：将单个组分的质量与组分守恒、实测值和支路占比组装为广义线性方程组；
+- `LinearSystemSolver`：只负责规范化增广矩阵、Gauss-Jordan 消元、秩/矛盾判断及部分唯一变量识别。它不知道浮选节点、物流或测量含义。
+- `WeightedLeastSquaresSolver`：只负责由观测值、标准差和线性约束构造 KKT 系统，不了解物流含义。
 
 二分流器在画布连接层沿用一入两出的稳定端口 ID，但计算拓扑在 `FlotationNode::leftSplitPercent` 中携带分流约束。求解器分别为干质量和每个组分质量加入左右支路比例方程，因此支路品位保持一致；二分流器不写入浮选单元性能结果。项目格式 v5 保存节点类型和比例，读取器继续兼容 v1–v4。
 
@@ -92,6 +102,12 @@
 应用用例和无状态服务：
 
 - `FlowsheetCalculationService`：读取文档实测值、构建画布拓扑并调用计算内核；
+- `CalculationInputBuilder`：把方案测量、标准差、支路比例和边界关系转换为单组分纯拓扑输入；
+- `ProjectSerializationData`：项目 JSON 与场景之间的中间数据结构；
+- `ProjectSceneRestorer`：校验并从中间数据安全重建画布连接；
+- `ProjectJsonReader`：只负责 JSON 版本兼容、字段范围与重复 ID 校验，并输出中间数据；
+- `ProjectJsonWriter`：只负责把当前场景和文档写为稳定的项目 JSON；
+- `ProjectSerializer`：薄编排层，负责文件大小限制、原子保存、隔离场景验证以及文档替换；
 - `ThemeService`：应用及保存明暗主题；
 - `SvgExporter`：将当前场景导出为 SVG 矢量图；
 - `RasterExporter`：将当前场景导出为 PNG 或 JPEG，并通过最长边及总像素限制控制内存占用。
@@ -115,11 +131,13 @@
 
 非画布界面组件：
 
-- `TerminalProductTableModel`：全部产品物流表模型；根据项目组分动态生成品位与组分占比列，必填实测物流可编辑质量和各组分品位；
-- `TerminalProductDock`：面板装配、物流类别筛选、填写进度、自由度诊断和计算按钮状态；
+- `TerminalProductTableModel`：全部产品物流表模型；根据项目组分动态生成品位列，可编辑物流的输入项仅包含产品名称、绝对干质量和各组分品位；
+- `TerminalProductDock`：面板装配、填写进度、自由度诊断和计算按钮状态；
+- `TerminalProductViewSupport`：物流筛选规则以及数值、状态单元格委托；
 - `ResultDetailsView`：物流和浮选单元结果表；
 - `TerminalProductStyle`：面板主题样式生成；
-- `ResultMetricMenu`：结果标注指标选择菜单。
+- `ResultMetricMenu`：结果标注指标选择菜单；
+- `OperationLogDock`：带时间戳和容量上限的只读操作记录面板，不依赖计算或画布业务。
 - `ScenarioComparisonDialog`：按最终或中间产品比较各方案已计算结果，并显示用户填写的产品名称，不修改文档状态。
 
 ## 主要数据流
@@ -134,6 +152,12 @@ CanvasTopologyBuilder ──► TopologyGraph
       └──────────────► FlowsheetCalculationService
                                │
 FlowsheetDocument measurements ┘
+               │
+               ▼
+   OpenCircuitCalculator（方程组装）
+               │
+               ▼
+       LinearSystemSolver（消元）
                │
                ▼
         CalculationResult（全流程完成 / 全部物流完成）
@@ -177,13 +201,15 @@ recycle product┘
 
 `CanvasStreamDescriptor` 保存终端、入料、回流类别以及相关对象 ID，`StreamFilterProxyModel` 据此组合“物流类别”和“关注对象”两层筛选而不依赖显示名称。求解结果同时携带干质量和组分质量的自由度，右侧提示栏使用两者较大值呈现当前仍缺少的独立约束数量。
 
-关注对象非空时，`FlowsheetCalculationService` 构造诱导子图：保留选中节点及所有相邻物流，移除物流在未选中一侧的端点，使其成为局部边界。子图允许存在多个边界入料，但不会改变完整项目“仅一个主流程”的拓扑校验规则。
+计算拓扑中的汇流节点通过 `MergeRole` 明确区分产品合并（`ProductMerge`）和主入料/回流汇合（`FeedJunction`）。两者当前共享质量守恒方程，但语义标签保持独立，后续可分别扩展校验和交互规则。
 
-构造子图前会沿入料方向递归扩展所有作为上游来源的 `MergeNode`。这些节点属于守恒关系所必需的辅助拓扑，确保选中浮选单元的“新鲜入料 + 回流 = 汇合入料”不会因用户未单独勾选汇流节点而丢失。
+“关注对象”只写入 `StreamFilterProxyModel` 的所有者筛选集合，不进入 `FlowsheetCalculationService`，也不使文档计算结果失效。求解服务始终接收 `CanvasTopologyBuilder` 生成的完整快照，组装全部节点守恒和全流程边界约束；欠定时由线性求解器保留所有局部唯一变量。
 
-局部计算采用两阶段求解。当完整流程的全部终端产品已知或已在第一阶段唯一求解时，计算服务先按全流程边界守恒求和得到主入料，再将其作为约束重新求解局部子图。这允许内部循环仍欠定时继续反算首个单元的含回流总入料。
+`OpenCircuitCalculator` 将每条物流的绝对干质量和组分质量分别作为未知量，把浮选节点守恒、汇流节点守恒、实测值、支路占比及显式边界约束组装为两个线性方程组，再交给 `LinearSystemSolver`。全流程“外部新鲜入料 = 最终产品之和”以 `LinearBalanceConstraint` 进入矩阵，因此即使新鲜入料已有实测值，求解器仍会检查它与终端产品是否一致。只有干质量和组分质量都唯一时，物流才进入结果集；若同一联立解出现负质量等物理非法值，将丢弃全部推导值并仅保留独立实测值，防止错误结果继续传播。
 
-`OpenCircuitCalculator` 将每条物流的干质量和组分质量分别作为未知量，把浮选节点守恒、汇流节点守恒、实测值及支路占比组装为两个线性方程组。求解采用带绝对值选主元的 Gauss-Jordan 消元；行最简形用于识别矛盾方程、自由变量，以及整体欠定时仍可唯一确定的局部物流。只有干质量和组分质量都唯一时，物流才进入结果集。该方法不依赖节点遍历顺序，可以直接处理多个相互耦合的闭路；外部新鲜入料也由全网方程联立反算。
+数据协调模式复用同一套拓扑守恒矩阵，但不把实测值加入精确等式。它以质量标准差和由质量/品位误差传播得到的组分质量标准差建立权重，通过 KKT 方程求解带线性守恒约束的加权最小二乘问题。结果同时记录协调值、残差、标准化残差及最大绝对标准化残差。严格模式仍走原来的精确方程路径，不能用协调容差掩盖矛盾。
+
+`FlowsheetCalculationService` 的内部流程固定为：读取完整拓扑快照 → 为每个组分构造 `ComponentCalculationInput` → 调用计算内核 → 聚合 `CalculationResult::components`。项目导入后的重算也调用该服务，不允许在序列化器中复制计算输入组装逻辑。
 
 ## 生命周期规则
 
@@ -191,9 +217,11 @@ recycle product┘
 2. 几何变化：保留计算结果，只更新标注自动锚点。
 3. 重新计算：更新标注内容，保留 `manualOffset`。
 4. 欠定或部分组分冲突的结果仍可包含已唯一确定的物流；指标标注按物流结果存在性显示，不以全局 `complete` 作为开关。
-4. 指标设置变化：只重新格式化文字，不重新创建标注。
-5. SVG、PNG、JPEG 导出完整流程图和当前可见标注；XLSX 按项目配置的稳定物流 ID 顺序导出全部方案的数据，没有配置的新物流按流程顺序追加。
-6. 方案切换：保留共享拓扑与显示设置，替换药剂标注、实测数据和计算结果视图。
+5. 结果指标框按 `Delete` 只写入 `AnnotationManager` 的会话级隐藏集合，不修改 `AnnotationRecord::visible`；下一次 `calculationChanged` 清空集合并恢复结果框。
+6. 指标设置变化：只重新格式化文字，不重新创建标注。
+   质量单位保存在项目级 `AnnotationTextSettings::massUnit/customMassUnit`，支持预设和最多 16 字符的自定义标签，仅作为结果指标后缀，不缩放求解器中的绝对干质量。
+7. SVG、PNG、JPEG 导出完整流程图和当前可见标注；XLSX 按项目配置的稳定物流 ID 顺序导出全部方案的数据，没有配置的新物流按流程顺序追加。
+8. 方案切换：保留共享拓扑与显示设置，替换药剂标注、实测数据和计算结果视图。
 
 ## 扩展入口
 

@@ -32,6 +32,10 @@ void CanvasView::wheelEvent(QWheelEvent* event) {
 }
 
 void CanvasView::keyPressEvent(QKeyEvent* event) {
+    if (event->key() == Qt::Key_Delete && m_deleteHandler && m_deleteHandler()) {
+        event->accept();
+        return;
+    }
     if (m_verticalNudgeHandler
         && (event->key() == Qt::Key_Up || event->key() == Qt::Key_Down)) {
         const qreal step = event->modifiers().testFlag(Qt::ShiftModifier) ? 10.0 : 2.0;

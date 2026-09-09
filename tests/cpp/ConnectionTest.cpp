@@ -83,5 +83,8 @@ int main(int argc, char** argv) {
         || std::abs(product->terminalLength() - 5000.0) > 0.001
         || !product->adjustTerminalLength(-10000.0)
         || std::abs(product->terminalLength() - 30.0) > 0.001) return 19;
+    if (!threeProductScene.removeUnit(threeProduct)
+        || !downstream->inputLine()->isVisible()
+        || downstream->inputLine()->sourceProduct()) return 20;
     return 0;
 }

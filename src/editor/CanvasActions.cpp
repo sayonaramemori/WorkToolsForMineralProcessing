@@ -39,8 +39,13 @@ int CanvasActions::disconnectSelection(FlowsheetScene& scene) {
     }
     // Feed junctions own references to merge outputs, so always detach them
     // before splitting any selected product merge.
-    for (auto* junction : feedJunctions)
-        if (scene.disconnectRecycle(junction)) ++disconnected;
+    for (auto* junction : feedJunctions) {
+        const QString selectedSource = junction->selectedSourceStreamId();
+        const bool success = selectedSource.isEmpty()
+            ? scene.disconnectRecycle(junction)
+            : scene.disconnectFeedSource(junction, selectedSource);
+        if (success) ++disconnected;
+    }
     for (auto* junction : mergeJunctions)
         if (junction->isConnected() ? scene.disconnectMerge(junction)
                                     : scene.splitMerge(junction)) ++disconnected;

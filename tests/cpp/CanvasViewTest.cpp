@@ -77,5 +77,9 @@ int main(int argc, char** argv) {
         || view.verticalScrollBar()->value() != verticalBefore) return 5;
     sendKey(view, Qt::Key_Up, Qt::ShiftModifier);
     if (nudgeItem->pos() != beforeNudge + QPointF(0, -8)) return 6;
+    bool deleteHandled = false;
+    view.setDeleteHandler([&deleteHandled] { deleteHandled = true; return true; });
+    sendKey(view, Qt::Key_Delete);
+    if (!deleteHandled) return 7;
     return 0;
 }

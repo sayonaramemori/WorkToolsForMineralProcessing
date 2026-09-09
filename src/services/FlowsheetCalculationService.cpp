@@ -3,88 +3,33 @@
 #include "document/FlowsheetDocument.h"
 #include "editor/FlowsheetScene.h"
 #include "topology/OpenCircuitCalculator.h"
+#include "services/CalculationInputBuilder.h"
 
 #include <algorithm>
 
 namespace afs {
 namespace {
 
-std::optional<topology::StreamValue> globalFeedFromTerminalProducts(
-    const CanvasTopologySnapshot& completeSnapshot,
-    const FlowsheetDocument& document,
-    const QString& componentId,
-    const topology::CalculationResult& partialResult) {
-    topology::StreamValue sum;
-    const auto terminalIds = completeSnapshot.graph.terminalProductStreams();
-    if (terminalIds.isEmpty()) return std::nullopt;
-    for (const auto& streamId : terminalIds) {
-        auto value = partialResult.values.constFind(streamId);
-        if (value != partialResult.values.cend()) {
-            sum.dryMass += value->dryMass;
-            sum.componentMass += value->componentMass;
-            continue;
-        }
-        const auto measurement = document.measurement(streamId);
-        const auto grade = measurement.grade(componentId);
-        if (!measurement.dryMass || !grade) return std::nullopt;
-        const auto measured = topology::StreamValue::fromMassAndGrade(
-            *measurement.dryMass, *grade);
-        if (!measured) return std::nullopt;
-        sum.dryMass += measured->dryMass;
-        sum.componentMass += measured->componentMass;
-    }
-    return sum;
-}
-
-CanvasTopologySnapshot scopedSnapshot(const CanvasTopologySnapshot& source,
-                                      const QSet<QString>& objectScope) {
-    if (objectScope.isEmpty()) return source;
-    QSet<QString> expandedScope = objectScope;
-    bool changed = true;
-    while (changed) {
-        changed = false;
-        for (const auto& streamId : source.graph.streamIds()) {
-            const auto* stream = source.graph.stream(streamId);
-            if (!stream->source || !stream->target
-                || !expandedScope.contains(stream->target->nodeId)
-                || source.graph.nodeKind(stream->source->nodeId) != topology::NodeKind::Merge)
-                continue;
-            if (expandedScope.contains(stream->source->nodeId)) continue;
-            expandedScope.insert(stream->source->nodeId);
-            changed = true;
+void appendComponentResult(topology::CalculationResult& combined,
+                           const ComponentDefinition& component,
+                           topology::CalculationResult result,
+                           bool primaryComponent) {
+    if (primaryComponent) combined = result;
+    combined.components.insert(component.id, {
+        result.values, result.flotationPerformance, result.relativeToExternalFeed,
+        result.complete, result.fullySolved});
+    combined.complete = combined.complete && result.complete;
+    combined.fullySolved = combined.fullySolved && result.fullySolved;
+    combined.dryMassDegreesOfFreedom = std::max(
+        combined.dryMassDegreesOfFreedom, result.dryMassDegreesOfFreedom);
+    combined.componentMassDegreesOfFreedom = std::max(
+        combined.componentMassDegreesOfFreedom, result.componentMassDegreesOfFreedom);
+    if (!primaryComponent) {
+        for (auto issue : result.issues) {
+            issue.message = QStringLiteral("%1：%2").arg(component.name, issue.message);
+            combined.issues.append(std::move(issue));
         }
     }
-    CanvasTopologySnapshot result;
-    result.interestObjects = source.interestObjects;
-    for (const auto& nodeId : source.graph.nodeIds()) {
-        if (!expandedScope.contains(nodeId)) continue;
-        if (source.graph.nodeKind(nodeId) == topology::NodeKind::Flotation)
-            result.graph.addFlotationNode(*source.graph.flotationNode(nodeId));
-        else
-            result.graph.addMergeNode(*source.graph.mergeNode(nodeId));
-    }
-    QSet<QString> retainedStreams;
-    for (const auto& streamId : source.graph.streamIds()) {
-        const auto* stream = source.graph.stream(streamId);
-        const bool sourceSelected = stream->source
-            && expandedScope.contains(stream->source->nodeId);
-        const bool targetSelected = stream->target
-            && expandedScope.contains(stream->target->nodeId);
-        if (!sourceSelected && !targetSelected) continue;
-        result.graph.addStream({streamId,
-            sourceSelected ? stream->source : std::nullopt,
-            targetSelected ? stream->target : std::nullopt});
-        retainedStreams.insert(streamId);
-    }
-    const auto appendRetained = [&retainedStreams](const auto& input, auto& output) {
-        for (const auto& descriptor : input)
-            if (retainedStreams.contains(descriptor.streamId)) output.append(descriptor);
-    };
-    appendRetained(source.reportStreams, result.reportStreams);
-    appendRetained(source.productStreams, result.productStreams);
-    appendRetained(source.terminalProducts, result.terminalProducts);
-    appendRetained(source.requiredMeasurements, result.requiredMeasurements);
-    return result;
 }
 
 } // namespace
@@ -97,71 +42,14 @@ topology::CalculationResult FlowsheetCalculationService::calculate(
 
 topology::CalculationResult FlowsheetCalculationService::calculate(
     const CanvasTopologySnapshot& snapshot, const FlowsheetDocument& document) {
-    return calculate(snapshot, document, {});
-}
-
-topology::CalculationResult FlowsheetCalculationService::calculate(
-    const FlowsheetScene& scene, const FlowsheetDocument& document,
-    const QSet<QString>& objectScope) {
-    return calculate(CanvasTopologyBuilder::build(scene), document, objectScope);
-}
-
-topology::CalculationResult FlowsheetCalculationService::calculate(
-    const CanvasTopologySnapshot& completeSnapshot, const FlowsheetDocument& document,
-    const QSet<QString>& objectScope) {
-    const auto snapshot = scopedSnapshot(completeSnapshot, objectScope);
     topology::CalculationResult combined;
-    bool first = true;
-    for (const auto& component : document.components()) {
-        QHash<topology::StreamId, topology::StreamValue> knownValues;
-        QHash<topology::StreamId, topology::BranchAllocation> allocations;
-        for (const auto& stream : snapshot.productStreams) {
-            if (!stream.mergeBranch) continue;
-            const auto measurement = document.measurement(stream.streamId);
-            const auto componentShare = measurement.componentShare(component.id);
-            if (measurement.dryMassSharePercent && componentShare)
-                allocations.insert(stream.streamId, {*measurement.dryMassSharePercent,
-                                                      *componentShare});
-            else if (measurement.dryMassSharePercent || componentShare)
-                allocations.insert(stream.streamId, {-1.0, -1.0});
-        }
-        for (const auto& stream : snapshot.reportStreams) {
-            const auto measurement = document.measurement(stream.streamId);
-            const auto grade = measurement.grade(component.id);
-            if (!measurement.dryMass || !grade) continue;
-            if (auto value = topology::StreamValue::fromMassAndGrade(*measurement.dryMass, *grade))
-                knownValues.insert(stream.streamId, *value);
-        }
+    for (int index = 0; index < document.components().size(); ++index) {
+        const auto& component = document.components()[index];
+        const auto input = CalculationInputBuilder::build(snapshot, document, component.id);
         auto result = topology::OpenCircuitCalculator::calculate(
-            snapshot.graph, knownValues, allocations, !objectScope.isEmpty());
-        if (!objectScope.isEmpty()
-            && completeSnapshot.graph.externalFeedStreams().size() == 1) {
-            const auto externalFeedId = completeSnapshot.graph.externalFeedStreams().front();
-            if (snapshot.graph.stream(externalFeedId) && !knownValues.contains(externalFeedId)) {
-                const auto globalFeed = globalFeedFromTerminalProducts(
-                    completeSnapshot, document, component.id, result);
-                if (globalFeed) {
-                    knownValues.insert(externalFeedId, *globalFeed);
-                    result = topology::OpenCircuitCalculator::calculate(
-                        snapshot.graph, knownValues, allocations, true);
-                }
-            }
-        }
-        if (first) { combined = result; first = false; }
-        combined.components.insert(component.id, {result.values, result.flotationPerformance,
-            result.relativeToExternalFeed, result.complete, result.fullySolved});
-        if (!result.complete) combined.complete = false;
-        if (!result.fullySolved) combined.fullySolved = false;
-        combined.dryMassDegreesOfFreedom = std::max(
-            combined.dryMassDegreesOfFreedom, result.dryMassDegreesOfFreedom);
-        combined.componentMassDegreesOfFreedom = std::max(
-            combined.componentMassDegreesOfFreedom, result.componentMassDegreesOfFreedom);
-        if (!first && component.id != document.components().front().id) {
-            for (auto issue : result.issues) {
-                issue.message = QStringLiteral("%1：%2").arg(component.name, issue.message);
-                combined.issues.append(std::move(issue));
-            }
-        }
+            snapshot.graph, input.knownValues, input.allocations,
+            false, input.constraints, input.uncertainties);
+        appendComponentResult(combined, component, std::move(result), index == 0);
     }
     return combined;
 }

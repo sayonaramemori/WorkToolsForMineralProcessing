@@ -1,4 +1,5 @@
 #include "topology/OpenCircuitCalculator.h"
+#include "topology/LinearSystemSolver.h"
 #include "topology/TopologyAlgorithms.h"
 #include "topology/TopologyValidator.h"
 
@@ -201,5 +202,75 @@ int main(int argc, char** argv) {
         || !close(threeResult.flotationPerformance["TP"].middle.massYieldPercent, 20)
         || !close(threeResult.flotationPerformance["TP"].middle.recoveryPercent,
                   0.6 / 2.1 * 100.0)) return 27;
+
+    // Global boundary closure remains an independent equation, so a measured
+    // feed that disagrees with the terminal sum must be rejected.
+    LinearBalanceConstraint boundary;
+    boundary.id = "global-boundary";
+    boundary.coefficients.insert("TPF", 1.0);
+    boundary.coefficients.insert("TPL", -1.0);
+    boundary.coefficients.insert("TPM", -1.0);
+    boundary.coefficients.insert("TPR", -1.0);
+    QHash<StreamId, StreamValue> contradictory = threeKnown;
+    contradictory.insert("TPF", *StreamValue::fromMassAndGrade(110, 2.1));
+    const auto boundaryConflict = OpenCircuitCalculator::calculate(
+        threeProduct, contradictory, {}, false, {boundary});
+    if (boundaryConflict.complete || !boundaryConflict.values.isEmpty()
+        || !TopologyValidator::hasErrors(boundaryConflict.issues)) return 28;
+
+    // If an exact algebraic solution contains a negative derived stream, all
+    // sibling derived values are unsafe; only independent measurements remain.
+    TopologyGraph impossiblePhysical;
+    impossiblePhysical.addFlotationNode({"IP"});
+    impossiblePhysical.addStream(externalFeed("IPF", "IP"));
+    impossiblePhysical.addStream(terminal("IPL", "IP", PortKind::LeftProduct));
+    impossiblePhysical.addStream(terminal("IPR", "IP", PortKind::RightProduct));
+    QHash<StreamId, StreamValue> impossiblePhysicalKnown;
+    impossiblePhysicalKnown.insert("IPF", *StreamValue::fromMassAndGrade(5, 2));
+    impossiblePhysicalKnown.insert("IPL", *StreamValue::fromMassAndGrade(10, 2));
+    const auto impossiblePhysicalResult = OpenCircuitCalculator::calculate(
+        impossiblePhysical, impossiblePhysicalKnown);
+    if (impossiblePhysicalResult.complete
+        || impossiblePhysicalResult.values.size() != 2
+        || !impossiblePhysicalResult.values.contains("IPF")
+        || !impossiblePhysicalResult.values.contains("IPL")
+        || impossiblePhysicalResult.values.contains("IPR")) return 29;
+
+    // The generic solver independently guarantees partial-unique and
+    // inconsistent-system semantics used by every topology calculation.
+    const auto partialLinear = LinearSystemSolver::solve({
+        {1.0, 0.0, 0.0, 1.0},
+        {0.0, 1.0, 1.0, 2.0}}, 3);
+    if (partialLinear.inconsistent || partialLinear.degreesOfFreedom != 1
+        || !partialLinear.values[0] || !close(*partialLinear.values[0], 1)
+        || partialLinear.values[1] || partialLinear.values[2]) return 30;
+    const auto inconsistentLinear = LinearSystemSolver::solve({
+        {1.0, 1.0}, {1.0, 2.0}}, 1);
+    if (!inconsistentLinear.inconsistent) return 31;
+
+    QHash<StreamId, StreamValue> noisy;
+    noisy.insert("IF", *StreamValue::fromMassAndGrade(100, 2));
+    noisy.insert("IL", *StreamValue::fromMassAndGrade(60, 2));
+    noisy.insert("IR", *StreamValue::fromMassAndGrade(50, 2));
+    QHash<StreamId, StreamUncertainty> uncertainty;
+    uncertainty.insert("IF", {2, 0.1});
+    uncertainty.insert("IL", {2, 0.1});
+    uncertainty.insert("IR", {2, 0.1});
+    const auto reconciled = OpenCircuitCalculator::calculate(
+        inconsistent, noisy, {}, false, {}, uncertainty);
+    if (!reconciled.reconciled || !reconciled.complete
+        || !close(reconciled.values["IF"].dryMass,
+                  reconciled.values["IL"].dryMass + reconciled.values["IR"].dryMass)
+        || reconciled.residuals.size() != 3
+        || reconciled.maximumAbsoluteStandardizedResidual <= 0.0) return 32;
+    LinearBalanceConstraint duplicateBoundary;
+    duplicateBoundary.id = "duplicate-boundary";
+    duplicateBoundary.coefficients.insert("IF", 1.0);
+    duplicateBoundary.coefficients.insert("IL", -1.0);
+    duplicateBoundary.coefficients.insert("IR", -1.0);
+    const auto reconciledWithBoundary = OpenCircuitCalculator::calculate(
+        inconsistent, noisy, {}, false, {duplicateBoundary}, uncertainty);
+    if (!reconciledWithBoundary.complete
+        || reconciledWithBoundary.values.size() != 3) return 33;
     return 0;
 }

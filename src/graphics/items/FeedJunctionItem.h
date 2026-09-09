@@ -37,8 +37,11 @@ public:
     }
     bool addRecycleProduct(ProductLineItem* product);
     bool addRecycleMerge(MergeJunctionItem* merge);
+    bool removeRecycleProduct(ProductLineItem* product);
+    bool removeRecycleMerge(MergeJunctionItem* merge);
     [[nodiscard]] ProductLineItem* processProduct() const { return m_processProduct; }
     [[nodiscard]] MergeJunctionItem* processMerge() const { return m_processMerge; }
+    void clearProcessSource();
     [[nodiscard]] bool hasExternalFeed() const {
         return !m_processProduct && !m_processMerge;
     }
@@ -54,6 +57,7 @@ public:
     void setManualRouteY(const QString& streamId, std::optional<double> y);
     void resetManualRoutes();
     [[nodiscard]] QString selectedSourceStreamId() const { return m_selectedStreamId; }
+    bool selectSourceStream(const QString& streamId);
     [[nodiscard]] QPointF recycleAnchor() const { return m_recycleAnchor; }
     [[nodiscard]] QPointF externalFeedAnchor() const { return m_externalFeedAnchor; }
     [[nodiscard]] QPointF outputAnchor() const { return m_outputAnchor; }

@@ -23,7 +23,11 @@ namespace afs {
 
 AnnotationManager::AnnotationManager(FlowsheetScene& scene, FlowsheetDocument& document, QObject* parent)
     : QObject(parent), m_scene(scene), m_document(document) {
-    connect(&m_document, &FlowsheetDocument::calculationChanged, this, &AnnotationManager::synchronize);
+    connect(&m_document, &FlowsheetDocument::calculationChanged, this, [this] {
+        // A new calculation (or invalidation) starts a fresh display session.
+        m_temporarilyHiddenResults.clear();
+        synchronize();
+    });
     connect(&m_scene, &FlowsheetScene::geometryChanged, this, &AnnotationManager::refreshPositions);
     connect(&m_document, &FlowsheetDocument::annotationTextSettingsChanged,
             this, &AnnotationManager::refreshTextSettings);
@@ -151,6 +155,14 @@ bool AnnotationManager::eventFilter(QObject* watched, QEvent* event) {
                 m_scene.removeItem(note); delete note; removed = true;
                 continue;
             }
+            if (auto* result = dynamic_cast<AnnotationItem*>(selected);
+                result && result->record().kind == AnnotationKind::StreamResult) {
+                m_temporarilyHiddenResults.insert(result->record().id);
+                result->setSelected(false);
+                result->setVisible(false);
+                removed = true;
+                continue;
+            }
             auto* reagent = dynamic_cast<ReagentAnnotationItem*>(selected);
             if (!reagent) continue;
             const QString id = reagent->record().id;
@@ -252,6 +264,8 @@ bool AnnotationManager::anchorForStream(const QString& streamId, QPointF& anchor
 void AnnotationManager::synchronize() {
     synchronizeReagents();
     synchronizeNotes();
+    m_settings.massUnit = m_document.annotationTextSettings().massUnit;
+    m_settings.customMassUnit = m_document.annotationTextSettings().customMassUnit;
     const auto* result = m_document.calculationResult();
     if (!result || result->values.isEmpty()) {
         for (auto* item : m_items) item->setVisible(false);
@@ -298,7 +312,9 @@ void AnnotationManager::synchronize() {
             annotation->setText(text);
         }
         annotation->setAnchor(anchor, defaultOffset);
-        annotation->setVisible(m_visible && m_settings.anyVisible() && annotation->record().visible);
+        annotation->setVisible(m_visible && m_settings.anyVisible()
+            && annotation->record().visible
+            && !m_temporarilyHiddenResults.contains(annotationId));
     }
     for (auto it = m_items.begin(); it != m_items.end(); ++it)
         if (!activeIds.contains(it.key())) it.value()->setVisible(false);
@@ -398,6 +414,9 @@ void AnnotationManager::refreshTextSettings() {
         item->setTextSettings(m_document.annotationTextSettings());
     for (auto* item : m_noteItems)
         item->setTextSettings(m_document.annotationTextSettings());
+    // Text settings also carry the mass-unit label, which changes result-card
+    // content rather than only font geometry.
+    synchronize();
     refreshPositions();
 }
 
@@ -438,6 +457,20 @@ void AnnotationManager::setMetricLabelMode(MetricLabelMode mode) {
     if (m_settings.labelMode == mode) return;
     m_settings.labelMode = mode;
     synchronize();
+}
+
+void AnnotationManager::setMassUnit(MassUnit unit) {
+    auto settings = m_document.annotationTextSettings();
+    if (settings.massUnit == unit) return;
+    settings.massUnit = unit;
+    m_document.setAnnotationTextSettings(std::move(settings));
+}
+
+void AnnotationManager::setCustomMassUnit(const QString& unit) {
+    auto settings = m_document.annotationTextSettings();
+    settings.massUnit = MassUnit::Custom;
+    settings.customMassUnit = unit;
+    m_document.setAnnotationTextSettings(std::move(settings));
 }
 
 } // namespace afs

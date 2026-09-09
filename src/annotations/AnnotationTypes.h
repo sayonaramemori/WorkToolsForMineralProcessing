@@ -11,11 +11,24 @@ enum class AnnotationStyle { ResultCard, PlainText, Note, Warning };
 enum class AnnotationOwnerKind { Stream, FlotationUnit, Free };
 enum class ResultMetric { DryMass, Grade, OverallYield, OverallRecovery };
 enum class MetricLabelMode { Chinese, Symbols };
+enum class MassUnit { Gram, Kilogram, Tonne, Custom };
+
+[[nodiscard]] inline QString massUnitSymbol(MassUnit unit) {
+    switch (unit) {
+    case MassUnit::Gram: return QStringLiteral("g");
+    case MassUnit::Kilogram: return QStringLiteral("kg");
+    case MassUnit::Tonne: return QStringLiteral("t");
+    case MassUnit::Custom: return {};
+    }
+    return QStringLiteral("g");
+}
 
 struct AnnotationTextSettings {
     int pointSize{9};
     bool bold{false};
     QColor color;
+    MassUnit massUnit{MassUnit::Gram};
+    QString customMassUnit;
 };
 
 struct ResultAnnotationSettings {
@@ -25,6 +38,8 @@ struct ResultAnnotationSettings {
     bool showOverallRecovery{false};
     int decimalPlaces{2};
     MetricLabelMode labelMode{MetricLabelMode::Chinese};
+    MassUnit massUnit{MassUnit::Gram};
+    QString customMassUnit;
 
     [[nodiscard]] bool visible(ResultMetric metric) const {
         switch (metric) {

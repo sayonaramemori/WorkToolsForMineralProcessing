@@ -353,11 +353,80 @@ bool FlowsheetScene::disconnectRecycle(FeedJunctionItem* junction) {
     return true;
 }
 
+bool FlowsheetScene::disconnectFeedSource(FeedJunctionItem* junction,
+                                          const QString& streamId) {
+    if (!junction || streamId.isEmpty()) return false;
+
+    ProductLineItem* selectedProduct = nullptr;
+    for (auto* product : junction->recycleProducts()) {
+        if (product->streamId() == streamId) {
+            selectedProduct = product;
+            break;
+        }
+    }
+    MergeJunctionItem* selectedMerge = nullptr;
+    if (!selectedProduct) {
+        for (auto* merge : junction->recycleMerges()) {
+            if (merge->outputStreamId() == streamId) {
+                selectedMerge = merge;
+                break;
+            }
+        }
+    }
+    if (!selectedProduct && !selectedMerge) return false;
+
+    const int sourceCount = junction->recycleProducts().size()
+        + junction->recycleMerges().size();
+    // Removing the last additional source collapses the now-redundant junction
+    // and restores its process source (or the external-feed input line).
+    if (sourceCount == 1) return disconnectRecycle(junction);
+
+    if (selectedProduct) {
+        selectedProduct->setFeedJunction(nullptr);
+        if (!junction->removeRecycleProduct(selectedProduct)) return false;
+    } else {
+        selectedMerge->setFeedJunction(nullptr);
+        if (!junction->removeRecycleMerge(selectedMerge)) return false;
+    }
+    emit topologyChanged();
+    return true;
+}
+
 bool FlowsheetScene::disconnectProduct(ProductLineItem* product) {
     if (!product || !product->isConnected()) return false;
     auto* target = product->targetUnit();
     target->inputLine()->setSourceProduct(nullptr);
     product->setTargetUnit(nullptr);
+    refreshConnections();
+    emit topologyChanged();
+    return true;
+}
+
+bool FlowsheetScene::removeUnit(FlotationUnitItem* unit) {
+    if (!unit || unit->scene() != this) return false;
+
+    auto* input = unit->inputLine();
+    if (auto* feed = input->feedJunction()) disconnectRecycle(feed);
+    if (auto* source = input->sourceProduct()) disconnectProduct(source);
+    if (auto* source = input->sourceMerge()) disconnectMerge(source);
+
+    const auto products = unit->products();
+    for (auto* product : products) {
+        if (auto* feed = product->feedJunction()) {
+            if (feed->processProduct() == product) {
+                product->setFeedJunction(nullptr);
+                feed->clearProcessSource();
+                emit topologyChanged();
+            } else {
+                disconnectFeedSource(feed, product->streamId());
+            }
+        }
+        if (auto* merge = product->mergeJunction()) splitMerge(merge);
+        if (product->targetUnit()) disconnectProduct(product);
+    }
+
+    removeItem(unit);
+    delete unit;
     refreshConnections();
     emit topologyChanged();
     return true;

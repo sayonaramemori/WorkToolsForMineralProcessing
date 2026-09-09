@@ -33,7 +33,6 @@ public:
     void clearResultDetails();
     void setScenarioName(const QString& name);
     [[nodiscard]] TerminalProductTableModel* model() const { return m_model; }
-    [[nodiscard]] const QSet<QString>& calculationScope() const { return m_interestedOwners; }
 
 signals:
     void graphicsItemRequested(QGraphicsItem* item);
@@ -44,6 +43,7 @@ private:
     TerminalProductTableModel* m_model;
     StreamFilterProxyModel* m_filterModel;
     QComboBox* m_filterCombo;
+    QComboBox* m_modeCombo;
     QPushButton* m_interestButton;
     QMenu* m_interestMenu;
     QLabel* m_progressLabel;

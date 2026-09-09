@@ -57,11 +57,17 @@ void ResultDetailsView::showStream(const QString& streamId) {
     const auto value = result->values.value(streamId);
     m_title->setText(QString("物流结果 · %1").arg(streamId));
     const int componentCount = m_document.components().size();
-    configureTable(2 + 2 * componentCount, 2, {"指标", "数值"});
+    const bool hasResidual = result->reconciled && result->residuals.contains(streamId);
+    configureTable(2 + 2 * componentCount + (hasResidual ? 2 : 0), 2,
+                   {"指标", "数值"});
     QStringList names{"干质量", "全流程产率 / %"};
     for (const auto& component : m_document.components()) {
         names.append(QString("%1 品位 / %").arg(component.name));
         names.append(QString("%1 全流程回收率 / %").arg(component.name));
+    }
+    if (hasResidual) {
+        names.append("质量协调修正");
+        names.append("质量标准化残差 / σ");
     }
     for (int row = 0; row < names.size(); ++row) {
         m_table->setItem(row, 0, new QTableWidgetItem(names[row]));
@@ -89,6 +95,11 @@ void ResultDetailsView::showStream(const QString& streamId) {
         const auto metrics = componentResult->relativeToExternalFeed.constFind(streamId);
         if (metrics == componentResult->relativeToExternalFeed.cend()) setTextItem(row++, 1, "—");
         else setNumericItem(row++, 1, metrics->recoveryPercent);
+    }
+    if (hasResidual) {
+        const auto residual = result->residuals.value(streamId);
+        setNumericItem(row++, 1, residual.dryMass);
+        setNumericItem(row++, 1, residual.dryMassStandardized);
     }
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
 }

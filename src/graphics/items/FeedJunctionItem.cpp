@@ -77,6 +77,49 @@ bool FeedJunctionItem::addRecycleMerge(MergeJunctionItem* merge) {
     return true;
 }
 
+bool FeedJunctionItem::removeRecycleProduct(ProductLineItem* product) {
+    if (!product || !m_recycleProducts.removeOne(product)) return false;
+    const QString streamId = product->streamId();
+    m_manualRouteXs.remove(streamId);
+    m_manualRouteYs.remove(streamId);
+    if (m_selectedStreamId == streamId) m_selectedStreamId.clear();
+    if (m_editingStreamId == streamId) {
+        m_editingStreamId.clear();
+        m_editingAxis = EditingAxis::None;
+    }
+    updatePath();
+    return true;
+}
+
+bool FeedJunctionItem::removeRecycleMerge(MergeJunctionItem* merge) {
+    if (!merge || !m_recycleMerges.removeOne(merge)) return false;
+    const QString streamId = merge->outputStreamId();
+    m_manualRouteXs.remove(streamId);
+    m_manualRouteYs.remove(streamId);
+    if (m_selectedStreamId == streamId) m_selectedStreamId.clear();
+    if (m_editingStreamId == streamId) {
+        m_editingStreamId.clear();
+        m_editingAxis = EditingAxis::None;
+    }
+    updatePath();
+    return true;
+}
+
+bool FeedJunctionItem::selectSourceStream(const QString& streamId) {
+    if (!m_sourcePaths.contains(streamId)) return false;
+    m_selectedStreamId = streamId;
+    setSelected(true);
+    setFocus();
+    update();
+    return true;
+}
+
+void FeedJunctionItem::clearProcessSource() {
+    m_processProduct = nullptr;
+    m_processMerge = nullptr;
+    updatePath();
+}
+
 void FeedJunctionItem::appendSourcePath(QPainterPath& path, const QString& streamId,
                                         const QPointF& start, const QPointF& end,
                                         bool routeLeft, int routeIndex, int entryIndex) {
@@ -291,7 +334,7 @@ void FeedJunctionItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
         if (!(event->modifiers() & Qt::ControlModifier)) scene()->clearSelection();
         setSelected(true);
         setFocus();
-        m_selectedStreamId = closest;
+        selectSourceStream(closest);
         m_editingStreamId = axis == EditingAxis::None ? QString{} : closest;
         m_editingAxis = axis;
         if (axis == EditingAxis::Horizontal && !m_manualRouteXs.contains(closest))

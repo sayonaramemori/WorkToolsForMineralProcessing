@@ -7,6 +7,8 @@
 3. 画布到计算模型的转换只放在 `src/adapters`。
 4. `MainWindow` 只装配模块，不新增大段领域逻辑。
 5. 新交互必须补充相应测试。
+6. 删除画布单元必须通过 `FlowsheetScene::removeUnit()`；禁止直接 `delete` 图元，否则产品合流或回流节点会保留悬空指针。
+7. 新增类前先按 `MODULE_BOUNDARIES.md` 判断归属；跨层转换必须集中在既有适配入口。
 
 ## 新功能检查清单
 
@@ -26,6 +28,13 @@
 - 结果标注拖动和药剂标注键盘微调都保存相对锚点的偏移，不保存锚定标注的绝对位置。
 - 测试目标只链接所需源码，避免把 `main.cpp` 链接进去。
 
+## 撤销与重做
+
+- 第一版撤销由 `ProjectUndoManager` 管理，快照必须调用 `ProjectSerializer::serialize/deserialize`，不得另外维护一套项目复制格式。
+- 连续信号在 200 ms 内合并为一个编辑事务；执行撤销或重做前先提交尚未到期的事务。
+- 快照恢复前必须清除 `AnnotationManager` 的非拥有型图元索引，恢复期间使用 `m_loadingProject` 和管理器内部标志阻止结果失效及递归记录。
+- 导入项目后清空撤销历史；保存项目后将当前撤销栈位置标记为干净状态。
+
 ## 添加计算指标
 
 1. 在 `TopologyTypes.h` 中确定结果结构。
@@ -34,10 +43,37 @@
 4. 如需画布显示，扩展 `ResultMetric` 和 `AnnotationContentFormatter`。
 5. 在 `ResultMetricMenu` 中加入入口。
 
+## 扩展方程求解
+
+- 流程守恒、实测值、分流比例及边界约束的方程组装只放在 `OpenCircuitCalculator`；不要把物流或浮选语义加入 `LinearSystemSolver`。
+- 通用加权约束最小二乘只放在 `WeightedLeastSquaresSolver`，不得依赖画布或文档类型。
+- 项目生命周期命令放在 `MainWindowProject.cpp`，导出命令放在 `MainWindowExport.cpp`；表格筛选及绘制委托放在 `TerminalProductViewSupport`，不要重新内嵌回 UI 装配文件。
+- 项目解析先生成 `ProjectSerializationData`，画布重建统一调用 `ProjectSceneRestorer`；不要在 JSON 解析器中直接修改当前场景。
+- 项目字段兼容与校验归 `ProjectJsonReader`，格式写出归 `ProjectJsonWriter`；`ProjectSerializer` 不应重新积累具体 JSON 字段或连接重建逻辑。
+- 新的跨节点线性关系使用 `LinearBalanceConstraint` 表达，系数键必须是当前计算子图中的稳定物流 ID。
+- “关注对象”只能用于 `StreamFilterProxyModel` 的表格显示筛选，不得传入计算服务或改变拓扑方程范围；求解始终使用完整流程和全部已录入测量值。
+- `CalculationInputBuilder::build()` 是文档数据到单组分计算输入的唯一组装入口；项目导入、界面重算和后续批处理必须复用 `FlowsheetCalculationService`。
+- 物理解校验失败时只保留实测值。不得继续显示或累计来自同一个非法联立解的其他推导值。
+- 数值算法调整至少补充 `topology_test`，覆盖矛盾、欠定、部分唯一、不同质量尺度和物理非法解。
+
+数据协调通过 `CalculationMode::DataReconciliation` 显式启用，测量权重来自 `StreamMeasurement` 的质量及品位标准差；严格模式不得读取这些误差字段，也不得降低矛盾判定标准。协调算法必须复用拓扑守恒方程，并在结果中保留标准化残差用于异常值诊断。
+
+协调模式目前使用一阶误差传播把质量和品位标准差转换为组分质量标准差。未填写时采用质量 1%、品位 0.1 个百分点的默认值；后续若增加相对误差、协方差或稳健估计，应扩展独立的测量权重模型，避免把相关性逻辑塞进表格模型。
+
+## 操作日志
+
+- `OperationLogDock` 只负责有时间戳的只读展示和容量限制，不直接了解具体业务操作。
+- 用户可见的短操作结果仍通过 `QStatusBar::showMessage()` 发布，`MainWindow` 将其统一转发到日志。
+- 需要保留具体诊断时，通过 `appendOperationLog()` 逐条写入；不要让计算内核依赖 UI 日志类。
+
+结果指标框的 `Delete` 是会话级隐藏操作，状态只保存在 `AnnotationManager`，不能写回项目文档；`calculationChanged` 必须清除临时隐藏集合。药剂和自定义文字的 `Delete` 仍删除对应的 `AnnotationRecord`，新增键盘行为时要明确区分这两类生命周期。
+
+质量单位是项目级显示元数据，预设类型保存在 `AnnotationTextSettings::massUnit`，自定义文本保存在 `customMassUnit` 并限制为 16 个字符。它只能改变指标文本后缀，不能在格式化器、表格模型或求解器中换算数值；编辑其他标注样式时必须保留当前单位。
+
 ## 多组分数据
 
 - 组分定义属于项目共享状态，使用稳定 `ComponentDefinition::id`；修改显示名称不能改变 ID。
-- `StreamMeasurement::gradePercents` 和 `componentSharePercents` 按组分 ID 保存，质量仍只保存一次。
+- `StreamMeasurement::gradePercents` 按组分 ID 保存，质量仍只保存一次。旧项目中的 `componentSharePercents` 仅为文件兼容字段，不在右侧主表展示或编辑。
 - `FlowsheetCalculationService` 对每个组分调用一次守恒计算器，结果写入 `CalculationResult::components`；第一个组分同时保留在旧结果字段中作为兼容层。
 - 右侧输入表、结果详情、方案对比和 XLSX 导出必须遍历组分定义，不得假设只有一个品位列。
 - 项目格式 v2 保存组分定义和按组分索引的数据；读取器继续接受 v1，并将旧项目中的 `gradePercent` 和 `componentSharePercent` 自动迁移到 `component-1`。
@@ -110,6 +146,7 @@
 - 入料与回流的画布表现放在 `FeedJunctionItem`：正常入料可以是外部新鲜入料、`ProductLineItem` 或 `MergeJunctionItem`，附加来源使用产品与合流输出集合，拓扑中统一转换为支持两条及以上输入的 `MergeNode`；
 - 项目格式 v3 使用 `feedJunctions[].sources` 数组保存多输入端点；载入器必须继续接受 v1/v2 的单一 `sourceType/source` 字段；
 - 将回流接入已占用入料时，汇合点必须保存原正常上游端点；断开回流及项目重新载入后都必须恢复该连接；
+- 多输入汇流点的来源支路被单独选中时，`Ctrl+B` 必须只解除该来源；选择公共汇流线时才允许整体拆除；
 - 已占用入料图元虽然隐藏，其几何线段必须继续作为拖放热区；命中后临时显示高亮，并由 `closed_loop_test` 覆盖；
 - 同一主流程允许存在多个独立或嵌套的 `FeedJunctionItem`；连通分量遍历必须覆盖每个汇合点的正常来源及全部附加来源；
 - 多回流项目保存/载入由 `project_io_test` 覆盖，载入后汇合点 ID、外部入料数量和闭路检测结果必须保持一致；
@@ -132,6 +169,14 @@
 - 修改 Excel 导出时运行 `excel_export_test`，校验 OOXML 文件结构、中文方案名和产品名称回退。
 
 ## 发布前验证
+
+修改共享数据结构或主窗口生命周期后，先执行一次干净构建，再运行退出冒烟测试。该入口会触发退出确认并自动选择“不保存”，覆盖 `closeEvent` 和完整析构路径：
+
+```bash
+xmake clean AutoFlotationSheet
+xmake AutoFlotationSheet
+QT_QPA_PLATFORM=offscreen AFS_SMOKE_TEST=1 ./build/bin/AutoFlotationSheet
+```
 
 Linux：
 

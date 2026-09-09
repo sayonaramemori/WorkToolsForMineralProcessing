@@ -4,6 +4,7 @@
 #include "ui/ResultDetailsView.h"
 #include "ui/TerminalProductStyle.h"
 #include "ui/TerminalProductTableModel.h"
+#include "ui/TerminalProductViewSupport.h"
 #include "services/FlowsheetCalculationService.h"
 
 #include <algorithm>
@@ -24,6 +25,7 @@
 #include <QAction>
 #include <QKeyEvent>
 #include <QSet>
+#include <QSignalBlocker>
 #include <QSortFilterProxyModel>
 #include <QStyledItemDelegate>
 #include <QStyle>
@@ -32,111 +34,11 @@
 
 namespace afs {
 
-class StreamFilterProxyModel final : public QSortFilterProxyModel {
-public:
-    enum Mode { All, Entered, NeedsInput, Terminal, Feed, Recycle };
-    using QSortFilterProxyModel::QSortFilterProxyModel;
-    void setMode(Mode mode) {
-        beginFilterChange();
-        m_mode = mode;
-        endFilterChange(Direction::Rows);
-    }
-    void setInterestedOwners(QSet<QString> ids) {
-        beginFilterChange();
-        m_interestedOwners = std::move(ids);
-        endFilterChange(Direction::Rows);
-    }
-
-protected:
-    bool filterAcceptsRow(int row, const QModelIndex& parent) const override {
-        const auto* model = qobject_cast<const TerminalProductTableModel*>(sourceModel());
-        const auto* stream = model ? model->streamAt(row) : nullptr;
-        if (!model || !stream) return false;
-        if (!m_interestedOwners.isEmpty()) {
-            bool belongs = false;
-            for (const auto& ownerId : stream->ownerIds)
-                if (m_interestedOwners.contains(ownerId)) { belongs = true; break; }
-            if (!belongs) return false;
-        }
-        if (m_mode == All) return true;
-        const QString status = model->index(row, model->statusColumn(), parent)
-                                   .data(Qt::DisplayRole).toString();
-        if (m_mode == Entered) return status == QStringLiteral("实测值")
-            || status == QStringLiteral("填写中");
-        if (m_mode == NeedsInput) return status == QStringLiteral("填写中")
-            || status == QStringLiteral("可填写");
-        if (m_mode == Terminal) return stream->terminal;
-        if (m_mode == Feed) return stream->feed;
-        return stream->recycle;
-    }
-
-private:
-    Mode m_mode{All};
-    QSet<QString> m_interestedOwners;
-};
-
-namespace {
-
-class NumberDelegate final : public QStyledItemDelegate {
-public:
-    NumberDelegate(double maximum, QObject* parent) : QStyledItemDelegate(parent), m_maximum(maximum) {}
-    QWidget* createEditor(QWidget* parent, const QStyleOptionViewItem&, const QModelIndex&) const override {
-        auto* editor = new QLineEdit(parent);
-        auto* validator = new QDoubleValidator(0.0, m_maximum, 6, editor);
-        validator->setNotation(QDoubleValidator::StandardNotation);
-        editor->setValidator(validator);
-        editor->setAlignment(Qt::AlignCenter);
-        editor->setFrame(false);
-        return editor;
-    }
-    void setEditorData(QWidget* editor, const QModelIndex& index) const override {
-        auto* lineEdit = static_cast<QLineEdit*>(editor);
-        lineEdit->setText(index.data(Qt::EditRole).toString());
-        lineEdit->selectAll();
-    }
-    void setModelData(QWidget* editor, QAbstractItemModel* model, const QModelIndex& index) const override {
-        model->setData(index, static_cast<QLineEdit*>(editor)->text(), Qt::EditRole);
-    }
-private:
-    double m_maximum;
-};
-
-class StatusDelegate final : public QStyledItemDelegate {
-public:
-    using QStyledItemDelegate::QStyledItemDelegate;
-    void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override {
-        QStyleOptionViewItem base(option);
-        initStyleOption(&base, index);
-        base.text.clear();
-        QStyledItemDelegate::paint(painter, base, index);
-        const QString text = index.data(Qt::DisplayRole).toString();
-        const bool ready = text == QStringLiteral("实测值")
-            || text == QStringLiteral("计算值");
-        const QColor foreground = ready ? QColor("#17864b") : QColor("#a86400");
-        QColor background = ready ? QColor("#dff5e8") : QColor("#fff0d6");
-        if (option.state & QStyle::State_Selected) {
-            background = option.palette.color(QPalette::HighlightedText);
-            background.setAlpha(225);
-        }
-        const int width = QFontMetrics(option.font).horizontalAdvance(text) + 18;
-        const QRect badge(option.rect.center().x() - width / 2, option.rect.center().y() - 12, width, 24);
-        painter->save();
-        painter->setRenderHint(QPainter::Antialiasing);
-        painter->setPen(Qt::NoPen);
-        painter->setBrush(background);
-        painter->drawRoundedRect(badge, 12, 12);
-        painter->setPen(foreground);
-        painter->drawText(badge, Qt::AlignCenter, text);
-        painter->restore();
-    }
-};
-
-} // namespace
-
 TerminalProductDock::TerminalProductDock(FlowsheetDocument& document, QWidget* parent)
     : QDockWidget("物流实测参数", parent), m_table(new QTableView(this)),
       m_model(new TerminalProductTableModel(document, this)),
       m_filterModel(new StreamFilterProxyModel(this)), m_filterCombo(new QComboBox(this)),
+      m_modeCombo(new QComboBox(this)),
       m_interestButton(new QPushButton("关注对象：全部", this)),
       m_interestMenu(new QMenu(this)),
       m_progressLabel(new QLabel(this)),
@@ -187,6 +89,12 @@ TerminalProductDock::TerminalProductDock(FlowsheetDocument& document, QWidget* p
     m_interestButton->setObjectName("interestObjectButton");
     m_interestButton->setMenu(m_interestMenu);
     filterRow->addWidget(m_interestButton);
+    filterRow->addSpacing(12);
+    filterRow->addWidget(new QLabel("计算模式", m_panel));
+    m_modeCombo->setObjectName("calculationModeCombo");
+    m_modeCombo->addItem("严格模式", static_cast<int>(CalculationMode::Strict));
+    m_modeCombo->addItem("数据协调", static_cast<int>(CalculationMode::DataReconciliation));
+    filterRow->addWidget(m_modeCombo);
     filterRow->addStretch();
     layout->addLayout(filterRow);
     layout->addWidget(m_table, 1);
@@ -232,6 +140,10 @@ TerminalProductDock::TerminalProductDock(FlowsheetDocument& document, QWidget* p
             m_filterCombo->itemData(index).toInt()));
         updateSummary();
     });
+    connect(m_modeCombo, &QComboBox::currentIndexChanged, this, [this](int index) {
+        if (index >= 0) m_document.setCalculationMode(
+            static_cast<CalculationMode>(m_modeCombo->itemData(index).toInt()));
+    });
     connect(componentsButton, &QPushButton::clicked, this, &TerminalProductDock::editComponents);
     connect(&m_document, &FlowsheetDocument::componentsChanged, this, [this] {
         configureColumns(); updateSummary(); updateCalculationState();
@@ -239,6 +151,14 @@ TerminalProductDock::TerminalProductDock(FlowsheetDocument& document, QWidget* p
     connect(&m_document, &FlowsheetDocument::calculationChanged, this, [this] {
         updateCalculationState();
         if (!m_document.calculationResult()) m_resultDetails->showPlaceholder();
+    });
+    connect(&m_document, &FlowsheetDocument::calculationModeChanged, this, [this] {
+        const int index = m_modeCombo->findData(static_cast<int>(m_document.calculationMode()));
+        if (index >= 0 && index != m_modeCombo->currentIndex()) {
+            const QSignalBlocker blocker(m_modeCombo);
+            m_modeCombo->setCurrentIndex(index);
+        }
+        configureColumns(); updateSummary(); updateCalculationState();
     });
 }
 
@@ -251,17 +171,21 @@ void TerminalProductDock::configureColumns() {
     m_table->setColumnWidth(TerminalProductTableModel::MassColumn, 82);
     m_table->setItemDelegateForColumn(TerminalProductTableModel::MassColumn,
                                       new NumberDelegate(1.0e12, m_table));
+    if (m_document.calculationMode() == CalculationMode::DataReconciliation) {
+        m_table->setColumnWidth(TerminalProductTableModel::MassStdDevColumn, 72);
+        m_table->setItemDelegateForColumn(TerminalProductTableModel::MassStdDevColumn,
+                                          new NumberDelegate(1.0e12, m_table));
+    }
     for (const auto& component : m_document.components()) {
         const int grade = m_model->gradeColumn(component.id);
-        const int share = m_model->componentShareColumn(component.id);
         m_table->setColumnWidth(grade, 88);
-        m_table->setColumnWidth(share, 96);
         m_table->setItemDelegateForColumn(grade, new NumberDelegate(100.0, m_table));
-        m_table->setItemDelegateForColumn(share, new NumberDelegate(100.0, m_table));
+        const int sigma = m_model->gradeStdDevColumn(component.id);
+        if (sigma >= 0) {
+            m_table->setColumnWidth(sigma, 72);
+            m_table->setItemDelegateForColumn(sigma, new NumberDelegate(100.0, m_table));
+        }
     }
-    m_table->setColumnWidth(m_model->dryMassShareColumn(), 92);
-    m_table->setItemDelegateForColumn(m_model->dryMassShareColumn(),
-                                      new NumberDelegate(100.0, m_table));
     m_table->setColumnWidth(m_model->statusColumn(), 82);
     m_table->setItemDelegateForColumn(m_model->statusColumn(), new StatusDelegate(m_table));
 }
@@ -314,7 +238,6 @@ void TerminalProductDock::setSnapshot(CanvasTopologySnapshot snapshot) {
     for (const auto& stream : m_snapshot.reportStreams) editableIds.insert(stream.streamId);
     m_model->setStreams(m_snapshot.reportStreams, std::move(editableIds));
     rebuildInterestMenu();
-    if (!m_interestedOwners.isEmpty()) m_document.invalidateCalculation();
 }
 
 void TerminalProductDock::rebuildInterestMenu() {
@@ -336,12 +259,10 @@ void TerminalProductDock::rebuildInterestMenu() {
                 selected.insert(candidate->data().toString());
                 ++count;
             }
-            const bool scopeChanged = selected != m_interestedOwners;
             m_interestedOwners = selected;
             m_filterModel->setInterestedOwners(std::move(selected));
             m_interestButton->setText(count == 0
                 ? "关注对象：全部" : QString("关注对象：%1 个").arg(count));
-            if (scopeChanged) m_document.invalidateCalculation();
             updateSummary();
         });
     }
@@ -399,11 +320,13 @@ void TerminalProductDock::updateCalculationState() {
     m_calculateButton->setEnabled(hasCompleteInput);
     const auto* result = m_document.calculationResult();
     if (result && result->complete) {
-        m_calculationStatus->setText(result->fullySolved
-            ? (m_interestedOwners.isEmpty()
-                ? "平衡计算成功 · 选择画布对象查看详细结果"
-                : QString("局部平衡计算成功 · 已计算 %1 个关注对象")
-                      .arg(m_interestedOwners.size()))
+        if (result->reconciled) {
+            m_calculationStatus->setText(QString("数据协调完成 · 最大标准化残差 %1σ%2")
+                .arg(result->maximumAbsoluteStandardizedResidual, 0, 'f', 2)
+                .arg(result->maximumAbsoluteStandardizedResidual > 3.0
+                    ? " · 存在可疑测量" : ""));
+        } else m_calculationStatus->setText(result->fullySolved
+            ? "平衡计算成功 · 选择画布对象查看详细结果"
             : "全流程平衡已完成 · 部分中间物流未唯一求解");
         m_calculateButton->setText("重新计算");
     } else if (result) {
@@ -423,7 +346,7 @@ void TerminalProductDock::updateCalculationState() {
         m_calculateButton->setText("重新计算");
     } else {
         const auto preview = FlowsheetCalculationService::calculate(
-            m_snapshot, m_document, m_interestedOwners);
+            m_snapshot, m_document);
         const int missing = std::max(preview.dryMassDegreesOfFreedom,
                                      preview.componentMassDegreesOfFreedom);
         m_calculationStatus->setText(m_model->rowCount() == 0

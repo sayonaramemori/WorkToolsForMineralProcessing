@@ -2,6 +2,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QSet>
 #include "annotations/AnnotationTypes.h"
 
 class QGraphicsItem;
@@ -24,6 +25,8 @@ public:
     void setAnnotationsVisible(bool visible);
     void setMetricVisible(ResultMetric metric, bool visible);
     void setMetricLabelMode(MetricLabelMode mode);
+    void setMassUnit(MassUnit unit);
+    void setCustomMassUnit(const QString& unit);
     void clearGraphicsItems();
     void refreshTextSettings();
     bool nudgeSelectedReagents(qreal verticalDelta);
@@ -36,6 +39,9 @@ private:
     QHash<QString, AnnotationItem*> m_items;
     QHash<QString, ReagentAnnotationItem*> m_reagentItems;
     QHash<QString, AnnotationItem*> m_noteItems;
+    // Result cards hidden with Delete for the current calculation only.
+    // This is intentionally not persisted in FlowsheetDocument.
+    QSet<QString> m_temporarilyHiddenResults;
     bool m_visible{true};
     ResultAnnotationSettings m_settings;
 

@@ -16,7 +16,9 @@ public:
         const TopologyGraph& graph,
         const QHash<StreamId, StreamValue>& knownValues,
         const QHash<StreamId, BranchAllocation>& allocations = {},
-        bool scopedCalculation = false);
+        bool scopedCalculation = false,
+        const QVector<LinearBalanceConstraint>& constraints = {},
+        const QHash<StreamId, StreamUncertainty>& uncertainties = {});
 };
 
 } // namespace afs::topology

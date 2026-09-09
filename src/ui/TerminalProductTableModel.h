@@ -13,7 +13,7 @@ class TerminalProductTableModel final : public QAbstractTableModel {
     Q_OBJECT
 public:
     enum FixedColumn { NameColumn, ProductNameColumn, MassColumn,
-                       FirstGradeColumn, GradeColumn = FirstGradeColumn };
+                       MassStdDevColumn, GradeColumn = MassStdDevColumn };
     enum CustomRole { CompletionRole = Qt::UserRole + 1 };
 
     explicit TerminalProductTableModel(FlowsheetDocument& document, QObject* parent = nullptr);
@@ -32,11 +32,10 @@ public:
     [[nodiscard]] int completedCount() const;
     [[nodiscard]] int editableCount() const { return m_editableStreamIds.size(); }
     [[nodiscard]] int gradeColumn(const QString& componentId) const;
-    [[nodiscard]] int dryMassShareColumn() const;
-    [[nodiscard]] int componentShareColumn(const QString& componentId) const;
+    [[nodiscard]] int gradeStdDevColumn(const QString& componentId) const;
     [[nodiscard]] int statusColumn() const;
     [[nodiscard]] bool isGradeColumn(int column) const;
-    [[nodiscard]] bool isComponentShareColumn(int column) const;
+    [[nodiscard]] bool isUncertaintyColumn(int column) const;
     [[nodiscard]] QString componentIdForColumn(int column) const;
 
 private:

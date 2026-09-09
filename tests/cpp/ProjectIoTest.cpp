@@ -8,6 +8,7 @@
 #include "graphics/items/MergeJunctionItem.h"
 #include "graphics/items/ProductLineItem.h"
 #include "services/ProjectSerializer.h"
+#include "services/ProjectUndoManager.h"
 #include "topology/OpenCircuitCalculator.h"
 #include "topology/TopologyAlgorithms.h"
 #include "topology/TopologyValidator.h"
@@ -48,7 +49,8 @@ int main(int argc, char** argv) {
     sourceDocument.setGradePercent("upper-unused", "component-2", 1.75);
     sourceDocument.setProductName("10:left", "最终精矿");
     sourceDocument.setExportStreamOrder({"10:right", "10:left", "10:feed"});
-    sourceDocument.setAnnotationTextSettings({14, true, QColor("#336699")});
+    sourceDocument.setAnnotationTextSettings(
+        {14, true, QColor("#336699"), MassUnit::Custom, "dry short ton"});
     AnnotationRecord annotation;
     annotation.id = "result:10:left";
     annotation.ownerId = "10:left";
@@ -74,6 +76,9 @@ int main(int argc, char** argv) {
     topology::CalculationResult attemptedCalculation;
     attemptedCalculation.issues.append({topology::IssueSeverity::Error,
         topology::IssueCode::Underdetermined, "test", "test"});
+    sourceDocument.setCalculationMode(CalculationMode::DataReconciliation);
+    sourceDocument.setDryMassStdDev("10:left", 2.5);
+    sourceDocument.setGradeStdDev("10:left", DefaultComponentId, 0.08);
     sourceDocument.setCalculationResult(std::move(attemptedCalculation));
     const int alternative = sourceDocument.addScenario("方案 B", true);
     if (alternative != 1 || !sourceDocument.setCurrentScenario(alternative)) return 24;
@@ -90,6 +95,10 @@ int main(int argc, char** argv) {
     FlowsheetScene loaded;
     FlowsheetDocument loadedDocument;
     if (!ProjectSerializer::load(loaded, loadedDocument, path, &error)) return 6;
+    if (loadedDocument.calculationMode() != CalculationMode::DataReconciliation
+        || loadedDocument.measurement("10:left").dryMassStdDev != 2.5
+        || loadedDocument.measurement("10:left").gradeStdDev(DefaultComponentId) != 0.08)
+        return 49;
     const auto snapshot = CanvasTopologyBuilder::build(loaded);
     if (snapshot.graph.nodeIds().size() != 4
         || !topology::TopologyAlgorithms::sort(snapshot.graph).hasCycle) return 7;
@@ -156,7 +165,9 @@ int main(int argc, char** argv) {
         != QStringList({"10:right", "10:left", "10:feed"})) return 30;
     const auto loadedTextStyle = loadedDocument.annotationTextSettings();
     if (loadedTextStyle.pointSize != 14 || !loadedTextStyle.bold
-        || loadedTextStyle.color != QColor("#336699")) return 22;
+        || loadedTextStyle.color != QColor("#336699")
+        || loadedTextStyle.massUnit != MassUnit::Custom
+        || loadedTextStyle.customMassUnit != "dry short ton") return 22;
 
     const int itemCount = loaded.items().size();
     const QString invalidPath = directory.filePath("invalid.afs.json");
@@ -317,5 +328,26 @@ int main(int argc, char** argv) {
     if (threeProductSnapshot.graph.streamsFrom(
             "three", topology::PortKind::MiddleProduct).size() != 1
         || threeProductSnapshot.requiredMeasurements.size() != 3) return 46;
+
+    FlowsheetScene undoScene;
+    FlowsheetDocument undoDocument;
+    undoScene.addItem(new FlotationUnitItem({"undo-a", {0, 0}}));
+    ProjectUndoManager undoManager(undoScene, undoDocument, {}, {});
+    undoManager.initialize();
+    undoScene.addItem(new FlotationUnitItem({"undo-b", {300, 200}}));
+    undoDocument.setDryMass("undo-a:left", 25.0);
+    undoManager.scheduleCheckpoint("test edit");
+    undoManager.undo();
+    const auto unitCount = [&undoScene] {
+        int count = 0;
+        for (auto* item : undoScene.items())
+            if (dynamic_cast<FlotationUnitItem*>(item)) ++count;
+        return count;
+    };
+    if (unitCount() != 1 || undoDocument.measurement("undo-a:left").dryMass) return 47;
+    undoManager.redo();
+    if (unitCount() != 2
+        || undoDocument.measurement("undo-a:left").dryMass != std::optional<double>(25.0))
+        return 48;
     return 0;
 }

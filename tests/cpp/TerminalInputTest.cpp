@@ -91,12 +91,23 @@ int main(int argc, char** argv) {
     if (!document.measurement(id).complete()) return 10;
     document.setComponents({{"component-1", "Cu"}, {"component-2", "Zn"}});
     const int zincGradeColumn = model.gradeColumn("component-2");
-    if (model.columnCount() != 9 || zincGradeColumn < 0
+    if (model.columnCount() != 6 || zincGradeColumn < 0
         || !model.flags(model.index(0, zincGradeColumn)).testFlag(Qt::ItemIsEditable)
         || !model.data(model.index(0, zincGradeColumn), Qt::BackgroundRole).canConvert<QBrush>())
         return 51;
     if (!model.setData(model.index(0, zincGradeColumn), "1.6", Qt::EditRole)
         || !document.measurement(id).completeFor(document.componentIds())) return 52;
+    document.setCalculationMode(CalculationMode::DataReconciliation);
+    if (model.columnCount() != 9
+        || model.gradeColumn("component-1") != 4
+        || model.gradeStdDevColumn("component-2") != 7
+        || !model.setData(model.index(0, TerminalProductTableModel::MassStdDevColumn),
+                          "0.25", Qt::EditRole)
+        || !model.setData(model.index(0, model.gradeStdDevColumn("component-1")),
+                          "0.05", Qt::EditRole)
+        || document.measurement(id).dryMassStdDev != 0.25
+        || document.measurement(id).gradeStdDev("component-1") != 0.05) return 80;
+    document.setCalculationMode(CalculationMode::Strict);
 
     QSet<QString> editableIds;
     for (const auto& product : connected.reportStreams) editableIds.insert(product.streamId);
@@ -220,37 +231,6 @@ int main(int argc, char** argv) {
     AnnotationManager partialAnnotations(propagationScene, propagationDocument);
     partialAnnotations.synchronize();
     if (partialAnnotations.annotationCount() != propagationResult.values.size()) return 66;
-    const auto scopedResult = FlowsheetCalculationService::calculate(
-        propagationScene, propagationDocument, QSet<QString>{"scavenger"});
-    if (!scopedResult.complete || !scopedResult.fullySolved
-        || scopedResult.values.size() != 3
-        || !scopedResult.values.contains("cleaner:right")
-        || scopedResult.values.contains("cleaner:left")) return 64;
-
-    FlowsheetScene processFeedScene;
-    auto* processSource = new FlotationUnitItem({"process-source", {0, 0}});
-    auto* processTarget = new FlotationUnitItem({"process-target", {400, 300}});
-    auto* recycleSource = new FlotationUnitItem({"recycle-source", {800, 600}});
-    processFeedScene.addItem(processSource);
-    processFeedScene.addItem(processTarget);
-    processFeedScene.addItem(recycleSource);
-    auto* processStream = processSource->products().at(1);
-    auto* recycleStream = recycleSource->products().at(0);
-    if (!processFeedScene.connectProduct(processStream, processTarget->inputLine())
-        || !processFeedScene.connectProduct(recycleStream, processTarget->inputLine())) return 71;
-    FlowsheetDocument processFeedDocument;
-    processFeedDocument.setDryMass(processStream->streamId(), 100.0);
-    processFeedDocument.setGradePercent(processStream->streamId(), 2.0);
-    processFeedDocument.setDryMass(recycleStream->streamId(), 20.0);
-    processFeedDocument.setGradePercent(recycleStream->streamId(), 1.0);
-    auto processFeedResult = FlowsheetCalculationService::calculate(
-        processFeedScene, processFeedDocument, QSet<QString>{"process-target"});
-    if (!processFeedResult.values.contains(processStream->streamId())) return 72;
-    processFeedDocument.setCalculationResult(std::move(processFeedResult));
-    AnnotationManager processFeedAnnotations(processFeedScene, processFeedDocument);
-    processFeedAnnotations.synchronize();
-    if (processFeedAnnotations.annotationCount() != 3) return 73;
-
     FlowsheetScene boundaryScene;
     auto* boundaryA = new FlotationUnitItem({"boundary-a", {0, 0}});
     auto* boundaryB = new FlotationUnitItem({"boundary-b", {400, 300}});
@@ -272,15 +252,14 @@ int main(int argc, char** argv) {
     boundaryDocument.setDryMass("boundary-c:left", 700.0);
     boundaryDocument.setGradePercent("boundary-c:left", 0.8);
     const auto boundaryResult = FlowsheetCalculationService::calculate(
-        boundaryScene, boundaryDocument, QSet<QString>{"boundary-a"});
+        boundaryScene, boundaryDocument);
     const auto boundaryJunction = boundaryA->inputLine()->feedJunction();
     if (!boundaryJunction
         || !boundaryResult.values.contains(boundaryJunction->externalFeedStreamId())
         || !boundaryResult.values.contains(boundaryJunction->outputStreamId())
-        || std::abs(boundaryResult.values[boundaryJunction->externalFeedStreamId()].dryMass
-                    - 6600.0) > 0.001
-        || std::abs(boundaryResult.values[boundaryJunction->outputStreamId()].dryMass
-                    - 7300.0) > 0.001) return 75;
+        || !boundaryResult.values.contains("boundary-b:left")
+        || !boundaryResult.values.contains("boundary-c:right")
+        || boundaryResult.dryMassDegreesOfFreedom != 0) return 75;
 
     TerminalProductDock interestDock(filterDocument);
     interestDock.setSnapshot(connected);
@@ -293,8 +272,7 @@ int main(int argc, char** argv) {
         if (action->data().toString() == "first") { firstUnitAction = action; break; }
     if (!firstUnitAction) return 62;
     firstUnitAction->setChecked(true);
-    if (interestTable->model()->rowCount() != 3
-        || interestDock.calculationScope() != QSet<QString>{"first"}) return 63;
+    if (interestTable->model()->rowCount() != 3) return 63;
 
     FlowsheetDocument resultDocument;
     TerminalProductDock resultDock(resultDocument);
@@ -343,6 +321,22 @@ int main(int argc, char** argv) {
         }
     }
     if (!leftAnnotation || !leftAnnotation->isVisible()) return 18;
+    annotationManager.setMassUnit(MassUnit::Kilogram);
+    if (!leftAnnotation->text().contains(" kg")
+        || resultDocument.annotationTextSettings().massUnit != MassUnit::Kilogram) return 78;
+    annotationManager.setCustomMassUnit("dry lb");
+    if (!leftAnnotation->text().contains(" dry lb")
+        || resultDocument.annotationTextSettings().massUnit != MassUnit::Custom
+        || resultDocument.annotationTextSettings().customMassUnit != "dry lb") return 79;
+    calculationScene.clearSelection();
+    leftAnnotation->setSelected(true);
+    QKeyEvent hideResult(QEvent::KeyPress, Qt::Key_Delete, Qt::NoModifier);
+    QApplication::sendEvent(&calculationScene, &hideResult);
+    if (leftAnnotation->isVisible()
+        || !resultDocument.annotationRecord("result:calculation:left").visible) return 76;
+    const auto recalculatedResult = *resultDocument.calculationResult();
+    resultDocument.setCalculationResult(recalculatedResult);
+    if (!leftAnnotation->isVisible()) return 77;
     if (!leftAnnotation->text().contains("质量") || !leftAnnotation->text().contains("品位")
         || leftAnnotation->text().contains("产率")) return 19;
     resultDocument.setAnnotationTextSettings({15, true, QColor("#c03040")});
@@ -426,11 +420,6 @@ int main(int argc, char** argv) {
     const auto closedResult = FlowsheetCalculationService::calculate(closedScene, closedDocument);
     if (!closedResult.complete || closedResult.values.size() != closedSnapshot.graph.streamIds().size())
         return 28;
-    const auto scopedClosedResult = FlowsheetCalculationService::calculate(
-        closedScene, closedDocument, QSet<QString>{"closed-upper", "closed-lower"});
-    if (!scopedClosedResult.complete || !scopedClosedResult.fullySolved
-        || !scopedClosedResult.values.contains(
-            closedUpper->inputLine()->feedJunction()->externalFeedStreamId())) return 70;
     closedDocument.setCalculationResult(closedResult);
     AnnotationManager closedAnnotations(closedScene, closedDocument);
     closedAnnotations.synchronize();

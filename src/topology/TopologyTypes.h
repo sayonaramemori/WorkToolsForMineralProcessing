@@ -11,6 +11,7 @@ using NodeId = QString;
 using StreamId = QString;
 
 enum class NodeKind { Flotation, Merge };
+enum class MergeRole { ProductMerge, FeedJunction };
 enum class ProductRole { Concentrate, Tailing, Middling, Unknown };
 enum class PortKind { Feed, LeftProduct, MiddleProduct, RightProduct, MergeInput, MergeOutput };
 
@@ -32,6 +33,7 @@ struct FlotationNode {
 
 struct MergeNode {
     NodeId id;
+    MergeRole role{MergeRole::ProductMerge};
 };
 
 struct MaterialStream {
@@ -75,6 +77,28 @@ struct StreamValue {
     [[nodiscard]] double gradePercent() const;
 };
 
+struct StreamUncertainty {
+    double dryMassStdDev{1.0};
+    double componentMassStdDev{1.0};
+};
+
+struct ReconciliationResidual {
+    double dryMass{0.0};
+    double componentMass{0.0};
+    double dryMassStandardized{0.0};
+    double componentMassStandardized{0.0};
+};
+
+// An explicit balance equation shared by dry-mass and component-mass systems.
+// coefficients * stream values = rightHandSide.  Keeping derived boundary
+// balances as equations (instead of disguised measurements) lets the solver
+// diagnose conflicts with measurements.
+struct LinearBalanceConstraint {
+    QString id;
+    QHash<StreamId, double> coefficients;
+    StreamValue rightHandSide;
+};
+
 struct TopologyOrder {
     QVector<NodeId> forward;
     QVector<NodeId> reverse;
@@ -111,6 +135,9 @@ struct CalculationResult {
     QVector<TopologyIssue> issues;
     int dryMassDegreesOfFreedom{0};
     int componentMassDegreesOfFreedom{0};
+    bool reconciled{false};
+    QHash<StreamId, ReconciliationResidual> residuals;
+    double maximumAbsoluteStandardizedResidual{0.0};
     // complete means the overall balance is available; fullySolved additionally
     // means every internal stream has a unique value.
     bool complete{false};
