@@ -10,7 +10,9 @@
 
 应用装配层。`MainWindow` 创建场景、视图、停靠面板和工具栏，并连接各模块的信号。顶部动作按项目、流程、方案、显示和导出职责组织为下拉菜单。主窗口可以协调用户用例，但不实现计算公式、连接算法、结果表格或标注绘制。
 
-主窗口实现按职责拆分：`MainWindow.cpp` 保留窗口装配、方案和画布交互，`MainWindowProject.cpp` 负责项目生命周期，`MainWindowExport.cpp` 负责流程图、Excel 导出和导出顺序。
+主窗口实现按职责拆分：`MainWindow.cpp` 保留窗口装配和通用交互，`MainWindowProject.cpp` 负责项目生命周期，`MainWindowScenario.cpp` 负责试验方案用例，`MainWindowExport.cpp` 负责流程图、Excel 导出和导出顺序。
+
+最近项目列表由 `RecentProjectService` 通过 `QSettings` 持久化；主窗口只负责菜单呈现和项目切换，避免把历史记录规则混入项目序列化格式。
 
 状态栏的选择提示使用永久 `QLabel`，由 `QGraphicsScene::selectionChanged` 驱动并根据 `UnitKind` 显示类型和稳定 ID；它与 `QStatusBar::showMessage()` 的临时操作消息相互独立。
 
@@ -51,7 +53,7 @@
 
 画布关系和编辑命令：
 
-- `FlowsheetScene` 管理连接、断开、合流、拆分、连通组件移动和几何刷新；
+- `FlowsheetScene` 管理连接、断开、合流、拆分和连通组件移动；`FlowsheetRoutingCoordinator` 负责几何路径与主题刷新，`CrossingBridgeRenderer` 仅负责绘制不改变拓扑的跨线桥；
 - `CanvasActions` 对当前选择执行宽度、连接长度和断开操作；
 - `ProjectUndoManager` 监听拓扑、几何和文档编辑信号，以 200 ms 合并窗口生成完整项目内存快照，并通过 `QUndoStack` 提供撤销/重做；恢复期间屏蔽新快照记录；
 - `CanvasView` 管理视图级交互：以鼠标位置为中心进行 20%～400% 缩放、鼠标中键平移，以及方向键的优先分派。视图通过注入的处理器请求药剂微调，不识别具体标注类型。

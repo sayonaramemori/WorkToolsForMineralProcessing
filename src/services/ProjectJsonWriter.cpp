@@ -14,7 +14,7 @@
 
 namespace afs {
 namespace {
-constexpr int kFormatVersion = 9;
+constexpr int kFormatVersion = 10;
 QString unitKindKey(UnitKind kind) {
     switch (kind) {
     case UnitKind::Flotation: return "flotation";
@@ -26,18 +26,19 @@ QString unitKindKey(UnitKind kind) {
 QJsonObject measurementObject(const QString& streamId, const StreamMeasurement& value) {
     QJsonObject object{{"streamId", streamId}};
     object.insert("dryMass", value.dryMass ? QJsonValue(*value.dryMass) : QJsonValue::Null);
-    object.insert("gradePercent", value.gradePercent ? QJsonValue(*value.gradePercent) : QJsonValue::Null);
     object.insert("dryMassSharePercent", value.dryMassSharePercent ? QJsonValue(*value.dryMassSharePercent) : QJsonValue::Null);
-    object.insert("componentSharePercent", value.componentSharePercent ? QJsonValue(*value.componentSharePercent) : QJsonValue::Null);
     object.insert("dryMassStdDev", value.dryMassStdDev ? QJsonValue(*value.dryMassStdDev) : QJsonValue::Null);
     QJsonObject grades;
-    for (auto it = value.gradePercents.cbegin(); it != value.gradePercents.cend(); ++it) grades.insert(it.key(), it.value());
+    for (auto it = value.components.cbegin(); it != value.components.cend(); ++it)
+        if (it->gradePercent) grades.insert(it.key(), *it->gradePercent);
     object.insert("gradePercents", grades);
     QJsonObject gradeStdDevs;
-    for (auto it = value.gradeStdDevs.cbegin(); it != value.gradeStdDevs.cend(); ++it) gradeStdDevs.insert(it.key(), it.value());
+    for (auto it = value.components.cbegin(); it != value.components.cend(); ++it)
+        if (it->gradeStdDev) gradeStdDevs.insert(it.key(), *it->gradeStdDev);
     object.insert("gradeStdDevs", gradeStdDevs);
     QJsonObject shares;
-    for (auto it = value.componentSharePercents.cbegin(); it != value.componentSharePercents.cend(); ++it) shares.insert(it.key(), it.value());
+    for (auto it = value.components.cbegin(); it != value.components.cend(); ++it)
+        if (it->sharePercent) shares.insert(it.key(), *it->sharePercent);
     object.insert("componentSharePercents", shares);
     return object;
 }
@@ -183,7 +184,13 @@ QByteArray ProjectJsonWriter::serialize(const FlowsheetScene& scene,
         {"color", textSettings.color.isValid() ? textSettings.color.name(QColor::HexArgb)
                                                  : QString()},
         {"massUnit", textSettings.massUnit == MassUnit::Custom
-             ? textSettings.customMassUnit : massUnitSymbol(textSettings.massUnit)}};
+             ? textSettings.customMassUnit : massUnitSymbol(textSettings.massUnit)},
+        {"resultAnnotationsVisible", textSettings.resultAnnotationsVisible},
+        {"showDryMass", textSettings.showDryMass}, {"showGrade", textSettings.showGrade},
+        {"showOverallYield", textSettings.showOverallYield},
+        {"showOverallRecovery", textSettings.showOverallRecovery},
+        {"metricLabelMode", textSettings.metricLabelMode == MetricLabelMode::Symbols
+             ? "symbols" : "chinese"}};
     const QJsonObject root{{"format", "AutoFlotationSheet"}, {"version", kFormatVersion},
         {"units", unitArray}, {"connections", connectionArray},
         {"productMerges", mergeArray}, {"feedJunctions", feedArray},
@@ -198,4 +205,3 @@ QByteArray ProjectJsonWriter::serialize(const FlowsheetScene& scene,
 }
 
 } // namespace afs
-

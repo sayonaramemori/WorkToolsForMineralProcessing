@@ -8,6 +8,7 @@ class QGraphicsScene;
 class QComboBox;
 class QCloseEvent;
 class QLabel;
+class QMenu;
 
 namespace afs {
 
@@ -42,6 +43,7 @@ private:
     QLabel* m_selectionStatusLabel{nullptr};
     OperationLogDock* m_operationLog{nullptr};
     ProjectUndoManager* m_undoManager{nullptr};
+    QMenu* m_recentProjectsMenu{nullptr};
 
     void addFlotationUnit();
     void addThreeProductUnit();
@@ -53,6 +55,8 @@ private:
     bool saveProjectAs();
     bool saveProjectTo(const QString& path);
     void importProject();
+    bool loadProjectFromPath(const QString& path);
+    void refreshRecentProjectsMenu();
     void updateNextUnitId();
     void resizeSelectedUnits(double delta);
     void disconnectSelectedLines();

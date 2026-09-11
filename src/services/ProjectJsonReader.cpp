@@ -11,7 +11,7 @@
 
 namespace afs {
 namespace {
-constexpr int kFormatVersion = 9;
+constexpr int kFormatVersion = 10;
 using namespace project_serialization;
 void setError(QString* destination, const QString& message) {
     if (destination) *destination = message;
@@ -153,9 +153,21 @@ bool ProjectJsonReader::parse(const QByteArray& contents, ProjectData& data, QSt
         const auto bold = style.value("bold");
         const auto colorValue = style.value("color");
         const auto massUnitValue = style.value("massUnit");
+        const auto visibleValue = style.value("resultAnnotationsVisible");
+        const auto dryMassValue = style.value("showDryMass");
+        const auto gradeValue = style.value("showGrade");
+        const auto yieldValue = style.value("showOverallYield");
+        const auto recoveryValue = style.value("showOverallRecovery");
+        const auto labelModeValue = style.value("metricLabelMode");
         if (pointSize < 7 || pointSize > 36 || !bold.isBool()
             || (!colorValue.isUndefined() && !colorValue.isString())
-            || (!massUnitValue.isUndefined() && !massUnitValue.isString())) {
+            || (!massUnitValue.isUndefined() && !massUnitValue.isString())
+            || (!visibleValue.isUndefined() && !visibleValue.isBool())
+            || (!dryMassValue.isUndefined() && !dryMassValue.isBool())
+            || (!gradeValue.isUndefined() && !gradeValue.isBool())
+            || (!yieldValue.isUndefined() && !yieldValue.isBool())
+            || (!recoveryValue.isUndefined() && !recoveryValue.isBool())
+            || (!labelModeValue.isUndefined() && !labelModeValue.isString())) {
             setError(error, "项目标注字号、粗体或颜色无效"); return false;
         }
         QColor color;
@@ -175,8 +187,14 @@ bool ProjectJsonReader::parse(const QByteArray& contents, ProjectData& data, QSt
             }
             massUnit = MassUnit::Custom;
         }
-        data.annotationTextSettings = {
-            pointSize, bold.toBool(), color, massUnit, customMassUnit};
+        const QString labelMode = labelModeValue.toString("chinese");
+        if (labelMode != "chinese" && labelMode != "symbols") {
+            setError(error, "项目指标标签模式无效"); return false;
+        }
+        data.annotationTextSettings = {pointSize, bold.toBool(), color, massUnit, customMassUnit,
+            visibleValue.toBool(true), dryMassValue.toBool(true), gradeValue.toBool(true),
+            yieldValue.toBool(false), recoveryValue.toBool(false),
+            labelMode == "symbols" ? MetricLabelMode::Symbols : MetricLabelMode::Chinese};
     }
 
     QSet<QString> unitIds;
@@ -361,26 +379,32 @@ bool ProjectJsonReader::parse(const QByteArray& contents, ProjectData& data, QSt
         }
         StreamMeasurement item;
         item.dryMass = readOptionalNumber(object, "dryMass", valid);
-        item.gradePercent = readOptionalNumber(object, "gradePercent", valid);
+        const auto legacyGrade = readOptionalNumber(object, "gradePercent", valid);
         item.dryMassSharePercent = readOptionalNumber(object, "dryMassSharePercent", valid);
-        item.componentSharePercent = readOptionalNumber(object, "componentSharePercent", valid);
+        const auto legacyComponentShare = readOptionalNumber(object, "componentSharePercent", valid);
         item.dryMassStdDev = readOptionalNumber(object, "dryMassStdDev", valid);
-        if (!readPercentMap(object, "gradePercents", item.gradePercents)
-            || !readPositiveMap(object, "gradeStdDevs", item.gradeStdDevs)
-            || !readPercentMap(object, "componentSharePercents", item.componentSharePercents))
+        QHash<QString, double> grades, gradeStdDevs, componentShares;
+        if (!readPercentMap(object, "gradePercents", grades)
+            || !readPositiveMap(object, "gradeStdDevs", gradeStdDevs)
+            || !readPercentMap(object, "componentSharePercents", componentShares))
             valid = false;
-        if (item.gradePercent && !item.gradePercents.contains(DefaultComponentId))
-            item.gradePercents.insert(DefaultComponentId, *item.gradePercent);
-        if (item.componentSharePercent
-            && !item.componentSharePercents.contains(DefaultComponentId))
-            item.componentSharePercents.insert(DefaultComponentId, *item.componentSharePercent);
+        for (auto it = grades.cbegin(); it != grades.cend(); ++it)
+            item.components[it.key()].gradePercent = it.value();
+        for (auto it = gradeStdDevs.cbegin(); it != gradeStdDevs.cend(); ++it)
+            item.components[it.key()].gradeStdDev = it.value();
+        for (auto it = componentShares.cbegin(); it != componentShares.cend(); ++it)
+            item.components[it.key()].sharePercent = it.value();
+        if (legacyGrade && !item.grade(DefaultComponentId))
+            item.components[DefaultComponentId].gradePercent = *legacyGrade;
+        if (legacyComponentShare && !item.componentShare(DefaultComponentId))
+            item.components[DefaultComponentId].sharePercent = *legacyComponentShare;
         if (!valid || (item.dryMass && *item.dryMass < 0.0)
             || (item.dryMassStdDev && *item.dryMassStdDev <= 0.0)
-            || (item.gradePercent && (*item.gradePercent < 0.0 || *item.gradePercent > 100.0))
+            || (legacyGrade && (*legacyGrade < 0.0 || *legacyGrade > 100.0))
             || (item.dryMassSharePercent && (*item.dryMassSharePercent < 0.0
                                              || *item.dryMassSharePercent > 100.0))
-            || (item.componentSharePercent && (*item.componentSharePercent < 0.0
-                                                || *item.componentSharePercent > 100.0))) {
+            || (legacyComponentShare && (*legacyComponentShare < 0.0
+                                         || *legacyComponentShare > 100.0))) {
             setError(error, QString("物流 %1 的实测数据无效").arg(streamId)); return false;
         }
         data.measurements.insert(streamId, item);
@@ -490,35 +514,36 @@ bool ProjectJsonReader::parse(const QByteArray& contents, ProjectData& data, QSt
                 }
                 StreamMeasurement measurement;
                 measurement.dryMass = readOptionalNumber(measurementObject, "dryMass", valid);
-                measurement.gradePercent = readOptionalNumber(measurementObject, "gradePercent", valid);
+                const auto legacyGrade = readOptionalNumber(measurementObject, "gradePercent", valid);
                 measurement.dryMassSharePercent = readOptionalNumber(
                     measurementObject, "dryMassSharePercent", valid);
-                measurement.componentSharePercent = readOptionalNumber(
+                const auto legacyComponentShare = readOptionalNumber(
                     measurementObject, "componentSharePercent", valid);
                 measurement.dryMassStdDev = readOptionalNumber(
                     measurementObject, "dryMassStdDev", valid);
-                if (!readPercentMap(measurementObject, "gradePercents", measurement.gradePercents)
-                    || !readPositiveMap(measurementObject, "gradeStdDevs",
-                                        measurement.gradeStdDevs)
+                QHash<QString, double> grades, gradeStdDevs, componentShares;
+                if (!readPercentMap(measurementObject, "gradePercents", grades)
+                    || !readPositiveMap(measurementObject, "gradeStdDevs", gradeStdDevs)
                     || !readPercentMap(measurementObject, "componentSharePercents",
-                                       measurement.componentSharePercents)) valid = false;
-                if (measurement.gradePercent
-                    && !measurement.gradePercents.contains(DefaultComponentId))
-                    measurement.gradePercents.insert(DefaultComponentId, *measurement.gradePercent);
-                if (measurement.componentSharePercent
-                    && !measurement.componentSharePercents.contains(DefaultComponentId))
-                    measurement.componentSharePercents.insert(
-                        DefaultComponentId, *measurement.componentSharePercent);
+                                       componentShares)) valid = false;
+                for (auto it = grades.cbegin(); it != grades.cend(); ++it)
+                    measurement.components[it.key()].gradePercent = it.value();
+                for (auto it = gradeStdDevs.cbegin(); it != gradeStdDevs.cend(); ++it)
+                    measurement.components[it.key()].gradeStdDev = it.value();
+                for (auto it = componentShares.cbegin(); it != componentShares.cend(); ++it)
+                    measurement.components[it.key()].sharePercent = it.value();
+                if (legacyGrade && !measurement.grade(DefaultComponentId))
+                    measurement.components[DefaultComponentId].gradePercent = *legacyGrade;
+                if (legacyComponentShare && !measurement.componentShare(DefaultComponentId))
+                    measurement.components[DefaultComponentId].sharePercent = *legacyComponentShare;
                 if (!valid || (measurement.dryMass && *measurement.dryMass < 0)
                     || (measurement.dryMassStdDev && *measurement.dryMassStdDev <= 0)
-                    || (measurement.gradePercent && (*measurement.gradePercent < 0
-                                                     || *measurement.gradePercent > 100))
+                    || (legacyGrade && (*legacyGrade < 0 || *legacyGrade > 100))
                     || (measurement.dryMassSharePercent
                         && (*measurement.dryMassSharePercent < 0
                             || *measurement.dryMassSharePercent > 100))
-                    || (measurement.componentSharePercent
-                        && (*measurement.componentSharePercent < 0
-                            || *measurement.componentSharePercent > 100))) {
+                    || (legacyComponentShare
+                        && (*legacyComponentShare < 0 || *legacyComponentShare > 100))) {
                     setError(error, "方案实测数据范围无效"); return false;
                 }
                 scenario.measurements.insert(streamId, measurement);

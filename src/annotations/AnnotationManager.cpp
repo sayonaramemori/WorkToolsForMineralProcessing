@@ -266,6 +266,12 @@ void AnnotationManager::synchronize() {
     synchronizeNotes();
     m_settings.massUnit = m_document.annotationTextSettings().massUnit;
     m_settings.customMassUnit = m_document.annotationTextSettings().customMassUnit;
+    m_settings.showDryMass = m_document.annotationTextSettings().showDryMass;
+    m_settings.showGrade = m_document.annotationTextSettings().showGrade;
+    m_settings.showOverallYield = m_document.annotationTextSettings().showOverallYield;
+    m_settings.showOverallRecovery = m_document.annotationTextSettings().showOverallRecovery;
+    m_settings.labelMode = m_document.annotationTextSettings().metricLabelMode;
+    m_visible = m_document.annotationTextSettings().resultAnnotationsVisible;
     const auto* result = m_document.calculationResult();
     if (!result || result->values.isEmpty()) {
         for (auto* item : m_items) item->setVisible(false);
@@ -437,6 +443,9 @@ void AnnotationManager::clearGraphicsItems() {
 }
 
 void AnnotationManager::setAnnotationsVisible(bool visible) {
+    auto persisted = m_document.annotationTextSettings();
+    persisted.resultAnnotationsVisible = visible;
+    m_document.setAnnotationTextSettings(persisted);
     m_visible = visible;
     for (auto* item : m_items) item->setVisible(visible && m_settings.anyVisible() && item->record().visible
         && m_document.calculationResult()
@@ -444,18 +453,22 @@ void AnnotationManager::setAnnotationsVisible(bool visible) {
 }
 
 void AnnotationManager::setMetricVisible(ResultMetric metric, bool visible) {
+    auto persisted = m_document.annotationTextSettings();
     switch (metric) {
-    case ResultMetric::DryMass: m_settings.showDryMass = visible; break;
-    case ResultMetric::Grade: m_settings.showGrade = visible; break;
-    case ResultMetric::OverallYield: m_settings.showOverallYield = visible; break;
-    case ResultMetric::OverallRecovery: m_settings.showOverallRecovery = visible; break;
+    case ResultMetric::DryMass: persisted.showDryMass = visible; break;
+    case ResultMetric::Grade: persisted.showGrade = visible; break;
+    case ResultMetric::OverallYield: persisted.showOverallYield = visible; break;
+    case ResultMetric::OverallRecovery: persisted.showOverallRecovery = visible; break;
     }
+    m_document.setAnnotationTextSettings(persisted);
     synchronize();
 }
 
 void AnnotationManager::setMetricLabelMode(MetricLabelMode mode) {
-    if (m_settings.labelMode == mode) return;
-    m_settings.labelMode = mode;
+    auto persisted = m_document.annotationTextSettings();
+    if (persisted.metricLabelMode == mode) return;
+    persisted.metricLabelMode = mode;
+    m_document.setAnnotationTextSettings(persisted);
     synchronize();
 }
 

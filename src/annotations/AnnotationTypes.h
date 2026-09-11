@@ -29,6 +29,12 @@ struct AnnotationTextSettings {
     QColor color;
     MassUnit massUnit{MassUnit::Gram};
     QString customMassUnit;
+    bool resultAnnotationsVisible{true};
+    bool showDryMass{true};
+    bool showGrade{true};
+    bool showOverallYield{false};
+    bool showOverallRecovery{false};
+    MetricLabelMode metricLabelMode{MetricLabelMode::Chinese};
 };
 
 struct ResultAnnotationSettings {

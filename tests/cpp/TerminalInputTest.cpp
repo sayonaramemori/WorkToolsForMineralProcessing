@@ -109,6 +109,28 @@ int main(int argc, char** argv) {
         || document.measurement(id).gradeStdDev("component-1") != 0.05) return 80;
     document.setCalculationMode(CalculationMode::Strict);
 
+    // In reconciliation mode, hovering a grade must report its grade correction,
+    // rather than the dry-mass residual belonging to the same stream.
+    FlowsheetDocument tooltipDocument;
+    tooltipDocument.setDryMass("tooltip-stream", 100.0);
+    tooltipDocument.setGradePercent("tooltip-stream", 1.0);
+    tooltipDocument.setGradeStdDev("tooltip-stream", "component-1", 0.1);
+    tooltipDocument.setCalculationMode(CalculationMode::DataReconciliation);
+    topology::CalculationResult tooltipCalculation;
+    tooltipCalculation.reconciled = true;
+    tooltipCalculation.values.insert("tooltip-stream", {105.0, 1.26});
+    tooltipCalculation.residuals.insert("tooltip-stream", {5.0, 0.26, 2.5, 2.6});
+    tooltipCalculation.components["component-1"].values.insert("tooltip-stream", {105.0, 1.26});
+    tooltipDocument.setCalculationResult(std::move(tooltipCalculation));
+    TerminalProductTableModel tooltipModel(tooltipDocument);
+    tooltipModel.setStreams({{"tooltip-stream", "提示物流"}});
+    const QString massTooltip = tooltipModel.data(
+        tooltipModel.index(0, TerminalProductTableModel::MassColumn), Qt::ToolTipRole).toString();
+    const QString gradeTooltip = tooltipModel.data(
+        tooltipModel.index(0, tooltipModel.gradeColumn("component-1")), Qt::ToolTipRole).toString();
+    if (!massTooltip.contains("质量修正 5") || !gradeTooltip.contains("品位修正 0.2")
+        || gradeTooltip.contains("质量修正")) return 81;
+
     QSet<QString> editableIds;
     for (const auto& product : connected.reportStreams) editableIds.insert(product.streamId);
     model.setStreams(connected.reportStreams, editableIds);
@@ -206,7 +228,7 @@ int main(int argc, char** argv) {
         return 68;
     QKeyEvent deleteGrade(QEvent::KeyPress, Qt::Key_Delete, Qt::NoModifier);
     QApplication::sendEvent(filterTable, &deleteGrade);
-    if (filterDocument.measurement("calculation:feed").gradePercent) return 69;
+    if (filterDocument.measurement("calculation:feed").grade(DefaultComponentId)) return 69;
 
     FlowsheetScene propagationScene;
     auto* cleaner = new FlotationUnitItem({"cleaner", {0, 0}});

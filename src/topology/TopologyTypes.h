@@ -125,6 +125,8 @@ struct ComponentCalculationResult {
     QHash<StreamId, ProductMetrics> relativeToExternalFeed;
     bool complete{false};
     bool fullySolved{false};
+    QHash<StreamId, ReconciliationResidual> residuals;
+    double maximumAbsoluteStandardizedResidual{0.0};
 };
 
 struct CalculationResult {

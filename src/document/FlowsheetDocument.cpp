@@ -54,7 +54,13 @@ void FlowsheetDocument::setAnnotationTextSettings(AnnotationTextSettings setting
         && m_annotationTextSettings.bold == settings.bold
         && m_annotationTextSettings.color == settings.color
         && m_annotationTextSettings.massUnit == settings.massUnit
-        && m_annotationTextSettings.customMassUnit == settings.customMassUnit) return;
+        && m_annotationTextSettings.customMassUnit == settings.customMassUnit
+        && m_annotationTextSettings.resultAnnotationsVisible == settings.resultAnnotationsVisible
+        && m_annotationTextSettings.showDryMass == settings.showDryMass
+        && m_annotationTextSettings.showGrade == settings.showGrade
+        && m_annotationTextSettings.showOverallYield == settings.showOverallYield
+        && m_annotationTextSettings.showOverallRecovery == settings.showOverallRecovery
+        && m_annotationTextSettings.metricLabelMode == settings.metricLabelMode) return;
     m_annotationTextSettings = std::move(settings);
     emit projectChanged();
     emit annotationTextSettingsChanged();
@@ -85,9 +91,12 @@ void FlowsheetDocument::setGradePercent(const QString& streamId, const QString& 
                                         std::optional<double> value) {
     auto& item = currentScenario().measurements[streamId];
     if (item.grade(componentId) == value) return;
-    if (value) item.gradePercents.insert(componentId, *value);
-    else item.gradePercents.remove(componentId);
-    if (componentId == QString::fromLatin1(DefaultComponentId)) item.gradePercent = value;
+    if (value) item.components[componentId].gradePercent = value;
+    else if (item.components.contains(componentId)) {
+        item.components[componentId].gradePercent.reset();
+        if (!item.components[componentId].gradeStdDev && !item.components[componentId].sharePercent)
+            item.components.remove(componentId);
+    }
     invalidateCalculation();
     emit projectChanged();
     emit measurementChanged(streamId);
@@ -97,8 +106,12 @@ void FlowsheetDocument::setGradeStdDev(const QString& streamId, const QString& c
                                        std::optional<double> value) {
     auto& item = currentScenario().measurements[streamId];
     if (item.gradeStdDev(componentId) == value) return;
-    if (value) item.gradeStdDevs.insert(componentId, *value);
-    else item.gradeStdDevs.remove(componentId);
+    if (value) item.components[componentId].gradeStdDev = value;
+    else if (item.components.contains(componentId)) {
+        item.components[componentId].gradeStdDev.reset();
+        if (!item.components[componentId].gradePercent && !item.components[componentId].sharePercent)
+            item.components.remove(componentId);
+    }
     invalidateCalculation(); emit projectChanged(); emit measurementChanged(streamId);
 }
 
@@ -129,9 +142,12 @@ void FlowsheetDocument::setComponentSharePercent(
     const QString& streamId, const QString& componentId, std::optional<double> value) {
     auto& item = currentScenario().measurements[streamId];
     if (item.componentShare(componentId) == value) return;
-    if (value) item.componentSharePercents.insert(componentId, *value);
-    else item.componentSharePercents.remove(componentId);
-    if (componentId == QString::fromLatin1(DefaultComponentId)) item.componentSharePercent = value;
+    if (value) item.components[componentId].sharePercent = value;
+    else if (item.components.contains(componentId)) {
+        item.components[componentId].sharePercent.reset();
+        if (!item.components[componentId].gradePercent && !item.components[componentId].gradeStdDev)
+            item.components.remove(componentId);
+    }
     invalidateCalculation(); emit projectChanged(); emit measurementChanged(streamId);
 }
 

@@ -131,9 +131,9 @@ int main(int argc, char** argv) {
         || std::abs(loadedUpper->unit().width - 420) > 0.001
         || std::abs(loadedUpper->unit().bodyHeight - 170) > 0.001) return 9;
     const auto measurement = loadedDocument.measurement("upper-unused");
-    if (!measurement.dryMass || !measurement.gradePercent
+    if (!measurement.dryMass || !measurement.grade(DefaultComponentId)
         || std::abs(*measurement.dryMass - 12.5) > 0.001
-        || std::abs(*measurement.gradePercent - 3.25) > 0.001) return 10;
+        || std::abs(*measurement.grade(DefaultComponentId) - 3.25) > 0.001) return 10;
     if (loadedDocument.components().size() != 2
         || loadedDocument.components()[0].name != "Cu"
         || loadedDocument.components()[1].name != "Zn"

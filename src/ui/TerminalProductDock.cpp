@@ -164,9 +164,14 @@ TerminalProductDock::TerminalProductDock(FlowsheetDocument& document, QWidget* p
 
 void TerminalProductDock::configureColumns() {
     auto* header = m_table->horizontalHeader();
-    header->setSectionResizeMode(TerminalProductTableModel::NameColumn, QHeaderView::Stretch);
-    for (int column = 1; column < m_model->columnCount(); ++column)
-        header->setSectionResizeMode(column, QHeaderView::Fixed);
+    // Experimental flowsheets often need either a compact data view or long
+    // stream names. Every section is therefore manually resizable instead of
+    // locking numeric columns and stretching the first column.
+    header->setMinimumSectionSize(48);
+    header->setStretchLastSection(false);
+    for (int column = 0; column < m_model->columnCount(); ++column)
+        header->setSectionResizeMode(column, QHeaderView::Interactive);
+    m_table->setColumnWidth(TerminalProductTableModel::NameColumn, 210);
     m_table->setColumnWidth(TerminalProductTableModel::ProductNameColumn, 110);
     m_table->setColumnWidth(TerminalProductTableModel::MassColumn, 82);
     m_table->setItemDelegateForColumn(TerminalProductTableModel::MassColumn,
