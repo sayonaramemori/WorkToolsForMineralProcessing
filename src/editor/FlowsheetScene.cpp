@@ -9,14 +9,95 @@
 #include "graphics/items/ProductLineItem.h"
 
 #include <QQueue>
+#include <QTimer>
 #include <QLineF>
+#include <QGraphicsPathItem>
+#include <QGraphicsSceneMouseEvent>
 #include <QRegularExpression>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace afs {
 
+namespace {
+
+// QGraphicsScene resolves overlapping item shapes by z-order.  That is a
+// poor fit for dense orthogonal flowsheets: a long route can be above a short
+// terminal line even when the pointer is visibly closer to the latter.  Find
+// the nearest actual path segment instead, while retaining the items' normal
+// press handlers (route editing, dragging and context state).
+qreal squaredDistanceToSegment(const QPointF& point, const QPointF& start,
+                               const QPointF& end) {
+    const QPointF direction = end - start;
+    const qreal lengthSquared = QPointF::dotProduct(direction, direction);
+    if (qFuzzyIsNull(lengthSquared)) {
+        const QPointF delta = point - start;
+        return QPointF::dotProduct(delta, delta);
+    }
+    const qreal projection = std::clamp(
+        QPointF::dotProduct(point - start, direction) / lengthSquared, 0.0, 1.0);
+    const QPointF delta = point - (start + projection * direction);
+    return QPointF::dotProduct(delta, delta);
+}
+
+qreal squaredDistanceToRoute(const QGraphicsPathItem* item, const QPointF& scenePosition) {
+    qreal closest = std::numeric_limits<qreal>::infinity();
+    const auto polygons = item->path().toSubpathPolygons(item->sceneTransform());
+    for (const auto& polygon : polygons) {
+        for (int index = 1; index < polygon.size(); ++index) {
+            closest = std::min(closest, squaredDistanceToSegment(
+                scenePosition, polygon.at(index - 1), polygon.at(index)));
+        }
+    }
+    return closest;
+}
+
+QGraphicsPathItem* nearestRouteAt(const QGraphicsScene& scene, const QPointF& scenePosition) {
+    QGraphicsPathItem* nearest = nullptr;
+    qreal closest = std::numeric_limits<qreal>::infinity();
+    for (auto* item : scene.items(scenePosition, Qt::IntersectsItemShape, Qt::DescendingOrder)) {
+        // Input lines intentionally have a generous hit area for connection
+        // gestures.  They are not part of route selection arbitration.
+        if (!dynamic_cast<ProductLineItem*>(item)
+            && !dynamic_cast<MergeJunctionItem*>(item)
+            && !dynamic_cast<FeedJunctionItem*>(item)) continue;
+        auto* route = dynamic_cast<QGraphicsPathItem*>(item);
+        if (!route || !route->isVisible()) continue;
+        const qreal distance = squaredDistanceToRoute(route, scenePosition);
+        if (distance < closest) {
+            closest = distance;
+            nearest = route;
+        }
+    }
+    return nearest;
+}
+
+} // namespace
+
 FlowsheetScene::FlowsheetScene(QObject* parent) : QGraphicsScene(parent) {}
+
+void FlowsheetScene::mousePressEvent(QGraphicsSceneMouseEvent* event) {
+    if (event->button() != Qt::LeftButton) {
+        QGraphicsScene::mousePressEvent(event);
+        return;
+    }
+
+    auto* nearest = nearestRouteAt(*this, event->scenePos());
+    if (!nearest) {
+        QGraphicsScene::mousePressEvent(event);
+        return;
+    }
+
+    // Let QGraphicsScene deliver the original event so the chosen item keeps
+    // its existing interaction behavior.  Temporarily raising it changes only
+    // the dispatch priority; restoring it immediately keeps rendering and the
+    // saved stacking order unchanged.
+    const qreal originalZ = nearest->zValue();
+    nearest->setZValue(10000.0);
+    QGraphicsScene::mousePressEvent(event);
+    nearest->setZValue(originalZ);
+}
 
 void FlowsheetScene::drawForeground(QPainter* painter, const QRectF&) {
     CrossingBridgeRenderer::draw(*this, *painter);
@@ -58,6 +139,18 @@ QSet<FlotationUnitItem*> FlowsheetScene::connectedComponent(FlotationUnitItem* s
         for (auto* product : unit->products()) {
             FlotationUnitItem* next = product->targetUnit();
             if (!next && product->feedJunction()) next = product->feedJunction()->targetUnit();
+            if (auto* merge = product->mergeJunction()) {
+                // A product merge itself is a physical/topological join even
+                // before its output is connected downstream.  Treat every
+                // branch source as part of the same movable component.
+                for (auto* branch : merge->products()) {
+                    auto* sibling = branch->sourceUnit();
+                    if (!visited.contains(sibling)) {
+                        visited.insert(sibling);
+                        queue.enqueue(sibling);
+                    }
+                }
+            }
             if (!next && product->mergeJunction()) {
                 auto* merge = product->mergeJunction();
                 next = merge->targetUnit();
@@ -130,23 +223,84 @@ void FlowsheetScene::moveComponent(FlotationUnitItem* start, const QPointF& delt
         if (includeStart || unit != start) unit->setPos(unit->pos() + delta);
     }
     m_movingComponent = false;
+    translateComponentRoutes(component, delta);
     refreshConnections();
 }
 
-void FlowsheetScene::moveConnectedPeers(FlotationUnitItem* movedUnit, const QPointF& delta) {
-    if (!m_movingComponent) moveComponent(movedUnit, delta, false);
+void FlowsheetScene::translateComponentRoutes(
+    const QSet<FlotationUnitItem*>& component, const QPointF& delta) {
+    if (delta.isNull()) return;
+    QSet<MergeJunctionItem*> merges;
+    QSet<FeedJunctionItem*> feeds;
+    for (auto* unit : component) {
+        for (auto* product : unit->products()) {
+            // ProductLineItem is a child of its source unit, so its manual
+            // route Y is already in source-local coordinates and must not be
+            // translated with a moving component.  Doing so stretches a
+            // three-product unit's middle branch on every vertical move.
+            if (auto* merge = product->mergeJunction()) merges.insert(merge);
+            if (auto* feed = product->feedJunction()) feeds.insert(feed);
+        }
+        if (auto* feed = unit->inputLine()->feedJunction()) feeds.insert(feed);
+    }
+    for (auto* merge : merges) {
+        bool whollyInside = true;
+        for (auto* product : merge->products())
+            whollyInside &= component.contains(product->sourceUnit());
+        if (whollyInside) merge->translateManualRoute(delta);
+        if (auto* feed = merge->feedJunction()) feeds.insert(feed);
+    }
+    for (auto* feed : feeds) {
+        bool whollyInside = component.contains(feed->targetUnit());
+        if (auto* product = feed->processProduct()) whollyInside &= component.contains(product->sourceUnit());
+        if (auto* merge = feed->processMerge())
+            for (auto* product : merge->products()) whollyInside &= component.contains(product->sourceUnit());
+        for (auto* product : feed->recycleProducts()) whollyInside &= component.contains(product->sourceUnit());
+        for (auto* merge : feed->recycleMerges())
+            for (auto* product : merge->products()) whollyInside &= component.contains(product->sourceUnit());
+        if (whollyInside) feed->translateManualRoutes(delta);
+    }
 }
 
-bool FlowsheetScene::connectProduct(ProductLineItem* product, InputLineItem* input) {
+void FlowsheetScene::moveConnectedPeers(FlotationUnitItem* movedUnit, const QPointF& delta) {
+    if (m_movingComponent || delta.isNull()) return;
+    // QGraphicsView moves every selected item during one drag gesture.  Move
+    // only unselected peers ourselves and coalesce the selected-item callbacks
+    // for that event turn; otherwise the same connected component is shifted
+    // once per selected unit and its route handles drift away from the lines.
+    if (movedUnit->isSelected() && selectedItems().size() > 1) {
+        if (m_groupMoveActive) return;
+        m_groupMoveActive = true;
+        QTimer::singleShot(0, this, [this] { m_groupMoveActive = false; });
+        const auto component = connectedComponent(movedUnit);
+        m_movingComponent = true;
+        for (auto* unit : component)
+            if (unit != movedUnit && !unit->isSelected()) unit->setPos(unit->pos() + delta);
+        m_movingComponent = false;
+        translateComponentRoutes(component, delta);
+        refreshConnections();
+        return;
+    }
+    moveComponent(movedUnit, delta, false);
+}
+
+bool FlowsheetScene::connectProduct(ProductLineItem* product, InputLineItem* input,
+                                    bool alignDownstream) {
     if (!product || !input || !product->isAvailable()
         || product->sourceUnit() == input->unit()) return false;
     if (input->sourceProduct() || input->sourceMerge() || input->feedJunction()
         || connectedComponent(product->sourceUnit()).contains(input->unit()))
         return connectRecycle(product, input) != nullptr;
 
-    const QPointF desiredInputStart = product->unconnectedEndScenePosition();
-    const QPointF currentInputStart = input->unit()->mapToScene(QPointF(0, -FlotationGeometry::InputHeight));
-    moveComponent(input->unit(), desiredInputStart - currentInputStart, true);
+    // Connections normally preserve the manually arranged diagram and are
+    // routed orthogonally. Ctrl-drag explicitly moves every kind of
+    // downstream unit (and its connected component) into alignment.
+    if (alignDownstream) {
+        const QPointF desiredInputStart = product->unconnectedEndScenePosition();
+        const QPointF currentInputStart = input->unit()->mapToScene(
+            QPointF(0, -FlotationGeometry::InputHeight));
+        moveComponent(input->unit(), desiredInputStart - currentInputStart, true);
+    }
     product->setTargetUnit(input->unit());
     input->setSourceProduct(product);
     refreshConnections();
@@ -182,6 +336,7 @@ FeedJunctionItem* FlowsheetScene::connectRecycle(
     auto* junction = new FeedJunctionItem(
         junctionId, product, input->unit(), processProduct, processMerge);
     addItem(junction);
+    junction->setExternalFeed(!processProduct && !processMerge);
     if (processProduct) {
         processProduct->setTargetUnit(nullptr);
         input->setSourceProduct(nullptr);
@@ -225,6 +380,7 @@ FeedJunctionItem* FlowsheetScene::connectMergedProduct(
     auto* junction = new FeedJunctionItem(
         junctionId, merge, target, processProduct, processMerge);
     addItem(junction);
+    junction->setExternalFeed(!processProduct && !processMerge);
     if (processProduct) {
         processProduct->setTargetUnit(nullptr);
         input->setSourceProduct(nullptr);
@@ -241,7 +397,8 @@ FeedJunctionItem* FlowsheetScene::connectMergedProduct(
     return junction;
 }
 
-bool FlowsheetScene::connectMerge(MergeJunctionItem* merge, InputLineItem* input) {
+bool FlowsheetScene::connectMerge(MergeJunctionItem* merge, InputLineItem* input,
+                                  bool alignDownstream) {
     if (!merge || !input || !merge->isAvailable()) return false;
     const auto component = connectedComponent(input->unit());
     for (auto* product : merge->products())
@@ -251,10 +408,12 @@ bool FlowsheetScene::connectMerge(MergeJunctionItem* merge, InputLineItem* input
     if (input->sourceProduct() || input->sourceMerge() || input->feedJunction())
         return connectMergedProduct(merge, input) != nullptr;
 
-    const QPointF desiredInputStart = merge->outputEndPosition();
-    const QPointF currentInputStart = input->unit()->mapToScene(
-        QPointF(0, -FlotationGeometry::InputHeight));
-    moveComponent(input->unit(), desiredInputStart - currentInputStart, true);
+    if (alignDownstream) {
+        const QPointF desiredInputStart = merge->outputEndPosition();
+        const QPointF currentInputStart = input->unit()->mapToScene(
+            QPointF(0, -FlotationGeometry::InputHeight));
+        moveComponent(input->unit(), desiredInputStart - currentInputStart, true);
+    }
     return connectMergeDirect(merge, input);
 }
 

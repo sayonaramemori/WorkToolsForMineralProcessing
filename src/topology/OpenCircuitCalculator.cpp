@@ -60,14 +60,26 @@ LinearSystemSolution solveScalarSystem(
 
     for (const auto& nodeId : graph.nodeIds()) {
         auto row = equation();
+        bool contributesBalance = true;
         if (graph.nodeKind(nodeId) == NodeKind::Flotation) {
             for (const auto& id : graph.streamsTo(nodeId, PortKind::Feed)) row[columns[id]] += 1.0;
             for (const auto& id : graph.flotationProductStreams(nodeId)) row[columns[id]] -= 1.0;
-        } else {
+        } else if (graph.nodeKind(nodeId) == NodeKind::Merge) {
             for (const auto& id : graph.streamsTo(nodeId, PortKind::MergeInput)) row[columns[id]] += 1.0;
             for (const auto& id : graph.streamsFrom(nodeId, PortKind::MergeOutput)) row[columns[id]] -= 1.0;
+        } else {
+            const auto* pool = graph.storagePoolNode(nodeId);
+            if (pool && pool->terminal) {
+                // A terminal pond is a boundary/sink, not a zero-holdup
+                // process constraint. Its incoming stream remains a terminal
+                // product and must not be forced to zero.
+                contributesBalance = false;
+            } else {
+                for (const auto& id : graph.streamsTo(nodeId, PortKind::Feed)) row[columns[id]] += 1.0;
+                for (const auto& id : graph.streamsFrom(nodeId, PortKind::PoolOutput)) row[columns[id]] -= 1.0;
+            }
         }
-        matrix.append(std::move(row));
+        if (contributesBalance) matrix.append(std::move(row));
         if (graph.nodeKind(nodeId) == NodeKind::Flotation) {
             const auto* node = graph.flotationNode(nodeId);
             if (node && node->leftSplitPercent) {
@@ -150,7 +162,7 @@ CalculationResult OpenCircuitCalculator::calculate(
     const QVector<LinearBalanceConstraint>& constraints,
     const QHash<StreamId, StreamUncertainty>& uncertainties) {
     CalculationResult result;
-    result.issues = TopologyValidator::validate(graph, scopedCalculation);
+    result.issues = TopologyValidator::validate(graph);
     if (TopologyValidator::hasErrors(result.issues)) return result;
 
     for (const auto& nodeId : graph.nodeIds()) {
@@ -306,7 +318,7 @@ CalculationResult OpenCircuitCalculator::calculate(
                     result.flotationPerformance.insert(nodeId, performance);
                 }
             }
-        } else {
+        } else if (graph.nodeKind(nodeId) == NodeKind::Merge) {
             const auto inputIds = graph.streamsTo(nodeId, PortKind::MergeInput);
             const auto outputId = graph.streamsFrom(nodeId, PortKind::MergeOutput).front();
             if (result.values.contains(outputId)) {
@@ -319,6 +331,17 @@ CalculationResult OpenCircuitCalculator::calculate(
                 if (completeInputs && !approximatelyEqual(sum, result.values[outputId]))
                     addIssue(result, IssueCode::InconsistentBalance, nodeId, QStringLiteral("汇流节点质量或组分不平衡"));
             }
+        } else {
+            const auto* pool = graph.storagePoolNode(nodeId);
+            if (!pool || pool->terminal) continue;
+            const auto inputs = graph.streamsTo(nodeId, PortKind::Feed);
+            const auto outputs = graph.streamsFrom(nodeId, PortKind::PoolOutput);
+            if (inputs.size() == 1 && outputs.size() == 1
+                && result.values.contains(inputs.front()) && result.values.contains(outputs.front())
+                && !approximatelyEqual(result.values[inputs.front()], result.values[outputs.front()])) {
+                addIssue(result, IssueCode::InconsistentBalance, nodeId,
+                         QStringLiteral("中间贮池入料与出料不平衡"));
+            }
         }
     }
 
@@ -327,20 +350,23 @@ CalculationResult OpenCircuitCalculator::calculate(
             addWarning(result, IssueCode::Underdetermined, streamId,
                        QStringLiteral("中间物料流未唯一确定"));
     }
-    if (graph.externalFeedStreams().size() == 1) {
-        const auto feedId = graph.externalFeedStreams().front();
-        if (result.values.contains(feedId)) {
-            const auto feed = result.values[feedId];
-            for (auto it = result.values.cbegin(); it != result.values.cend(); ++it)
-                result.relativeToExternalFeed.insert(it.key(), metrics(it.value(), feed));
+    StreamValue totalExternalFeed;
+    bool allExternalFeedsKnown = !externalIds.isEmpty();
+    for (const auto& feedId : externalIds) {
+        if (!result.values.contains(feedId)) {
+            allExternalFeedsKnown = false;
+            break;
         }
+        totalExternalFeed = add(totalExternalFeed, result.values[feedId]);
+    }
+    if (allExternalFeedsKnown) {
+        for (auto it = result.values.cbegin(); it != result.values.cend(); ++it)
+            result.relativeToExternalFeed.insert(it.key(), metrics(it.value(), totalExternalFeed));
     }
     bool allTerminalValuesKnown = true;
     for (const auto& streamId : terminalIds)
         allTerminalValuesKnown = allTerminalValuesKnown && result.values.contains(streamId);
-    bool externalFeedKnown = scopedCalculation ? !externalIds.isEmpty() : externalIds.size() == 1;
-    for (const auto& streamId : externalIds)
-        externalFeedKnown = externalFeedKnown && result.values.contains(streamId);
+    const bool externalFeedKnown = allExternalFeedsKnown;
     result.fullySolved = !TopologyValidator::hasErrors(result.issues)
         && result.values.size() == graph.streamIds().size();
     result.complete = !TopologyValidator::hasErrors(result.issues)

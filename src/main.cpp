@@ -13,16 +13,27 @@ int main(int argc, char* argv[]) {
     app.setFont(QFont("Microsoft YaHei", 10));
     afs::MainWindow window;
     window.show();
-    if (app.arguments().contains("--smoke-test") || qEnvironmentVariableIsSet("AFS_SMOKE_TEST")) {
-        QTimer::singleShot(100, &window, &QWidget::close);
-        QTimer::singleShot(200, &app, [] {
-            for (auto* widget : QApplication::topLevelWidgets()) {
-                if (auto* messageBox = qobject_cast<QMessageBox*>(widget)) {
-                    messageBox->done(QMessageBox::Discard);
-                    break;
-                }
-            }
+    const QStringList arguments = app.arguments();
+    const int openProjectArgument = arguments.indexOf(QStringLiteral("--open-project"));
+    if (openProjectArgument >= 0 && openProjectArgument + 1 < arguments.size()) {
+        const QString projectPath = arguments.at(openProjectArgument + 1);
+        QTimer::singleShot(0, &window, [&window, projectPath] {
+            window.openProject(projectPath);
         });
+    }
+    if (arguments.contains("--smoke-test") || qEnvironmentVariableIsSet("AFS_SMOKE_TEST")) {
+        // A startup project is loaded asynchronously and may first need to
+        // discard the unsaved blank document. Keep the smoke route entirely
+        // non-interactive so it exercises the same load/teardown sequence.
+        for (int delay = 100; delay <= 700; delay += 100) {
+            QTimer::singleShot(delay, &app, [] {
+                for (auto* widget : QApplication::topLevelWidgets()) {
+                    if (auto* messageBox = qobject_cast<QMessageBox*>(widget))
+                        messageBox->done(QMessageBox::Discard);
+                }
+            });
+        }
+        QTimer::singleShot(800, &window, &QWidget::close);
     }
     return app.exec();
 }

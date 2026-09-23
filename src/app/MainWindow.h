@@ -1,5 +1,7 @@
 #pragma once
 
+#include "services/FlowGroupClipboard.h"
+
 #include <QMainWindow>
 #include <QString>
 
@@ -18,10 +20,16 @@ class TerminalProductDock;
 class AnnotationManager;
 class OperationLogDock;
 class ProjectUndoManager;
+enum class UnitKind;
 
 class MainWindow final : public QMainWindow {
 public:
     MainWindow();
+    ~MainWindow() override;
+    // Enables opening a project from the process command line as well as from
+    // the Project menu. Keeping both paths on the same loader makes startup
+    // validation and normal interactive imports behave identically.
+    bool openProject(const QString& path);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -43,13 +51,22 @@ private:
     QLabel* m_selectionStatusLabel{nullptr};
     OperationLogDock* m_operationLog{nullptr};
     ProjectUndoManager* m_undoManager{nullptr};
+    FlowGroupClipboard m_flowClipboard;
     QMenu* m_recentProjectsMenu{nullptr};
 
     void addFlotationUnit();
+    void addMagneticSeparator(UnitKind kind);
+    void addGravitySeparator(UnitKind kind);
+    void addSizingSeparator(UnitKind kind);
+    void addStoragePool(UnitKind kind);
     void addThreeProductUnit();
+    void addThreeProductScreening();
+    void addThreeProductDemediumScreen();
     void addBinarySplitter();
     void newProject();
     bool deleteSelectedUnits();
+    void copySelectedFlowGroup();
+    void pasteFlowGroup();
     bool confirmSaveBeforeDestructiveAction();
     bool saveProject();
     bool saveProjectAs();
@@ -58,6 +75,7 @@ private:
     bool loadProjectFromPath(const QString& path);
     void refreshRecentProjectsMenu();
     void updateNextUnitId();
+    [[nodiscard]] QString takeNextUnitId();
     void resizeSelectedUnits(double delta);
     void disconnectSelectedLines();
     void exportScene();

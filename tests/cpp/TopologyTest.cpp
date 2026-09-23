@@ -64,6 +64,28 @@ int main(int argc, char** argv) {
     if (!close(result.relativeToExternalFeed["P4"].massYieldPercent, 40.0)
         || !close(result.relativeToExternalFeed["P4"].recoveryPercent, 160.0 / 3.0)) return 19;
 
+    // A terminal pool turns its incoming stream into a terminal boundary but
+    // does not add a zero-holdup constraint. A buffer pool preserves its
+    // stream mass/component mass from inlet to outlet.
+    TopologyGraph pools;
+    pools.addFlotationNode({"PU"});
+    pools.addStoragePoolNode({"tailings", true});
+    pools.addStoragePoolNode({"concentrate", false});
+    pools.addStream(externalFeed("PF", "PU"));
+    pools.addStream({"PT", PortRef{"PU", PortKind::LeftProduct},
+                     PortRef{"tailings", PortKind::Feed}});
+    pools.addStream({"PCIn", PortRef{"PU", PortKind::RightProduct},
+                     PortRef{"concentrate", PortKind::Feed}});
+    pools.addStream(terminal("PCOut", "concentrate", PortKind::PoolOutput));
+    QHash<StreamId, StreamValue> poolKnown;
+    poolKnown.insert("PT", *StreamValue::fromMassAndGrade(30, 1.0));
+    poolKnown.insert("PCOut", *StreamValue::fromMassAndGrade(70, 2.0));
+    const auto poolResult = OpenCircuitCalculator::calculate(pools, poolKnown);
+    if (!poolResult.complete || !poolResult.fullySolved
+        || !pools.terminalProductStreams().contains("PT")
+        || !close(poolResult.values["PCIn"].dryMass, 70.0)
+        || !close(poolResult.values["PF"].dryMass, 100.0)) return 56;
+
     TopologyGraph cyclic;
     cyclic.addFlotationNode({"A"});
     cyclic.addFlotationNode({"B"});
@@ -101,10 +123,19 @@ int main(int argc, char** argv) {
     multipleFeeds.addStream(terminal("M2L", "M2", PortKind::LeftProduct));
     multipleFeeds.addStream(terminal("M2R", "M2", PortKind::RightProduct));
     const auto multipleFeedIssues = TopologyValidator::validate(multipleFeeds);
-    bool foundMultipleFeeds = false;
-    for (const auto& issue : multipleFeedIssues)
-        if (issue.code == IssueCode::MultipleExternalFeeds) foundMultipleFeeds = true;
-    if (!foundMultipleFeeds || !TopologyValidator::hasErrors(multipleFeedIssues)) return 22;
+    if (TopologyValidator::hasErrors(multipleFeedIssues)) return 22;
+    QHash<StreamId, StreamValue> multipleFeedProducts;
+    multipleFeedProducts.insert("M1L", *StreamValue::fromMassAndGrade(40, 2));
+    multipleFeedProducts.insert("M1R", *StreamValue::fromMassAndGrade(60, 1));
+    multipleFeedProducts.insert("M2L", *StreamValue::fromMassAndGrade(30, 4));
+    multipleFeedProducts.insert("M2R", *StreamValue::fromMassAndGrade(70, 2));
+    const auto multipleFeedResult = OpenCircuitCalculator::calculate(
+        multipleFeeds, multipleFeedProducts);
+    if (!multipleFeedResult.complete || !multipleFeedResult.fullySolved
+        || !close(multipleFeedResult.values["MF1"].dryMass, 100)
+        || !close(multipleFeedResult.values["MF2"].dryMass, 100)
+        || !close(multipleFeedResult.relativeToExternalFeed["M1L"].massYieldPercent, 20.0))
+        return 23;
 
     TopologyGraph aggregate;
     aggregate.addFlotationNode({"A1"});

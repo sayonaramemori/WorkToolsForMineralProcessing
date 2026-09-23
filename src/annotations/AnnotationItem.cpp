@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QAbstractTextDocumentLayout>
 #include <QCheckBox>
+#include <QColorDialog>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFontComboBox>
@@ -11,6 +12,7 @@
 #include <QGraphicsSceneMouseEvent>
 #include <QInputDialog>
 #include <QPlainTextEdit>
+#include <QPushButton>
 #include <QSpinBox>
 #include <QTextDocument>
 #include <QPainter>
@@ -62,11 +64,37 @@ bool AnnotationItem::editUserNote(QWidget* parent, AnnotationRecord& record,
     bold->setChecked(record.notePointSize > 0 ? record.noteBold : defaults.bold);
     auto* border = new QCheckBox(QObject::tr("显示边框和背景"), &dialog);
     border->setChecked(record.noteBorderVisible);
+    auto* followColor = new QCheckBox(QObject::tr("跟随全局标注颜色"), &dialog);
+    followColor->setChecked(!record.noteColor.isValid());
+    QColor selectedColor = record.noteColor.isValid()
+        ? record.noteColor
+        : (defaults.color.isValid() ? defaults.color
+                                    : QApplication::palette().color(QPalette::Text));
+    auto* colorButton = new QPushButton(&dialog);
+    const auto refreshColorButton = [&] {
+        colorButton->setEnabled(!followColor->isChecked());
+        colorButton->setText(followColor->isChecked()
+            ? QObject::tr("跟随全局颜色") : selectedColor.name(QColor::HexRgb));
+        colorButton->setStyleSheet(followColor->isChecked()
+            ? QString{} : QStringLiteral("QPushButton { color: %1; }")
+                              .arg(selectedColor.name(QColor::HexRgb)));
+    };
+    refreshColorButton();
+    QObject::connect(followColor, &QCheckBox::toggled, &dialog,
+                     [&](bool) { refreshColorButton(); });
+    QObject::connect(colorButton, &QPushButton::clicked, &dialog, [&] {
+        const QColor chosen = QColorDialog::getColor(
+            selectedColor, &dialog, QObject::tr("选择文字颜色"),
+            QColorDialog::ShowAlphaChannel);
+        if (chosen.isValid()) { selectedColor = chosen; refreshColorButton(); }
+    });
     layout->addRow(QObject::tr("文字内容"), text);
     layout->addRow(QObject::tr("字体"), family);
     layout->addRow(QObject::tr("字号"), size);
     layout->addRow(QString(), bold);
     layout->addRow(QString(), border);
+    layout->addRow(QString(), followColor);
+    layout->addRow(QObject::tr("文字颜色"), colorButton);
     auto* buttons = new QDialogButtonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
     QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
@@ -80,6 +108,7 @@ bool AnnotationItem::editUserNote(QWidget* parent, AnnotationRecord& record,
     record.notePointSize = size->value();
     record.noteBold = bold->isChecked();
     record.noteBorderVisible = border->isChecked();
+    record.noteColor = followColor->isChecked() ? QColor() : selectedColor;
     return true;
 }
 
@@ -121,8 +150,9 @@ void AnnotationItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, Q
     document.setDefaultFont(annotationFont(m_record, m_textSettings));
     document.setPlainText(m_text);
     QAbstractTextDocumentLayout::PaintContext context;
-    const QColor textColor = m_textSettings.color.isValid()
-        ? m_textSettings.color : palette.color(QPalette::Text);
+    const QColor textColor = m_record.kind == AnnotationKind::UserNote && m_record.noteColor.isValid()
+        ? m_record.noteColor
+        : m_textSettings.color.isValid() ? m_textSettings.color : palette.color(QPalette::Text);
     context.palette.setColor(QPalette::Text, textColor);
     context.palette.setColor(QPalette::WindowText, textColor);
     painter->save();

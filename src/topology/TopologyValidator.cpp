@@ -18,19 +18,21 @@ void addWarning(QVector<TopologyIssue>& issues, IssueCode code,
 }
 
 bool validSourcePort(NodeKind kind, PortKind port) {
-    return kind == NodeKind::Flotation
-        ? port == PortKind::LeftProduct || port == PortKind::MiddleProduct
-            || port == PortKind::RightProduct
-        : port == PortKind::MergeOutput;
+    if (kind == NodeKind::Flotation)
+        return port == PortKind::LeftProduct || port == PortKind::MiddleProduct
+            || port == PortKind::RightProduct;
+    if (kind == NodeKind::StoragePool) return port == PortKind::PoolOutput;
+    return port == PortKind::MergeOutput;
 }
 
 bool validTargetPort(NodeKind kind, PortKind port) {
-    return kind == NodeKind::Flotation ? port == PortKind::Feed : port == PortKind::MergeInput;
+    if (kind == NodeKind::Flotation || kind == NodeKind::StoragePool)
+        return port == PortKind::Feed;
+    return port == PortKind::MergeInput;
 }
 }
 
-QVector<TopologyIssue> TopologyValidator::validate(const TopologyGraph& graph,
-                                                   bool allowMultipleExternalFeeds) {
+QVector<TopologyIssue> TopologyValidator::validate(const TopologyGraph& graph) {
     QVector<TopologyIssue> issues;
     for (const auto& streamId : graph.streamIds()) {
         const auto* stream = graph.stream(streamId);
@@ -76,19 +78,30 @@ QVector<TopologyIssue> TopologyValidator::validate(const TopologyGraph& graph,
                     addError(issues, IssueCode::InvalidPort, nodeId,
                              QStringLiteral("二产品单元不能包含中间产品物流"));
             }
-        } else {
+        } else if (graph.nodeKind(nodeId) == NodeKind::Merge) {
             if (graph.streamsTo(nodeId, PortKind::MergeInput).size() < 2)
                 addError(issues, IssueCode::InvalidMerge, nodeId, QStringLiteral("汇流节点至少需要两条输入流"));
             if (graph.streamsFrom(nodeId, PortKind::MergeOutput).size() != 1)
                 addError(issues, IssueCode::InvalidMerge, nodeId, QStringLiteral("汇流节点必须恰好有一条输出流"));
+        } else {
+            const auto* pool = graph.storagePoolNode(nodeId);
+            if (graph.streamsTo(nodeId, PortKind::Feed).size() != 1)
+                addError(issues, IssueCode::MissingFeed, nodeId,
+                         QStringLiteral("贮池必须恰好有一条入料流"));
+            const int outputCount = graph.streamsFrom(nodeId, PortKind::PoolOutput).size();
+            if (pool && pool->terminal) {
+                if (outputCount != 0)
+                    addError(issues, IssueCode::InvalidPort, nodeId,
+                             QStringLiteral("终端贮池不能包含出料流"));
+            } else if (outputCount != 1) {
+                addError(issues, IssueCode::MissingProduct, nodeId,
+                         QStringLiteral("中间贮池必须恰好有一条出料流"));
+            }
         }
     }
 
     if (graph.externalFeedStreams().isEmpty())
         addError(issues, IssueCode::NoExternalFeed, {}, QStringLiteral("拓扑图没有外部入料流"));
-    else if (graph.externalFeedStreams().size() != 1 && !allowMultipleExternalFeeds)
-        addError(issues, IssueCode::MultipleExternalFeeds, {},
-                 QStringLiteral("项目只允许一个主流程，必须恰好有一条外部入料流"));
     if (graph.terminalProductStreams().isEmpty())
         addError(issues, IssueCode::NoTerminalProduct, {}, QStringLiteral("拓扑图没有终端产品流"));
     if (TopologyAlgorithms::sort(graph).hasCycle)

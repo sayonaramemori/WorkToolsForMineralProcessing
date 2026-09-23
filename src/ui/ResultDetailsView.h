@@ -8,7 +8,11 @@ class QTableWidget;
 namespace afs {
 
 class FlowsheetDocument;
-namespace topology { class TopologyGraph; }
+enum class CalculationMode;
+namespace topology {
+class TopologyGraph;
+struct CalculationResult;
+}
 
 class ResultDetailsView final : public QFrame {
 public:
@@ -16,6 +20,8 @@ public:
 
     void showStream(const QString& streamId);
     void showUnit(const QString& unitId, const topology::TopologyGraph& graph);
+    void showCalculationExplanation(const topology::CalculationResult& result,
+                                    CalculationMode mode);
     void showPlaceholder();
 
 private:

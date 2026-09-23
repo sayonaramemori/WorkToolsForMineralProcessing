@@ -10,7 +10,7 @@
 
 应用装配层。`MainWindow` 创建场景、视图、停靠面板和工具栏，并连接各模块的信号。顶部动作按项目、流程、方案、显示和导出职责组织为下拉菜单。主窗口可以协调用户用例，但不实现计算公式、连接算法、结果表格或标注绘制。
 
-主窗口实现按职责拆分：`MainWindow.cpp` 保留窗口装配和通用交互，`MainWindowProject.cpp` 负责项目生命周期，`MainWindowScenario.cpp` 负责试验方案用例，`MainWindowExport.cpp` 负责流程图、Excel 导出和导出顺序。
+主窗口实现按职责拆分：`MainWindow.cpp` 只保留窗口装配、信号连接与受控析构；`MainWindowCanvas.cpp` 负责创建单元、复制/粘贴、编号、尺寸调整和断开连接；`MainWindowPresentation.cpp` 负责结果计算命令、右侧结果同步、标注样式、主题和状态/日志提示；`MainWindowProject.cpp` 负责项目生命周期，`MainWindowScenario.cpp` 负责试验方案用例，`MainWindowExport.cpp` 负责流程图、Excel 导出和导出顺序。
 
 最近项目列表由 `RecentProjectService` 通过 `QSettings` 持久化；主窗口只负责菜单呈现和项目切换，避免把历史记录规则混入项目序列化格式。
 
@@ -93,7 +93,7 @@
 
 二分流器在画布连接层沿用一入两出的稳定端口 ID，但计算拓扑在 `FlotationNode::leftSplitPercent` 中携带分流约束。求解器分别为干质量和每个组分质量加入左右支路比例方程，因此支路品位保持一致；二分流器不写入浮选单元性能结果。项目格式 v5 保存节点类型和比例，读取器继续兼容 v1–v4。
 
-三产品单元通过 `PortKind::MiddleProduct` 和 `FlotationNode::hasMiddleProduct` 显式表达第三输出。守恒方程、完整性校验、节点性能及结果详情均按三个产品处理。项目格式 v6 增加 `three-product-flotation` 单元类型，并兼容读取 v1–v5。
+三产品单元通过 `PortKind::MiddleProduct` 和 `FlotationNode::hasMiddleProduct` 显式表达第三输出。`ThreeProductFlotation`、`ThreeProductScreening` 与 `ThreeProductDemediumScreen` 由 `hasMiddleProduct(UnitKind)` 统一映射为该结构；守恒方程、完整性校验、节点性能及结果详情均按三个产品处理。项目格式 v6 增加 `three-product-flotation`，v16 增加 `three-product-screening`，v19 增加 `three-product-demedium-screen`，v21 增加普通两产品的 `sedimentation-tank`，v23 增加 `shaking-table`，并兼容读取旧格式。
 
 计算层使用 `flotationProductPorts()` 和 `TopologyGraph::flotationProductStreams()` 获得按左、中、右排列的实际输出集合。`FlotationPerformance::forPort()`/`setForPort()` 负责端口与性能指标映射，使求解器、校验器和结果界面共享同一产品集合定义。
 
@@ -197,7 +197,7 @@ recycle product┘
 
 `CanvasTopologySnapshot::requiredMeasurements` 保留一组传统的建议取样组合，供拓扑测试和后续取样建议功能使用，但不再限制右侧表格输入。表格允许编辑 `reportStreams` 中的全部物流，计算服务也从全部报表物流收集完整的实测值；是否足够由线性方程组的秩决定。
 
-报表层明确区分 `主入料`、`回流支路` 与 `总入料（含回流）`。正常上游产品即使与回流共用 `FeedJunctionItem`，仍依据 `processProduct/processMerge` 判为主入料，不能仅凭存在 `feedJunction` 判为回流。
+报表层明确区分 `主入料`、`回流支路` 与 `总入料（含回流）`。正常上游产品即使与回流共用 `FeedJunctionItem`，仍依据 `processProduct/processMerge` 判为主入料，不能仅凭存在 `feedJunction` 判为回流。没有正常上游端点的节点还必须通过持久化的 `hasExternalFeed` 区分外部新鲜入料与纯多输入汇流，不能从来源数量或图形位置猜测。
 
 `FeedJunctionItem` 分别提供主入料支路、回流支路、外部入料和总入料的指标锚点；`AnnotationManager` 必须先识别 `processProduct/processMerge`，避免主入料因共享汇流图元而丢失结果标注。
 

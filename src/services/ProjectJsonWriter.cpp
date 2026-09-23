@@ -14,12 +14,29 @@
 
 namespace afs {
 namespace {
-constexpr int kFormatVersion = 10;
+constexpr int kFormatVersion = 23;
 QString unitKindKey(UnitKind kind) {
     switch (kind) {
     case UnitKind::Flotation: return "flotation";
+    case UnitKind::MagneticSeparation: return "magnetic-separation";
+    case UnitKind::WeakMagneticSeparation: return "weak-magnetic-separation";
+    case UnitKind::StrongMagneticSeparation: return "strong-magnetic-separation";
+    case UnitKind::SpiralChute: return "spiral-chute";
+    case UnitKind::ShakingTable: return "shaking-table";
+    case UnitKind::DenseMediumCyclone: return "dense-medium-cyclone";
+    case UnitKind::SedimentationTank: return "sedimentation-tank";
+    case UnitKind::DemediumScreen: return "demedium-screen";
+    case UnitKind::Screening: return "screening";
+    case UnitKind::Classification: return "classification";
+    case UnitKind::TailingsPool: return "tailings-pool";
+    case UnitKind::ConcentratePool: return "concentrate-pool";
+    case UnitKind::WaterPool: return "water-pool";
+    case UnitKind::MediaTank: return "media-tank";
+    case UnitKind::MixingTank: return "mixing-tank";
     case UnitKind::BinarySplitter: return "binary-splitter";
     case UnitKind::ThreeProductFlotation: return "three-product-flotation";
+    case UnitKind::ThreeProductScreening: return "three-product-screening";
+    case UnitKind::ThreeProductDemediumScreen: return "three-product-demedium-screen";
     }
     return {};
 }
@@ -67,6 +84,8 @@ QByteArray ProjectJsonWriter::serialize(const FlowsheetScene& scene,
             {"kind", unitKindKey(value.kind)}};
         if (value.kind == UnitKind::BinarySplitter)
             unitObject.insert("leftSplitPercent", value.leftSplitPercent);
+        if (isStoragePool(value.kind) && !value.poolLabel.isEmpty())
+            unitObject.insert("poolLabel", value.poolLabel);
         QJsonObject terminalLengths;
         for (auto* product : unit->products())
             if (product->terminalLengthOverride())
@@ -112,7 +131,8 @@ QByteArray ProjectJsonWriter::serialize(const FlowsheetScene& scene,
             sources.append(source);
         }
         QJsonObject object{{"id", feed->id()}, {"sources", sources},
-                           {"targetUnit", feed->targetUnit()->unit().id}};
+                           {"targetUnit", feed->targetUnit()->unit().id},
+                           {"hasExternalFeed", feed->hasExternalFeed()}};
         if (feed->processProduct()) {
             object.insert("processSourceType", "product");
             object.insert("processSource", feed->processProduct()->streamId());
@@ -142,7 +162,9 @@ QByteArray ProjectJsonWriter::serialize(const FlowsheetScene& scene,
             {"dosageUnit", value.dosageUnit}, {"note", value.note},
             {"noteFontFamily", value.noteFontFamily},
             {"notePointSize", value.notePointSize}, {"noteBold", value.noteBold},
-            {"noteBorderVisible", value.noteBorderVisible}});
+            {"noteBorderVisible", value.noteBorderVisible},
+            {"noteColor", value.noteColor.isValid()
+                ? value.noteColor.name(QColor::HexArgb) : QString{}}});
     }
     QJsonArray scenarioArray;
     for (const auto& scenario : document.scenarios()) {
@@ -189,6 +211,7 @@ QByteArray ProjectJsonWriter::serialize(const FlowsheetScene& scene,
         {"showDryMass", textSettings.showDryMass}, {"showGrade", textSettings.showGrade},
         {"showOverallYield", textSettings.showOverallYield},
         {"showOverallRecovery", textSettings.showOverallRecovery},
+        {"showProductName", textSettings.showProductName},
         {"metricLabelMode", textSettings.metricLabelMode == MetricLabelMode::Symbols
              ? "symbols" : "chinese"}};
     const QJsonObject root{{"format", "AutoFlotationSheet"}, {"version", kFormatVersion},

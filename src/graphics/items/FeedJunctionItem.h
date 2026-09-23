@@ -42,9 +42,11 @@ public:
     [[nodiscard]] ProductLineItem* processProduct() const { return m_processProduct; }
     [[nodiscard]] MergeJunctionItem* processMerge() const { return m_processMerge; }
     void clearProcessSource();
-    [[nodiscard]] bool hasExternalFeed() const {
-        return !m_processProduct && !m_processMerge;
+    [[nodiscard]] bool hasProcessSource() const {
+        return m_processProduct || m_processMerge;
     }
+    [[nodiscard]] bool hasExternalFeed() const { return m_hasExternalFeed; }
+    void setExternalFeed(bool enabled);
     [[nodiscard]] FlotationUnitItem* targetUnit() const { return m_targetUnit; }
     [[nodiscard]] QPointF junctionPosition() const { return m_junctionPosition; }
     [[nodiscard]] QString recycleStreamId() const;
@@ -56,6 +58,7 @@ public:
     void setManualRouteX(const QString& streamId, std::optional<double> x);
     void setManualRouteY(const QString& streamId, std::optional<double> y);
     void resetManualRoutes();
+    void translateManualRoutes(const QPointF& delta);
     [[nodiscard]] QString selectedSourceStreamId() const { return m_selectedStreamId; }
     bool selectSourceStream(const QString& streamId);
     [[nodiscard]] QPointF recycleAnchor() const { return m_recycleAnchor; }
@@ -85,6 +88,7 @@ private:
     QVector<MergeJunctionItem*> m_recycleMerges;
     ProductLineItem* m_processProduct{nullptr};
     MergeJunctionItem* m_processMerge{nullptr};
+    bool m_hasExternalFeed{false};
     FlotationUnitItem* m_targetUnit;
     QPointF m_junctionPosition;
     QPointF m_recycleAnchor;

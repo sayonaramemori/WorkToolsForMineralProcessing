@@ -52,7 +52,7 @@ bool MergeJunctionItem::addProduct(ProductLineItem* product) {
 
 QPainterPath MergeJunctionItem::shape() const {
     QPainterPathStroker stroker;
-    stroker.setWidth(FlotationGeometry::HitWidth);
+    stroker.setWidth(FlotationGeometry::RouteHitWidth);
     QPainterPath hit = stroker.createStroke(path());
     hit.addPath(path());
     return hit;
@@ -85,7 +85,15 @@ void MergeJunctionItem::updatePath() {
     if (!m_feedJunction || m_dragging) {
         const QPointF end = m_dragging ? m_dragEnd : m_outputEnd;
         m_linePath.moveTo(m_mergeX, m_mergeY);
-        m_linePath.lineTo(end);
+        if (m_targetUnit && !m_dragging) {
+            // A connected merge output follows the same orthogonal routing
+            // contract as a regular product line. Directly joining these
+            // endpoints produced a diagonal when the target was off-axis.
+            m_linePath.lineTo(end.x(), m_mergeY);
+            m_linePath.lineTo(end);
+        } else {
+            m_linePath.lineTo(end);
+        }
         if (!m_targetUnit || m_dragging) {
             m_arrowPath.moveTo(end.x() - FlotationGeometry::ArrowHalfWidth, end.y());
             m_arrowPath.lineTo(end.x() + FlotationGeometry::ArrowHalfWidth, end.y());
@@ -106,6 +114,11 @@ void MergeJunctionItem::updatePath() {
 void MergeJunctionItem::setManualMergeY(std::optional<double> y) {
     m_manualMergeY = y;
     updatePath();
+}
+
+void MergeJunctionItem::translateManualRoute(const QPointF& delta) {
+    if (!m_manualMergeY || qFuzzyIsNull(delta.y())) return;
+    m_manualMergeY = *m_manualMergeY + delta.y();
 }
 
 void MergeJunctionItem::setProductName(const QString& name) {
@@ -211,7 +224,8 @@ void MergeJunctionItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
     m_dragging = false;
     if (targetInput) {
         if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene()))
-            flowsheet->connectMerge(this, targetInput);
+            flowsheet->connectMerge(this, targetInput,
+                                    event->modifiers() & Qt::ControlModifier);
     }
     updatePath();
     event->accept();

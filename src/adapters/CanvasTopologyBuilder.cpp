@@ -9,6 +9,72 @@
 #include <algorithm>
 
 namespace afs {
+namespace {
+
+QString unitDisplayName(UnitKind kind) {
+    switch (kind) {
+    case UnitKind::Flotation: return QStringLiteral("浮选单元");
+    case UnitKind::MagneticSeparation: return QStringLiteral("磁选机");
+    case UnitKind::WeakMagneticSeparation: return QStringLiteral("弱磁选机");
+    case UnitKind::StrongMagneticSeparation: return QStringLiteral("强磁选机");
+    case UnitKind::SpiralChute: return QStringLiteral("螺旋溜槽");
+    case UnitKind::ShakingTable: return QStringLiteral("摇床");
+    case UnitKind::DenseMediumCyclone: return QStringLiteral("重介质旋流器");
+    case UnitKind::SedimentationTank: return QStringLiteral("沉降箱");
+    case UnitKind::DemediumScreen: return QStringLiteral("脱介筛");
+    case UnitKind::Screening: return QStringLiteral("筛分机");
+    case UnitKind::Classification: return QStringLiteral("分级机");
+    case UnitKind::TailingsPool: return QStringLiteral("尾矿池");
+    case UnitKind::ConcentratePool: return QStringLiteral("精矿池");
+    case UnitKind::WaterPool: return QStringLiteral("回水池");
+    case UnitKind::MediaTank: return QStringLiteral("介质桶");
+    case UnitKind::MixingTank: return QStringLiteral("混料桶");
+    case UnitKind::BinarySplitter: return QStringLiteral("二分流器");
+    case UnitKind::ThreeProductFlotation: return QStringLiteral("三产品浮选单元");
+    case UnitKind::ThreeProductScreening: return QStringLiteral("三产品筛分器");
+    case UnitKind::ThreeProductDemediumScreen: return QStringLiteral("三产品脱介筛");
+    }
+    return QStringLiteral("流程单元");
+}
+
+QString productDisplayLabel(const FlotationUnitItem& unit, ProductSide side) {
+    if (isStoragePool(unit.unit().kind)) return QStringLiteral("池出料");
+    if (unit.unit().kind == UnitKind::SpiralChute)
+        return side == ProductSide::Left ? QStringLiteral("螺旋精") : QStringLiteral("螺旋尾");
+    if (unit.unit().kind == UnitKind::ShakingTable)
+        return side == ProductSide::Left ? QStringLiteral("摇床精矿") : QStringLiteral("摇床尾矿");
+    if (unit.unit().kind == UnitKind::DenseMediumCyclone)
+        return side == ProductSide::Left ? QStringLiteral("重") : QStringLiteral("轻");
+    if (unit.unit().kind == UnitKind::SedimentationTank)
+        return side == ProductSide::Left ? QStringLiteral("溢流") : QStringLiteral("底流");
+    if (unit.unit().kind == UnitKind::DemediumScreen)
+        return side == ProductSide::Left ? QStringLiteral("脱介产品") : QStringLiteral("稀介质");
+    if (unit.unit().kind == UnitKind::Screening)
+        return side == ProductSide::Left ? QStringLiteral("筛上") : QStringLiteral("筛下");
+    if (unit.unit().kind == UnitKind::Classification)
+        return side == ProductSide::Left ? QStringLiteral("溢流") : QStringLiteral("沉砂");
+    if (unit.unit().kind == UnitKind::ThreeProductScreening) {
+        if (side == ProductSide::Left) return QStringLiteral("筛上");
+        if (side == ProductSide::Middle) return QStringLiteral("筛中");
+        return QStringLiteral("筛下");
+    }
+    if (unit.unit().kind == UnitKind::ThreeProductDemediumScreen) {
+        if (side == ProductSide::Left) return QStringLiteral("脱介产品");
+        if (side == ProductSide::Middle) return QStringLiteral("浓介质");
+        return QStringLiteral("稀介质");
+    }
+    if (isMagneticSeparation(unit.unit().kind)) {
+        if (side == ProductSide::Left) return QStringLiteral("磁性");
+        if (side == ProductSide::Right) return QStringLiteral("非磁性");
+    }
+    return productSideLabel(side);
+}
+
+bool isTerminalPool(const FlotationUnitItem* unit) {
+    return unit && isTerminalStoragePool(unit->unit().kind);
+}
+
+} // namespace
 
 CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene) {
     CanvasTopologySnapshot result;
@@ -27,13 +93,19 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
 
     for (auto* unit : units) {
         result.interestObjects.append({unit->unit().id,
-                                       QString("浮选单元 · %1").arg(unit->unit().id)});
-        result.graph.addFlotationNode({unit->unit().id, topology::ProductRole::Unknown,
-                                      topology::ProductRole::Unknown,
-                                      unit->unit().kind == UnitKind::BinarySplitter
-                                          ? std::optional<double>(unit->unit().leftSplitPercent)
-                                          : std::nullopt,
-                                      unit->unit().kind == UnitKind::ThreeProductFlotation});
+                                       QString("%1 · %2")
+                                           .arg(unitDisplayName(unit->unit().kind), unit->unit().id)});
+        if (isStoragePool(unit->unit().kind)) {
+            result.graph.addStoragePoolNode({unit->unit().id,
+                                              isTerminalStoragePool(unit->unit().kind)});
+        } else {
+            result.graph.addFlotationNode({unit->unit().id, topology::ProductRole::Unknown,
+                                          topology::ProductRole::Unknown,
+                                          unit->unit().kind == UnitKind::BinarySplitter
+                                              ? std::optional<double>(unit->unit().leftSplitPercent)
+                                              : std::nullopt,
+                                          hasMiddleProduct(unit->unit().kind)});
+        }
     }
     for (auto* merge : merges) {
         result.graph.addMergeNode({merge->id(), topology::MergeRole::ProductMerge});
@@ -58,7 +130,9 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
         for (int index = 0; index < products.size(); ++index) {
             auto* product = products[index];
             const auto side = product->side();
-            const auto sourcePort = side == ProductSide::Left ? topology::PortKind::LeftProduct
+            const auto sourcePort = isStoragePool(unit->unit().kind)
+                ? topology::PortKind::PoolOutput
+                : side == ProductSide::Left ? topology::PortKind::LeftProduct
                 : side == ProductSide::Middle ? topology::PortKind::MiddleProduct
                                               : topology::PortKind::RightProduct;
             std::optional<topology::PortRef> target;
@@ -72,12 +146,12 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
             result.graph.addStream({product->streamId(),
                                     topology::PortRef{unit->unit().id, sourcePort}, target});
             QString displayName = QString("单元 %1 - %2产品")
-                                      .arg(unit->unit().id, productSideLabel(side));
+                                      .arg(unit->unit().id, productDisplayLabel(*unit, side));
             CanvasStreamDescriptor descriptor{
                 product->streamId(),
                 displayName,
                 product, product->mergeJunction() != nullptr};
-            descriptor.terminal = !target.has_value();
+            descriptor.terminal = !target.has_value() || isTerminalPool(product->targetUnit());
             descriptor.feed = target.has_value() && target->port == topology::PortKind::Feed;
             if (auto* feed = product->feedJunction()) {
                 const bool processFeed = feed->processProduct() == product;
@@ -117,7 +191,7 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
                                 topology::PortRef{merge->id(), topology::PortKind::MergeOutput}, target});
         CanvasStreamDescriptor descriptor{
             merge->outputStreamId(), QString("合流产品 · %1").arg(merge->id()), merge};
-        descriptor.terminal = !target.has_value();
+        descriptor.terminal = !target.has_value() || isTerminalPool(merge->targetUnit());
         descriptor.feed = target.has_value() && target->port == topology::PortKind::Feed;
         if (auto* feed = merge->feedJunction()) {
             const bool processFeed = feed->processMerge() == merge;

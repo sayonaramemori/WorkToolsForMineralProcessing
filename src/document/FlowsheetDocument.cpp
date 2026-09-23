@@ -60,6 +60,7 @@ void FlowsheetDocument::setAnnotationTextSettings(AnnotationTextSettings setting
         && m_annotationTextSettings.showGrade == settings.showGrade
         && m_annotationTextSettings.showOverallYield == settings.showOverallYield
         && m_annotationTextSettings.showOverallRecovery == settings.showOverallRecovery
+        && m_annotationTextSettings.showProductName == settings.showProductName
         && m_annotationTextSettings.metricLabelMode == settings.metricLabelMode) return;
     m_annotationTextSettings = std::move(settings);
     emit projectChanged();

@@ -156,11 +156,11 @@ int main(int argc, char** argv) {
     TerminalProductDock dock(document);
     dock.refreshAppearance();
     auto* panel = dock.findChild<QWidget*>("terminalProductPanel");
-    if (!panel || !panel->styleSheet().contains("#ff242628")) return 14;
+    if (!panel || !panel->styleSheet().contains("#ff151a21")) return 14;
     ThemeService::applyApplicationPalette(false);
     dock.refreshAppearance();
     if (!panel->styleSheet().contains("#fff4f4f4")
-        || panel->styleSheet().contains("#ff242628")) return 15;
+        || panel->styleSheet().contains("#ff151a21")) return 15;
 
     FlowsheetScene calculationScene;
     auto* calculationUnit = new FlotationUnitItem({"calculation", {0, 0}});
@@ -378,6 +378,11 @@ int main(int argc, char** argv) {
         return 34;
     annotationManager.setMetricVisible(ResultMetric::DryMass, false);
     if (leftAnnotation->text().contains("质量")) return 22;
+    resultDocument.setProductName("calculation:left", "测试精矿");
+    annotationManager.setProductNamesVisible(true);
+    if (!leftAnnotation->text().contains("产品  测试精矿")) return 78;
+    annotationManager.setProductNamesVisible(false);
+    if (leftAnnotation->text().contains("产品  测试精矿")) return 79;
 
     AnnotationRecord userNote{"note-test", AnnotationKind::UserNote, AnnotationStyle::Note,
         AnnotationOwnerKind::Free, "canvas", QPointF(180, 90), true, true, "自定义\n说明"};
@@ -385,6 +390,7 @@ int main(int argc, char** argv) {
     userNote.notePointSize = 18;
     userNote.noteBold = true;
     userNote.noteBorderVisible = false;
+    userNote.noteColor = QColor("#2c6da4");
     auto largeNoteRecord = userNote;
     largeNoteRecord.notePointSize = 48;
     AnnotationItem largeNote(largeNoteRecord, largeNoteRecord.text);
@@ -406,7 +412,8 @@ int main(int argc, char** argv) {
     if (!noteItem || noteItem->pos() != QPointF(180, 90)
         || noteItem->text() != "自定义\n说明"
         || noteItem->record().notePointSize != 18 || !noteItem->record().noteBold
-        || noteItem->record().noteBorderVisible) return 42;
+        || noteItem->record().noteBorderVisible
+        || noteItem->record().noteColor != QColor("#2c6da4")) return 42;
     noteItem->setPos(210, 120);
     if (resultDocument.annotationRecord("note-test").manualOffset != QPointF(210, 120)) return 43;
 

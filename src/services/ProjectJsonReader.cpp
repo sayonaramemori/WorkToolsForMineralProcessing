@@ -11,15 +11,32 @@
 
 namespace afs {
 namespace {
-constexpr int kFormatVersion = 10;
+constexpr int kFormatVersion = 23;
 using namespace project_serialization;
 void setError(QString* destination, const QString& message) {
     if (destination) *destination = message;
 }
 std::optional<UnitKind> unitKindFromKey(const QString& key) {
     if (key == "flotation") return UnitKind::Flotation;
+    if (key == "magnetic-separation") return UnitKind::MagneticSeparation;
+    if (key == "weak-magnetic-separation") return UnitKind::WeakMagneticSeparation;
+    if (key == "strong-magnetic-separation") return UnitKind::StrongMagneticSeparation;
+    if (key == "spiral-chute") return UnitKind::SpiralChute;
+    if (key == "shaking-table") return UnitKind::ShakingTable;
+    if (key == "dense-medium-cyclone") return UnitKind::DenseMediumCyclone;
+    if (key == "sedimentation-tank") return UnitKind::SedimentationTank;
+    if (key == "demedium-screen") return UnitKind::DemediumScreen;
+    if (key == "screening") return UnitKind::Screening;
+    if (key == "classification") return UnitKind::Classification;
+    if (key == "tailings-pool") return UnitKind::TailingsPool;
+    if (key == "concentrate-pool") return UnitKind::ConcentratePool;
+    if (key == "water-pool") return UnitKind::WaterPool;
+    if (key == "media-tank") return UnitKind::MediaTank;
+    if (key == "mixing-tank") return UnitKind::MixingTank;
     if (key == "binary-splitter") return UnitKind::BinarySplitter;
     if (key == "three-product-flotation") return UnitKind::ThreeProductFlotation;
+    if (key == "three-product-screening") return UnitKind::ThreeProductScreening;
+    if (key == "three-product-demedium-screen") return UnitKind::ThreeProductDemediumScreen;
     return std::nullopt;
 }
 
@@ -27,6 +44,42 @@ bool finiteNumber(const QJsonValue& value, double& result) {
     if (!value.isDouble()) return false;
     result = value.toDouble();
     return std::isfinite(result);
+}
+
+// Early hand-edited and prototype project files occasionally represented
+// geometry as numeric strings or as a nested `position` object.  Keep this
+// compatibility local to process-unit geometry; measurement values remain
+// intentionally strict numeric JSON.
+bool readCompatibleUnitNumber(const QJsonValue& value, double& result) {
+    if (finiteNumber(value, result)) return true;
+    if (!value.isString()) return false;
+    bool converted = false;
+    const double number = value.toString().trimmed().toDouble(&converted);
+    if (!converted || !std::isfinite(number)) return false;
+    result = number;
+    return true;
+}
+
+bool readUnitCoordinate(const QJsonObject& object, const char* key, double& result) {
+    const auto directValue = object.value(QLatin1String(key));
+    if (!directValue.isUndefined() && !directValue.isNull())
+        return readCompatibleUnitNumber(directValue, result);
+    const auto position = object.value("position");
+    return position.isObject()
+        && readCompatibleUnitNumber(position.toObject().value(QLatin1String(key)), result);
+}
+
+bool readUnitId(const QJsonObject& object, QString& result) {
+    const auto value = object.value("id");
+    if (value.isString()) result = value.toString().trimmed();
+    else if (value.isDouble()) {
+        const double numericId = value.toDouble();
+        if (!std::isfinite(numericId) || std::floor(numericId) != numericId) return false;
+        result = QString::number(static_cast<qint64>(numericId));
+    } else {
+        return false;
+    }
+    return !result.isEmpty();
 }
 
 bool readRequiredString(const QJsonObject& object, const char* key, QString& result) {
@@ -158,6 +211,7 @@ bool ProjectJsonReader::parse(const QByteArray& contents, ProjectData& data, QSt
         const auto gradeValue = style.value("showGrade");
         const auto yieldValue = style.value("showOverallYield");
         const auto recoveryValue = style.value("showOverallRecovery");
+        const auto productNameValue = style.value("showProductName");
         const auto labelModeValue = style.value("metricLabelMode");
         if (pointSize < 7 || pointSize > 36 || !bold.isBool()
             || (!colorValue.isUndefined() && !colorValue.isString())
@@ -167,6 +221,7 @@ bool ProjectJsonReader::parse(const QByteArray& contents, ProjectData& data, QSt
             || (!gradeValue.isUndefined() && !gradeValue.isBool())
             || (!yieldValue.isUndefined() && !yieldValue.isBool())
             || (!recoveryValue.isUndefined() && !recoveryValue.isBool())
+            || (!productNameValue.isUndefined() && !productNameValue.isBool())
             || (!labelModeValue.isUndefined() && !labelModeValue.isString())) {
             setError(error, "项目标注字号、粗体或颜色无效"); return false;
         }
@@ -194,6 +249,7 @@ bool ProjectJsonReader::parse(const QByteArray& contents, ProjectData& data, QSt
         data.annotationTextSettings = {pointSize, bold.toBool(), color, massUnit, customMassUnit,
             visibleValue.toBool(true), dryMassValue.toBool(true), gradeValue.toBool(true),
             yieldValue.toBool(false), recoveryValue.toBool(false),
+            productNameValue.toBool(false),
             labelMode == "symbols" ? MetricLabelMode::Symbols : MetricLabelMode::Chinese};
     }
 
@@ -202,14 +258,30 @@ bool ProjectJsonReader::parse(const QByteArray& contents, ProjectData& data, QSt
         if (!value.isObject()) { setError(error, "浮选单元记录无效"); return false; }
         const auto object = value.toObject();
         UnitData item;
-        double x = 0, y = 0, width = 0, bodyHeight = 0;
-        if (!readRequiredString(object, "id", item.unit.id) || item.unit.id.contains(':')
-            || unitIds.contains(item.unit.id)
-            || !finiteNumber(object.value("x"), x) || !finiteNumber(object.value("y"), y)
-            || !finiteNumber(object.value("width"), width)
-            || !finiteNumber(object.value("bodyHeight"), bodyHeight)
-            || width <= 0.0 || bodyHeight <= 0.0) {
-            setError(error, "浮选单元 ID、位置或尺寸无效");
+        double x = 0, y = 0;
+        double width = 360.0;
+        double bodyHeight = 150.0;
+        const auto widthValue = object.value("width");
+        const auto bodyHeightValue = object.value("bodyHeight");
+        const bool validWidth = (widthValue.isUndefined() || widthValue.isNull())
+            || (readCompatibleUnitNumber(widthValue, width) && width > 0.0);
+        const bool validBodyHeight = (bodyHeightValue.isUndefined() || bodyHeightValue.isNull())
+            || (readCompatibleUnitNumber(bodyHeightValue, bodyHeight) && bodyHeight > 0.0);
+        if (!readUnitId(object, item.unit.id) || item.unit.id.contains(':')) {
+            setError(error, "浮选单元 ID 无效");
+            return false;
+        }
+        if (unitIds.contains(item.unit.id)) {
+            setError(error, QString("项目包含重复的浮选单元 ID：“%1”").arg(item.unit.id));
+            return false;
+        }
+        if (!readUnitCoordinate(object, "x", x) || !readUnitCoordinate(object, "y", y)
+            || !validWidth || !validBodyHeight) {
+            const QString unitName = item.unit.id.isEmpty() ? QStringLiteral("<未命名>")
+                                                              : item.unit.id;
+            setError(error, QString("浮选单元“%1”的位置或尺寸无效；"
+                                    "请检查 x、y、width、bodyHeight 字段")
+                                .arg(unitName));
             return false;
         }
         unitIds.insert(item.unit.id);
@@ -232,14 +304,26 @@ bool ProjectJsonReader::parse(const QByteArray& contents, ProjectData& data, QSt
                 item.unit.leftSplitPercent = split;
             }
         }
+        const auto poolLabel = object.value("poolLabel");
+        if (!poolLabel.isUndefined()) {
+            const QString label = poolLabel.isString() ? poolLabel.toString().simplified() : QString{};
+            if (!isStoragePool(item.unit.kind) || !poolLabel.isString() || label.isEmpty()
+                || label.size() > 48) {
+                setError(error, "贮池名称无效"); return false;
+            }
+            item.unit.poolLabel = label;
+        }
         const auto terminalLengths = object.value("terminalLengths");
         if (!terminalLengths.isUndefined()) {
             if (!terminalLengths.isObject()) {
                 setError(error, "终端产品线长度记录无效"); return false;
             }
             const auto lengths = terminalLengths.toObject();
-            const QStringList allowedKeys = item.unit.kind == UnitKind::ThreeProductFlotation
-                ? QStringList{"left", "middle", "right"} : QStringList{"left", "right"};
+            const QStringList allowedKeys = hasMiddleProduct(item.unit.kind)
+                ? QStringList{"left", "middle", "right"}
+                : isTerminalStoragePool(item.unit.kind) ? QStringList{}
+                : isStoragePool(item.unit.kind) ? QStringList{"right"}
+                : QStringList{"left", "right"};
             for (auto it = lengths.constBegin(); it != lengths.constEnd(); ++it) {
                 double length = 0.0;
                 if (!allowedKeys.contains(it.key()) || !finiteNumber(it.value(), length)
@@ -366,6 +450,16 @@ bool ProjectJsonReader::parse(const QByteArray& contents, ProjectData& data, QSt
             item.processSourceType = processType.toString();
             item.processSourceId = processSource.toString();
         }
+        const auto externalFeed = object.value("hasExternalFeed");
+        if (!externalFeed.isUndefined() && !externalFeed.isBool()) {
+            setError(error, "入料汇合的外部入料标记无效"); return false;
+        }
+        // Version 21 and earlier did not persist this distinction.  A
+        // source-only junction with two or more sources was produced by the
+        // multi-input workflow and therefore has no implicit fresh feed.
+        item.hasExternalFeed = externalFeed.isUndefined()
+            ? (item.processSourceId.isEmpty() && item.sourceIds.size() == 1)
+            : externalFeed.toBool();
         data.feedJunctions.append(std::move(item));
     }
 
@@ -461,18 +555,28 @@ bool ProjectJsonReader::parse(const QByteArray& contents, ProjectData& data, QSt
         const auto pointSizeValue = object.value("notePointSize");
         const auto noteBold = object.value("noteBold");
         const auto borderVisible = object.value("noteBorderVisible");
+        const auto noteColor = object.value("noteColor");
         if ((!fontFamily.isUndefined() && (!fontFamily.isString()
                                            || fontFamily.toString().size() > 120))
             || (!pointSizeValue.isUndefined()
                 && (pointSizeValue.toInt(-1) < 0 || pointSizeValue.toInt() > 72))
             || (!noteBold.isUndefined() && !noteBold.isBool())
-            || (!borderVisible.isUndefined() && !borderVisible.isBool())) {
+            || (!borderVisible.isUndefined() && !borderVisible.isBool())
+            || (!noteColor.isUndefined() && !noteColor.isString())) {
             setError(error, "自定义文字样式无效"); return false;
+        }
+        QColor parsedNoteColor;
+        if (!noteColor.toString().isEmpty()) {
+            parsedNoteColor = QColor(noteColor.toString());
+            if (!parsedNoteColor.isValid()) {
+                setError(error, "自定义文字颜色无效"); return false;
+            }
         }
         item.noteFontFamily = fontFamily.toString();
         item.notePointSize = pointSizeValue.toInt(0);
         item.noteBold = noteBold.toBool(false);
         item.noteBorderVisible = borderVisible.toBool(true);
+        item.noteColor = parsedNoteColor;
         data.annotations.insert(item.id, std::move(item));
     }
     const auto scenarios = root.value("scenarios");

@@ -43,6 +43,7 @@ TerminalProductDock::TerminalProductDock(FlowsheetDocument& document, QWidget* p
       m_interestMenu(new QMenu(this)),
       m_progressLabel(new QLabel(this)),
       m_panel(new QWidget(this)), m_document(document), m_calculateButton(new QPushButton("计算", this)),
+      m_explanationButton(new QPushButton("计算说明", this)),
       m_calculationStatus(new QLabel(this)), m_resultDetails(new ResultDetailsView(document, this)) {
     setObjectName("terminalProductDock");
     m_panel->setObjectName("terminalProductPanel");
@@ -68,6 +69,9 @@ TerminalProductDock::TerminalProductDock(FlowsheetDocument& document, QWidget* p
     m_calculateButton->setObjectName("calculateButton");
     m_calculateButton->setMinimumHeight(32);
     summaryLayout->addWidget(m_calculateButton);
+    m_explanationButton->setObjectName("calculationExplanationButton");
+    m_explanationButton->setMinimumHeight(32);
+    summaryLayout->addWidget(m_explanationButton);
     auto* componentsButton = new QPushButton("组分设置", summary);
     componentsButton->setMinimumHeight(32);
     summaryLayout->addWidget(componentsButton);
@@ -135,6 +139,8 @@ TerminalProductDock::TerminalProductDock(FlowsheetDocument& document, QWidget* p
         updateSummary(); updateCalculationState();
     });
     connect(m_calculateButton, &QPushButton::clicked, this, &TerminalProductDock::calculationRequested);
+    connect(m_explanationButton, &QPushButton::clicked,
+            this, &TerminalProductDock::showCalculationExplanation);
     connect(m_filterCombo, &QComboBox::currentIndexChanged, this, [this](int index) {
         m_filterModel->setMode(static_cast<StreamFilterProxyModel::Mode>(
             m_filterCombo->itemData(index).toInt()));
@@ -364,6 +370,16 @@ void TerminalProductDock::updateCalculationState() {
                     : "可填写总入料或任意产品物流的质量和各组分品位");
         m_calculateButton->setText("计算");
     }
+}
+
+void TerminalProductDock::showCalculationExplanation() {
+    // Once an input changes, its stored result is invalidated.  Use a preview
+    // in that case so the explanation always describes the values on screen.
+    const auto* stored = m_document.calculationResult();
+    const auto preview = stored ? topology::CalculationResult{}
+                                : FlowsheetCalculationService::calculate(m_snapshot, m_document);
+    const auto& result = stored ? *stored : preview;
+    m_resultDetails->showCalculationExplanation(result, m_document.calculationMode());
 }
 
 } // namespace afs

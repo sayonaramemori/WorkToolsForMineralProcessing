@@ -37,7 +37,7 @@ void MainWindow::newProject() {
     m_document->setComponents({{DefaultComponentId, DefaultComponentName}});
     m_nextUnitId = 1;
     const QPointF center = m_view->mapToScene(m_view->viewport()->rect().center());
-    m_scene->addItem(new FlotationUnitItem({QString::number(m_nextUnitId++), center}));
+    m_scene->addItem(new FlotationUnitItem({takeNextUnitId(), center}));
     static_cast<FlowsheetScene*>(m_scene)->notifyTopologyChanged();
     m_loadingProject = false; m_projectPath.clear(); m_scene->clearSelection();
     static_cast<FlowsheetScene*>(m_scene)->refreshAppearance();
@@ -99,6 +99,10 @@ void MainWindow::importProject() {
         tr("AutoFlotationSheet 项目 (*.afs.json *.json);;所有文件 (*)"));
     if (path.isEmpty()) return;
     loadProjectFromPath(path);
+}
+
+bool MainWindow::openProject(const QString& path) {
+    return loadProjectFromPath(path);
 }
 
 bool MainWindow::loadProjectFromPath(const QString& path) {

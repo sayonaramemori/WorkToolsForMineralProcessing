@@ -8,12 +8,14 @@ class TopologyGraph final {
 public:
     bool addFlotationNode(FlotationNode node);
     bool addMergeNode(MergeNode node);
+    bool addStoragePoolNode(StoragePoolNode node);
     bool addStream(MaterialStream stream);
 
     [[nodiscard]] bool containsNode(const NodeId& id) const;
     [[nodiscard]] NodeKind nodeKind(const NodeId& id) const;
     [[nodiscard]] const FlotationNode* flotationNode(const NodeId& id) const;
     [[nodiscard]] const MergeNode* mergeNode(const NodeId& id) const;
+    [[nodiscard]] const StoragePoolNode* storagePoolNode(const NodeId& id) const;
     [[nodiscard]] const MaterialStream* stream(const StreamId& id) const;
 
     [[nodiscard]] const QVector<NodeId>& nodeIds() const { return m_nodeOrder; }
@@ -27,6 +29,7 @@ public:
 private:
     QHash<NodeId, FlotationNode> m_flotationNodes;
     QHash<NodeId, MergeNode> m_mergeNodes;
+    QHash<NodeId, StoragePoolNode> m_storagePoolNodes;
     QHash<StreamId, MaterialStream> m_streams;
     QVector<NodeId> m_nodeOrder;
     QVector<StreamId> m_streamOrder;

@@ -108,6 +108,7 @@ bool ProjectSceneRestorer::restore(const project_serialization::ProjectData& dat
             if (index < item.routeYs.size() && item.routeYs[index])
                 junction->setManualRouteY(routeId, item.routeYs[index]);
         }
+        junction->setExternalFeed(item.hasExternalFeed);
         feedIds.insert(item.id);
     }
     scene.resetGeneratedIds(); scene.refreshConnections(); return true;

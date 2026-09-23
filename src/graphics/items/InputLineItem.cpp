@@ -23,7 +23,7 @@ QPainterPath InputLineItem::shape() const {
     path.moveTo(line().p1());
     path.lineTo(line().p2());
     QPainterPathStroker stroker;
-    stroker.setWidth(FlotationGeometry::HitWidth);
+    stroker.setWidth(FlotationGeometry::InputHitWidth);
     return stroker.createStroke(path);
 }
 

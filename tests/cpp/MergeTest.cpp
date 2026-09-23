@@ -12,6 +12,19 @@
 
 using namespace afs;
 
+namespace {
+bool hasDiagonalSegment(const QPainterPath& path) {
+    for (int index = 1; index < path.elementCount(); ++index) {
+        const auto previous = path.elementAt(index - 1);
+        const auto current = path.elementAt(index);
+        if (!current.isLineTo()) continue;
+        if (std::abs(previous.x - current.x) > 0.001
+            && std::abs(previous.y - current.y) > 0.001) return true;
+    }
+    return false;
+}
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     FlowsheetScene scene;
@@ -30,6 +43,13 @@ int main(int argc, char** argv) {
     junction->setManualMergeY(375.0);
     if (!junction->manualMergeY() || std::abs(junction->mergeY() - 375.0) > 0.001)
         return 16;
+    // Even before the merge output has a downstream target, its branches form
+    // one movable group.  The scene-level manual merge height must follow it.
+    const QPointF secondBeforeGroupMove = second->pos();
+    first->setPos(first->pos() + QPointF(30.0, -40.0));
+    if (second->pos() != secondBeforeGroupMove + QPointF(30.0, -40.0)
+        || !junction->manualMergeY()
+        || std::abs(*junction->manualMergeY() - 335.0) > 0.001) return 20;
     junction->setProductName("合流精矿");
     junction->setTextSettings({16, true, QColor("#8844cc")});
     auto* mergeLabel = dynamic_cast<QGraphicsSimpleTextItem*>(junction->childItems().value(0));
@@ -40,18 +60,25 @@ int main(int argc, char** argv) {
     second->setPos(second->pos() + QPointF(0, 40));
     if (std::abs(junction->mergeY() - 375.0) > 0.001) return 5;
     junction->setManualMergeY(std::nullopt);
-    if (std::abs(junction->mergeY() - 340.0) > 0.001) return 17;
+    if (std::abs(junction->mergeY() - 300.0) > 0.001) return 17;
     auto* downstream = new FlotationUnitItem({"downstream", {900, 700}});
     scene.addItem(downstream);
     const QPointF outputBeforeConnect = junction->outputEndPosition();
     if (!scene.connectMerge(junction, downstream->inputLine())) return 6;
     if (junction->targetUnit() != downstream
         || downstream->inputLine()->sourceMerge() != junction
-        || downstream->inputLine()->isVisible()) return 7;
+        || downstream->inputLine()->isVisible()
+        || hasDiagonalSegment(junction->path())) return 7;
     const QPointF inputTop = downstream->mapToScene(QPointF(0, -FlotationGeometry::InputHeight));
-    if (QLineF(inputTop, outputBeforeConnect).length() > 0.001) return 8;
+    if (QLineF(inputTop, outputBeforeConnect).length() < 0.001
+        || downstream->pos() != QPointF(900, 700)) return 8;
     if (!scene.disconnectMerge(junction) || !junction->isAvailable()
         || !downstream->inputLine()->isVisible()) return 9;
+    const QPointF outputBeforeAlignedConnect = junction->outputEndPosition();
+    if (!scene.connectMerge(junction, downstream->inputLine(), true)
+        || QLineF(downstream->mapToScene(QPointF(0, -FlotationGeometry::InputHeight)),
+                  outputBeforeAlignedConnect).length() > 0.001) return 18;
+    if (!scene.disconnectMerge(junction)) return 19;
     if (!scene.splitMerge(junction)) return 10;
     if (!firstProduct->isVisible() || !secondProduct->isVisible()) return 11;
     if (firstProduct->isMerged() || secondProduct->isMerged()) return 12;

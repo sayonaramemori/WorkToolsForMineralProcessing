@@ -26,10 +26,10 @@ protected:
 
 private:
     FlotationUnit m_unit;
-    class InputLineItem* m_inputLine;
-    class ProductLineItem* m_leftProduct;
+    class InputLineItem* m_inputLine{nullptr};
+    class ProductLineItem* m_leftProduct{nullptr};
     class ProductLineItem* m_middleProduct{nullptr};
-    class ProductLineItem* m_rightProduct;
+    class ProductLineItem* m_rightProduct{nullptr};
 };
 
 } // namespace afs
