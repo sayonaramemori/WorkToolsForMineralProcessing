@@ -50,6 +50,7 @@ private:
     QWidget* m_panel;
     FlowsheetDocument& m_document;
     QPushButton* m_calculateButton;
+    QPushButton* m_explanationButton;
     QLabel* m_calculationStatus;
     ResultDetailsView* m_resultDetails;
     CanvasTopologySnapshot m_snapshot;
@@ -58,6 +59,7 @@ private:
     void updateSummary();
     void applyPanelStyle();
     void updateCalculationState();
+    void showCalculationExplanation();
     void configureColumns();
     void editComponents();
     void rebuildInterestMenu();

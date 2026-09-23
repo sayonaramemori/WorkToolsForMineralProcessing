@@ -8,12 +8,14 @@
 #include "graphics/items/FlotationUnitItem.h"
 #include "services/ProjectSerializer.h"
 #include "services/ProjectUndoManager.h"
+#include "services/RecentProjectService.h"
 
 #include <QCloseEvent>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGraphicsScene>
 #include <QMessageBox>
+#include <QMenu>
 #include <QSet>
 #include <QStatusBar>
 
@@ -35,7 +37,7 @@ void MainWindow::newProject() {
     m_document->setComponents({{DefaultComponentId, DefaultComponentName}});
     m_nextUnitId = 1;
     const QPointF center = m_view->mapToScene(m_view->viewport()->rect().center());
-    m_scene->addItem(new FlotationUnitItem({QString::number(m_nextUnitId++), center}));
+    m_scene->addItem(new FlotationUnitItem({takeNextUnitId(), center}));
     static_cast<FlowsheetScene*>(m_scene)->notifyTopologyChanged();
     m_loadingProject = false; m_projectPath.clear(); m_scene->clearSelection();
     static_cast<FlowsheetScene*>(m_scene)->refreshAppearance();
@@ -86,6 +88,8 @@ bool MainWindow::saveProjectTo(const QString& path) {
         QMessageBox::warning(this, tr("保存项目失败"), error); return false;
     }
     m_projectPath = path; setProjectDirty(false);
+    RecentProjectService::addProject(path);
+    refreshRecentProjectsMenu();
     if (m_undoManager) m_undoManager->markClean();
     statusBar()->showMessage(tr("项目已保存：%1").arg(path), 8000); return true;
 }
@@ -94,6 +98,25 @@ void MainWindow::importProject() {
     const QString path = QFileDialog::getOpenFileName(this, tr("导入浮选项目"), {},
         tr("AutoFlotationSheet 项目 (*.afs.json *.json);;所有文件 (*)"));
     if (path.isEmpty()) return;
+    loadProjectFromPath(path);
+}
+
+bool MainWindow::openProject(const QString& path) {
+    return loadProjectFromPath(path);
+}
+
+bool MainWindow::loadProjectFromPath(const QString& path) {
+    if (QFileInfo(path).absoluteFilePath() == QFileInfo(m_projectPath).absoluteFilePath()) {
+        statusBar()->showMessage(tr("当前已打开此项目：%1").arg(path), 4000);
+        return true;
+    }
+    if (!QFileInfo::exists(path)) {
+        RecentProjectService::removeProject(path);
+        refreshRecentProjectsMenu();
+        QMessageBox::warning(this, tr("打开项目失败"), tr("项目文件不存在：\n%1").arg(path));
+        return false;
+    }
+    if (!confirmSaveBeforeDestructiveAction()) return false;
     m_annotationManager->clearGraphicsItems();
     QString error; m_loadingProject = true;
     const bool loaded = ProjectSerializer::load(*static_cast<FlowsheetScene*>(m_scene),
@@ -101,15 +124,61 @@ void MainWindow::importProject() {
     m_loadingProject = false;
     if (!loaded) {
         m_annotationManager->synchronize();
-        QMessageBox::warning(this, tr("导入项目失败"), error); return;
+        QMessageBox::warning(this, tr("导入项目失败"), error); return false;
     }
     m_projectPath = path;
+    RecentProjectService::addProject(path);
+    refreshRecentProjectsMenu();
     if (m_undoManager) { m_undoManager->clearHistory(); m_undoManager->markClean(); }
     setProjectDirty(false); updateNextUnitId(); m_scene->clearSelection();
     static_cast<FlowsheetScene*>(m_scene)->refreshAppearance();
     const QRectF bounds = m_scene->itemsBoundingRect().adjusted(-60, -60, 60, 60);
     if (!bounds.isEmpty()) m_view->fitInView(bounds, Qt::KeepAspectRatio);
     statusBar()->showMessage(tr("项目已导入：%1").arg(path), 8000);
+    return true;
+}
+
+void MainWindow::refreshRecentProjectsMenu() {
+    if (!m_recentProjectsMenu) return;
+    m_recentProjectsMenu->clear();
+    const auto projects = RecentProjectService::projects();
+    if (projects.isEmpty()) {
+        auto* emptyAction = m_recentProjectsMenu->addAction(tr("暂无最近项目"));
+        emptyAction->setEnabled(false);
+        return;
+    }
+
+    int index = 1;
+    bool hasMissingFile = false;
+    for (const auto& path : projects) {
+        const QFileInfo info(path);
+        const bool exists = info.exists();
+        hasMissingFile |= !exists;
+        QString label = tr("&%1  %2").arg(index++).arg(info.fileName());
+        if (!exists) label += tr("（文件不存在）");
+        auto* action = m_recentProjectsMenu->addAction(label);
+        action->setToolTip(path);
+        action->setStatusTip(path);
+        action->setCheckable(!m_projectPath.isEmpty());
+        action->setChecked(info.absoluteFilePath() == QFileInfo(m_projectPath).absoluteFilePath());
+        connect(action, &QAction::triggered, this, [this, path] { loadProjectFromPath(path); });
+    }
+    m_recentProjectsMenu->addSeparator();
+    if (hasMissingFile) {
+        auto* removeMissing = m_recentProjectsMenu->addAction(tr("清理失效记录"));
+        connect(removeMissing, &QAction::triggered, this, [this, projects] {
+            for (const auto& path : projects)
+                if (!QFileInfo::exists(path)) RecentProjectService::removeProject(path);
+            refreshRecentProjectsMenu();
+            statusBar()->showMessage(tr("已清理不存在的最近项目记录"), 4000);
+        });
+    }
+    auto* clearAction = m_recentProjectsMenu->addAction(tr("清空最近项目"));
+    connect(clearAction, &QAction::triggered, this, [this] {
+        RecentProjectService::clear();
+        refreshRecentProjectsMenu();
+        statusBar()->showMessage(tr("已清空最近项目记录"), 4000);
+    });
 }
 
 void MainWindow::setProjectDirty(bool dirty) {

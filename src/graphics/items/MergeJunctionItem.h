@@ -44,6 +44,7 @@ public:
     void setTextSettings(const AnnotationTextSettings& settings);
     [[nodiscard]] std::optional<double> manualMergeY() const { return m_manualMergeY; }
     void setManualMergeY(std::optional<double> y);
+    void translateManualRoute(const QPointF& delta);
 
 protected:
     QVariant itemChange(GraphicsItemChange change, const QVariant& value) override;

@@ -147,6 +147,9 @@ MainWindow::MainWindow() {
     auto* importAction = projectMenu->addAction(tr("导入项目"));
     importAction->setShortcut(QKeySequence::Open);
     connect(importAction, &QAction::triggered, this, [this] { importProject(); });
+    m_recentProjectsMenu = projectMenu->addMenu(tr("最近项目"));
+    connect(m_recentProjectsMenu, &QMenu::aboutToShow,
+            this, [this] { refreshRecentProjectsMenu(); });
     addMenuButton(tr("项目管理"), projectMenu);
 
     auto* flowMenu = new QMenu(tr("流程编辑"), toolbar);
@@ -163,9 +166,68 @@ MainWindow::MainWindow() {
     flowMenu->addSeparator();
     auto* deleteUnitAction = flowMenu->addAction(tr("删除选中单元"));
     connect(deleteUnitAction, &QAction::triggered, this, [this] { deleteSelectedUnits(); });
+    auto* copyFlowAction = flowMenu->addAction(tr("复制选中流程 (Ctrl+C)"));
+    connect(copyFlowAction, &QAction::triggered, this, [this] { copySelectedFlowGroup(); });
+    auto* pasteFlowAction = flowMenu->addAction(tr("粘贴流程 (Ctrl+V)"));
+    connect(pasteFlowAction, &QAction::triggered, this, [this] { pasteFlowGroup(); });
     flowMenu->addSeparator();
     auto* addAction = flowMenu->addAction(tr("添加浮选单元"));
     connect(addAction, &QAction::triggered, this, [this] { addFlotationUnit(); });
+    auto* magneticMenu = flowMenu->addMenu(tr("添加磁选机"));
+    auto* addWeakMagneticAction = magneticMenu->addAction(tr("添加弱磁选机"));
+    connect(addWeakMagneticAction, &QAction::triggered,
+            this, [this] { addMagneticSeparator(UnitKind::WeakMagneticSeparation); });
+    auto* addStrongMagneticAction = magneticMenu->addAction(tr("添加强磁选机"));
+    connect(addStrongMagneticAction, &QAction::triggered,
+            this, [this] { addMagneticSeparator(UnitKind::StrongMagneticSeparation); });
+    auto* addGenericMagneticAction = magneticMenu->addAction(tr("添加通用磁选机"));
+    connect(addGenericMagneticAction, &QAction::triggered,
+            this, [this] { addMagneticSeparator(UnitKind::MagneticSeparation); });
+    auto* gravityMenu = flowMenu->addMenu(tr("添加重选设备"));
+    auto* addSpiralAction = gravityMenu->addAction(tr("添加螺旋溜槽"));
+    connect(addSpiralAction, &QAction::triggered,
+            this, [this] { addGravitySeparator(UnitKind::SpiralChute); });
+    auto* addShakingTableAction = gravityMenu->addAction(tr("添加摇床"));
+    connect(addShakingTableAction, &QAction::triggered,
+            this, [this] { addGravitySeparator(UnitKind::ShakingTable); });
+    auto* addDenseMediumAction = gravityMenu->addAction(tr("添加重介质旋流器"));
+    connect(addDenseMediumAction, &QAction::triggered,
+            this, [this] { addGravitySeparator(UnitKind::DenseMediumCyclone); });
+    auto* addSedimentationAction = gravityMenu->addAction(tr("添加沉降箱"));
+    connect(addSedimentationAction, &QAction::triggered,
+            this, [this] { addGravitySeparator(UnitKind::SedimentationTank); });
+    auto* addDemediumAction = gravityMenu->addAction(tr("添加脱介筛"));
+    connect(addDemediumAction, &QAction::triggered,
+            this, [this] { addGravitySeparator(UnitKind::DemediumScreen); });
+    auto* addThreeProductDemediumAction = gravityMenu->addAction(tr("添加三产品脱介筛"));
+    connect(addThreeProductDemediumAction, &QAction::triggered,
+            this, [this] { addThreeProductDemediumScreen(); });
+    auto* addMediaTankAction = gravityMenu->addAction(tr("添加介质桶"));
+    connect(addMediaTankAction, &QAction::triggered,
+            this, [this] { addStoragePool(UnitKind::MediaTank); });
+    auto* sizingMenu = flowMenu->addMenu(tr("添加筛分分级设备"));
+    auto* addScreeningAction = sizingMenu->addAction(tr("添加筛分机"));
+    connect(addScreeningAction, &QAction::triggered,
+            this, [this] { addSizingSeparator(UnitKind::Screening); });
+    auto* addClassificationAction = sizingMenu->addAction(tr("添加分级机"));
+    connect(addClassificationAction, &QAction::triggered,
+            this, [this] { addSizingSeparator(UnitKind::Classification); });
+    auto* addThreeProductScreenAction = sizingMenu->addAction(tr("添加三产品筛分器"));
+    connect(addThreeProductScreenAction, &QAction::triggered,
+            this, [this] { addThreeProductScreening(); });
+    auto* poolMenu = flowMenu->addMenu(tr("添加贮池"));
+    auto* addTailingsPoolAction = poolMenu->addAction(tr("添加尾矿池"));
+    connect(addTailingsPoolAction, &QAction::triggered,
+            this, [this] { addStoragePool(UnitKind::TailingsPool); });
+    auto* addConcentratePoolAction = poolMenu->addAction(tr("添加精矿池"));
+    connect(addConcentratePoolAction, &QAction::triggered,
+            this, [this] { addStoragePool(UnitKind::ConcentratePool); });
+    auto* addWaterPoolAction = poolMenu->addAction(tr("添加回水池"));
+    connect(addWaterPoolAction, &QAction::triggered,
+            this, [this] { addStoragePool(UnitKind::WaterPool); });
+    auto* addMixingTankAction = poolMenu->addAction(tr("添加混料桶"));
+    connect(addMixingTankAction, &QAction::triggered,
+            this, [this] { addStoragePool(UnitKind::MixingTank); });
     auto* addThreeProductAction = flowMenu->addAction(tr("添加三产品浮选单元"));
     connect(addThreeProductAction, &QAction::triggered, this, [this] { addThreeProductUnit(); });
     auto* addSplitterAction = flowMenu->addAction(tr("添加二分流器"));
@@ -197,7 +259,7 @@ MainWindow::MainWindow() {
     toolbar->addSeparator();
 
     auto* displayMenu = new QMenu(tr("显示设置"), toolbar);
-    m_themeAction = displayMenu->addAction(tr("暗色主题"));
+    m_themeAction = displayMenu->addAction(tr("CAD 暗色画布"));
     m_themeAction->setCheckable(true);
     m_themeAction->setShortcut(QKeySequence("Ctrl+Shift+T"));
     connect(m_themeAction, &QAction::toggled, this, [this](bool checked) { applyTheme(checked); });
@@ -224,18 +286,23 @@ MainWindow::MainWindow() {
     metricButton->hide();
     connect(metricButton, &ResultMetricMenu::metricVisibilityChanged,
             m_annotationManager, &AnnotationManager::setMetricVisible);
+    connect(metricButton, &ResultMetricMenu::productNameVisibilityChanged,
+            m_annotationManager, &AnnotationManager::setProductNamesVisible);
     connect(metricButton, &ResultMetricMenu::metricLabelModeChanged,
             m_annotationManager, &AnnotationManager::setMetricLabelMode);
     connect(metricButton, &ResultMetricMenu::massUnitChanged,
             m_annotationManager, &AnnotationManager::setMassUnit);
     connect(metricButton, &ResultMetricMenu::customMassUnitChanged,
             m_annotationManager, &AnnotationManager::setCustomMassUnit);
-    metricButton->setMassUnit(m_document->annotationTextSettings().massUnit,
-                              m_document->annotationTextSettings().customMassUnit);
+    metricButton->setSettings(m_document->annotationTextSettings());
     connect(m_document, &FlowsheetDocument::annotationTextSettingsChanged,
             metricButton, [this, metricButton] {
-                metricButton->setMassUnit(m_document->annotationTextSettings().massUnit,
-                                          m_document->annotationTextSettings().customMassUnit);
+                metricButton->setSettings(m_document->annotationTextSettings());
+                if (m_annotationsAction) {
+                    const QSignalBlocker blocker(m_annotationsAction);
+                    m_annotationsAction->setChecked(
+                        m_document->annotationTextSettings().resultAnnotationsVisible);
+                }
             });
     displayMenu->addMenu(metricButton->metricMenu());
 
@@ -255,6 +322,14 @@ MainWindow::MainWindow() {
     connect(narrowShortcut, &QShortcut::activated, this, [this] { resizeSelectedUnits(-40.0); });
     auto* breakShortcut = new QShortcut(QKeySequence("Ctrl+B"), this);
     connect(breakShortcut, &QShortcut::activated, this, [this] { disconnectSelectedLines(); });
+    // Keep the ordinary text/table clipboard available.  These shortcuts are
+    // active only while the canvas (or one of its viewport children) has focus.
+    auto* copyFlowShortcut = new QShortcut(QKeySequence::Copy, m_view);
+    copyFlowShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(copyFlowShortcut, &QShortcut::activated, this, [this] { copySelectedFlowGroup(); });
+    auto* pasteFlowShortcut = new QShortcut(QKeySequence::Paste, m_view);
+    pasteFlowShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(pasteFlowShortcut, &QShortcut::activated, this, [this] { pasteFlowGroup(); });
 
     addFlotationUnit();
     refreshScenarioUi();
@@ -298,293 +373,48 @@ MainWindow::MainWindow() {
         tr("单击选择，拖动图元；滚轮缩放画布，按住鼠标中键拖动画布"));
 }
 
-void MainWindow::appendOperationLog(const QString& message) {
-    if (m_operationLog) m_operationLog->appendMessage(message);
-}
-
-void MainWindow::refreshScenarioUi() {
-    if (!m_scenarioCombo) return;
-    const QSignalBlocker blocker(m_scenarioCombo);
-    m_scenarioCombo->clear();
-    for (const auto& scenario : m_document->scenarios())
-        m_scenarioCombo->addItem(scenario.name, scenario.id);
-    m_scenarioCombo->setCurrentIndex(m_document->currentScenarioIndex());
-    if (m_terminalDock) m_terminalDock->setScenarioName(m_document->currentScenarioName());
-}
-
-void MainWindow::addScenario(bool copyCurrent) {
-    bool accepted = false;
-    const QString suggested = copyCurrent
-        ? tr("%1 - 副本").arg(m_document->currentScenarioName())
-        : tr("方案 %1").arg(m_document->scenarios().size() + 1);
-    const QString name = QInputDialog::getText(
-        this, copyCurrent ? tr("复制试验方案") : tr("新增试验方案"),
-        tr("方案名称"), QLineEdit::Normal, suggested, &accepted).simplified();
-    if (!accepted || name.isEmpty()) return;
-    const int index = m_document->addScenario(name, copyCurrent);
-    if (index >= 0) m_document->setCurrentScenario(index);
-}
-
-void MainWindow::renameScenario() {
-    bool accepted = false;
-    const QString name = QInputDialog::getText(
-        this, tr("重命名试验方案"), tr("方案名称"), QLineEdit::Normal,
-        m_document->currentScenarioName(), &accepted).simplified();
-    if (accepted && !name.isEmpty())
-        m_document->renameScenario(m_document->currentScenarioIndex(), name);
-}
-
-void MainWindow::deleteScenario() {
-    if (m_document->scenarios().size() <= 1) {
-        QMessageBox::information(this, tr("删除试验方案"), tr("项目至少需要保留一个试验方案。"));
-        return;
+MainWindow::~MainWindow() {
+    // Do not leave QObject to choose the destruction order here. The dock
+    // models, annotation manager and undo stack all retain non-owning
+    // references to the document and/or scene. In an imported project those
+    // references can still carry queued model state while QMainWindow tears
+    // down its child widgets. Dispose of each dependency while its owners are
+    // unquestionably alive, then detach the scene from the view.
+    if (m_undoManager) {
+        m_undoManager->shutdown();
+        delete m_undoManager;
+        m_undoManager = nullptr;
     }
-    if (QMessageBox::question(this, tr("删除试验方案"),
-            tr("确定删除“%1”及其药剂和实验数据吗？").arg(
-                m_document->currentScenarioName())) != QMessageBox::Yes) return;
-    m_document->removeScenario(m_document->currentScenarioIndex());
-}
 
-void MainWindow::compareScenarios() {
-    const auto snapshot = CanvasTopologyBuilder::build(*static_cast<FlowsheetScene*>(m_scene));
-    if (snapshot.terminalProducts.isEmpty()) {
-        QMessageBox::information(this, tr("方案对比"), tr("当前流程没有可对比的终端产品。"));
-        return;
+    if (m_terminalDock) {
+        removeDockWidget(m_terminalDock);
+        delete m_terminalDock;
+        m_terminalDock = nullptr;
     }
-    ScenarioComparisonDialog(*m_document, snapshot, this).exec();
-}
-
-void MainWindow::addFlotationUnit() {
-    const QPointF center = m_view->mapToScene(m_view->viewport()->rect().center());
-    FlotationUnit unit{QString::number(m_nextUnitId++), center};
-    m_scene->addItem(new FlotationUnitItem(std::move(unit)));
-    static_cast<FlowsheetScene*>(m_scene)->notifyTopologyChanged();
-}
-
-void MainWindow::addThreeProductUnit() {
-    const QPointF center = m_view->mapToScene(m_view->viewport()->rect().center());
-    FlotationUnit unit{QString::number(m_nextUnitId++), center};
-    unit.kind = UnitKind::ThreeProductFlotation;
-    m_scene->addItem(new FlotationUnitItem(std::move(unit)));
-    static_cast<FlowsheetScene*>(m_scene)->notifyTopologyChanged();
-}
-
-void MainWindow::addBinarySplitter() {
-    bool accepted = false;
-    const double leftPercent = QInputDialog::getDouble(
-        this, tr("添加二分流器"), tr("左支路比例（右支路自动补足至 100%）"),
-        50.0, 0.1, 99.9, 1, &accepted);
-    if (!accepted) return;
-    const QPointF center = m_view->mapToScene(m_view->viewport()->rect().center());
-    FlotationUnit unit{QString::number(m_nextUnitId++), center};
-    unit.kind = UnitKind::BinarySplitter;
-    unit.leftSplitPercent = leftPercent;
-    unit.bodyHeight = 110.0;
-    m_scene->addItem(new FlotationUnitItem(std::move(unit)));
-    static_cast<FlowsheetScene*>(m_scene)->notifyTopologyChanged();
-}
-
-void MainWindow::updateNextUnitId() {
-    QSet<QString> ids;
-    for (auto* item : m_scene->items()) {
-        if (auto* unit = dynamic_cast<FlotationUnitItem*>(item)) ids.insert(unit->unit().id);
+    if (m_operationLog) {
+        removeDockWidget(m_operationLog);
+        delete m_operationLog;
+        m_operationLog = nullptr;
     }
-    m_nextUnitId = 1;
-    while (ids.contains(QString::number(m_nextUnitId))) ++m_nextUnitId;
-}
 
-void MainWindow::refreshTerminalProducts() {
-    // Import emits topologyChanged so views can rebuild their snapshots, but
-    // the imported scenarios have just been recalculated and must be retained.
-    if (!m_loadingProject) m_document->invalidateAllCalculations();
-    m_terminalDock->setSnapshot(CanvasTopologyBuilder::build(
-        *static_cast<FlowsheetScene*>(m_scene)));
-    refreshProductNames();
-    syncCanvasSelectionToTable();
-}
-
-void MainWindow::refreshProductNames() {
-    for (auto* item : m_scene->items()) {
-        if (auto* product = dynamic_cast<ProductLineItem*>(item))
-        {
-            product->setTextSettings(m_document->annotationTextSettings());
-            product->setProductName(m_document->productName(product->streamId()));
-        } else if (auto* merge = dynamic_cast<MergeJunctionItem*>(item)) {
-            merge->setTextSettings(m_document->annotationTextSettings());
-            merge->setProductName(m_document->productName(merge->outputStreamId()));
-        }
+    if (m_annotationManager) {
+        if (m_scene) m_scene->removeEventFilter(m_annotationManager);
+        m_annotationManager->clearGraphicsItems();
+        delete m_annotationManager;
+        m_annotationManager = nullptr;
     }
-}
-
-void MainWindow::editAnnotationTextStyle() {
-    QDialog dialog(this);
-    dialog.setWindowTitle(tr("标注文字样式"));
-    auto* layout = new QVBoxLayout(&dialog);
-    auto* form = new QFormLayout;
-    const auto current = m_document->annotationTextSettings();
-
-    auto* pointSize = new QSpinBox(&dialog);
-    pointSize->setRange(7, 36);
-    pointSize->setSuffix(tr(" pt"));
-    pointSize->setValue(current.pointSize);
-    form->addRow(tr("字体大小"), pointSize);
-
-    auto* bold = new QCheckBox(tr("加粗"), &dialog);
-    bold->setChecked(current.bold);
-    form->addRow(tr("字重"), bold);
-
-    auto* followTheme = new QCheckBox(tr("跟随界面主题颜色"), &dialog);
-    followTheme->setChecked(!current.color.isValid());
-    form->addRow(tr("颜色模式"), followTheme);
-
-    QColor selectedColor = current.color.isValid()
-        ? current.color : qApp->palette().color(QPalette::Text);
-    auto* colorButton = new QPushButton(&dialog);
-    const auto refreshColorButton = [&] {
-        colorButton->setText(selectedColor.name(QColor::HexRgb));
-        colorButton->setStyleSheet(QString("background:%1; color:%2;")
-            .arg(selectedColor.name(), selectedColor.lightness() < 128 ? "white" : "black"));
-        colorButton->setEnabled(!followTheme->isChecked());
-    };
-    refreshColorButton();
-    connect(followTheme, &QCheckBox::toggled, &dialog,
-            [&](bool) { refreshColorButton(); });
-    connect(colorButton, &QPushButton::clicked, &dialog, [&] {
-        const QColor chosen = QColorDialog::getColor(
-            selectedColor, &dialog, tr("选择标注文字颜色"), QColorDialog::ShowAlphaChannel);
-        if (chosen.isValid()) { selectedColor = chosen; refreshColorButton(); }
-    });
-    form->addRow(tr("文字颜色"), colorButton);
-    layout->addLayout(form);
-
-    auto* buttons = new QDialogButtonBox(
-        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
-    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    layout->addWidget(buttons);
-    if (dialog.exec() != QDialog::Accepted) return;
-    m_document->setAnnotationTextSettings({
-        pointSize->value(), bold->isChecked(),
-        followTheme->isChecked() ? QColor() : selectedColor,
-        current.massUnit, current.customMassUnit});
-}
-
-void MainWindow::syncCanvasSelectionToTable() {
-    const auto selected = m_scene->selectedItems();
-    m_terminalDock->selectGraphicsItem(selected.isEmpty() ? nullptr : selected.first());
-    refreshSelectedResult();
-    refreshSelectionStatus();
-}
-
-void MainWindow::refreshSelectionStatus() {
-    FlotationUnitItem* selectedUnit = nullptr;
-    int selectedUnitCount = 0;
-    for (auto* item : m_scene->selectedItems()) {
-        if (auto* unit = dynamic_cast<FlotationUnitItem*>(item)) {
-            if (!selectedUnit) selectedUnit = unit;
-            ++selectedUnitCount;
-        }
+    if (m_scene) {
+        const QSignalBlocker blocker(m_scene);
+        m_scene->clear();
+        if (m_view) m_view->setScene(nullptr);
+        delete m_scene;
+        m_scene = nullptr;
     }
-    if (!selectedUnit) {
-        m_selectionStatusLabel->setText(tr("当前未选中浮选单元"));
-        return;
+    if (m_document) {
+        m_document->disconnect();
+        delete m_document;
+        m_document = nullptr;
     }
-    QString type;
-    switch (selectedUnit->unit().kind) {
-    case UnitKind::Flotation: type = tr("浮选单元"); break;
-    case UnitKind::BinarySplitter: type = tr("二分流器"); break;
-    case UnitKind::ThreeProductFlotation: type = tr("三产品浮选单元"); break;
-    }
-    QString text = tr("当前已选中：“%1 %2”").arg(type, selectedUnit->unit().id);
-    if (selectedUnitCount > 1)
-        text += tr("（共 %1 个单元）").arg(selectedUnitCount);
-    m_selectionStatusLabel->setText(text);
-}
-
-void MainWindow::calculateFlowsheet() {
-    auto result = FlowsheetCalculationService::calculate(
-        *static_cast<FlowsheetScene*>(m_scene), *m_document);
-    const bool complete = result.complete;
-    const int issueCount = result.issues.size();
-    m_document->setCalculationResult(std::move(result));
-    if (!complete) {
-        const auto* storedResult = m_document->calculationResult();
-        if (storedResult) {
-            for (const auto& issue : storedResult->issues) {
-                appendOperationLog(tr("%1：%2")
-                    .arg(issue.severity == topology::IssueSeverity::Error
-                             ? tr("错误") : tr("提示"),
-                         issue.message));
-            }
-        }
-    }
-    statusBar()->showMessage(complete ? tr("平衡计算成功")
-        : tr("计算未完成，共发现 %1 个问题").arg(issueCount), 5000);
-}
-
-void MainWindow::refreshSelectedResult() {
-    const auto selected = m_scene->selectedItems();
-    if (selected.isEmpty()) {
-        m_terminalDock->clearResultDetails();
-        return;
-    }
-    auto* item = selected.first();
-    if (auto* product = dynamic_cast<ProductLineItem*>(item)) {
-        m_terminalDock->showStreamResult(product->streamId());
-    } else if (auto* merge = dynamic_cast<MergeJunctionItem*>(item)) {
-        m_terminalDock->showStreamResult(merge->outputStreamId());
-    } else if (auto* feedJunction = dynamic_cast<FeedJunctionItem*>(item)) {
-        m_terminalDock->showStreamResult(feedJunction->outputStreamId());
-    } else if (auto* unit = dynamic_cast<FlotationUnitItem*>(item)) {
-        const auto snapshot = CanvasTopologyBuilder::build(*static_cast<FlowsheetScene*>(m_scene));
-        m_terminalDock->showUnitResult(unit->unit().id, snapshot.graph);
-    } else {
-        m_terminalDock->clearResultDetails();
-    }
-}
-
-void MainWindow::resizeSelectedUnits(double delta) {
-    auto* flowsheet = static_cast<FlowsheetScene*>(m_scene);
-    const auto result = CanvasActions::resizeSelection(*flowsheet, delta);
-    if (result.resizedConnections > 0 && result.resizedUnits > 0) {
-        statusBar()->showMessage(
-            tr("已调整 %1 个浮选单元宽度和 %2 条产品线长度")
-                .arg(result.resizedUnits).arg(result.resizedConnections),
-            3000);
-    } else if (result.resizedConnections > 0) {
-        statusBar()->showMessage(tr("已调整 %1 条产品线长度").arg(result.resizedConnections), 3000);
-    } else if (result.resizedUnits > 0) {
-        statusBar()->showMessage(
-            tr("已调整 %1 个浮选单元，当前横向长度：%2")
-                .arg(result.resizedUnits).arg(result.lastUnitWidth, 0, 'f', 0),
-            3000);
-    } else if (m_scene->selectedItems().isEmpty()) {
-        statusBar()->showMessage(tr("请先选中浮选单元或产品线"), 3000);
-    } else {
-        statusBar()->showMessage(tr("所选对象不支持此操作，或已达到允许的最小/最大长度"), 3000);
-    }
-}
-
-void MainWindow::disconnectSelectedLines() {
-    auto* flowsheet = static_cast<FlowsheetScene*>(m_scene);
-    const int disconnected = CanvasActions::disconnectSelection(*flowsheet);
-    statusBar()->showMessage(disconnected > 0
-        ? tr("已断开 %1 条浮选单元连接线").arg(disconnected)
-        : tr("请先选中已连接的产品线、产品汇流或入料回流汇合点"), 3000);
-}
-
-void MainWindow::applyTheme(bool dark, bool saveSetting) {
-    m_darkTheme = dark;
-    m_scene->setBackgroundBrush(ThemeService::applyApplicationPalette(dark));
-    if (m_themeAction) {
-        const QSignalBlocker blocker(m_themeAction);
-        m_themeAction->setChecked(dark);
-        m_themeAction->setText(dark ? tr("明亮主题") : tr("暗色主题"));
-    }
-    static_cast<FlowsheetScene*>(m_scene)->refreshAppearance();
-    if (m_terminalDock) m_terminalDock->refreshAppearance();
-    if (m_annotationManager) m_annotationManager->refreshAppearance();
-    if (saveSetting) ThemeService::saveDarkPreference(dark);
 }
 
 } // namespace afs

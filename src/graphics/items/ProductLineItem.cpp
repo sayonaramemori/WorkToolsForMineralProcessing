@@ -6,6 +6,7 @@
 #include "graphics/items/MergeJunctionItem.h"
 
 #include <QApplication>
+#include <QBrush>
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsSceneContextMenuEvent>
 #include <QGraphicsSimpleTextItem>
@@ -51,7 +52,7 @@ QPointF ProductLineItem::sourceAnchorScenePosition() const {
 
 QPainterPath ProductLineItem::shape() const {
     QPainterPathStroker stroker;
-    stroker.setWidth(FlotationGeometry::HitWidth);
+    stroker.setWidth(FlotationGeometry::RouteHitWidth);
     QPainterPath hit = stroker.createStroke(path());
     hit.addPath(path());
     return hit;
@@ -173,7 +174,11 @@ void ProductLineItem::refreshAppearance() {
                                       : palette.color(QPalette::Text);
     setPen(QPen(color, isSelected() ? 3.2 : FlotationGeometry::BodyLineWidth,
                 Qt::SolidLine, Qt::SquareCap, Qt::MiterJoin));
-    setBrush(color);
+    // Connected paths are open orthogonal polylines. When their two ends do
+    // not share an x-coordinate (for example a fixed-position storage pool),
+    // a solid brush makes QGraphicsPathItem close and fill that polyline as a
+    // large triangle. Only terminal/dragging paths contain a closed arrowhead.
+    setBrush(isConnected() ? Qt::NoBrush : QBrush(color));
     m_nameLabel->setBrush(m_textSettings.color.isValid() ? m_textSettings.color
                                                          : palette.color(QPalette::Text));
     update();
@@ -277,7 +282,8 @@ void ProductLineItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
     m_dragging = false;
     if (targetInput) {
         if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene()))
-            flowsheet->connectProduct(this, targetInput);
+            flowsheet->connectProduct(this, targetInput,
+                                      event->modifiers() & Qt::ControlModifier);
     } else if (targetProduct) {
         if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene()))
             flowsheet->mergeProducts(this, targetProduct);

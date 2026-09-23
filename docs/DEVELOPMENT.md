@@ -47,7 +47,7 @@
 
 - 流程守恒、实测值、分流比例及边界约束的方程组装只放在 `OpenCircuitCalculator`；不要把物流或浮选语义加入 `LinearSystemSolver`。
 - 通用加权约束最小二乘只放在 `WeightedLeastSquaresSolver`，不得依赖画布或文档类型。
-- 项目生命周期命令放在 `MainWindowProject.cpp`，导出命令放在 `MainWindowExport.cpp`；表格筛选及绘制委托放在 `TerminalProductViewSupport`，不要重新内嵌回 UI 装配文件。
+- 项目生命周期命令放在 `MainWindowProject.cpp`，画布编辑命令放在 `MainWindowCanvas.cpp`，计算、标注和主题等呈现命令放在 `MainWindowPresentation.cpp`，导出命令放在 `MainWindowExport.cpp`；表格筛选及绘制委托放在 `TerminalProductViewSupport`，不要重新内嵌回 UI 装配文件。
 - 项目解析先生成 `ProjectSerializationData`，画布重建统一调用 `ProjectSceneRestorer`；不要在 JSON 解析器中直接修改当前场景。
 - 项目字段兼容与校验归 `ProjectJsonReader`，格式写出归 `ProjectJsonWriter`；`ProjectSerializer` 不应重新积累具体 JSON 字段或连接重建逻辑。
 - 新的跨节点线性关系使用 `LinearBalanceConstraint` 表达，系数键必须是当前计算子图中的稳定物流 ID。
@@ -68,7 +68,7 @@
 
 结果指标框的 `Delete` 是会话级隐藏操作，状态只保存在 `AnnotationManager`，不能写回项目文档；`calculationChanged` 必须清除临时隐藏集合。药剂和自定义文字的 `Delete` 仍删除对应的 `AnnotationRecord`，新增键盘行为时要明确区分这两类生命周期。
 
-质量单位是项目级显示元数据，预设类型保存在 `AnnotationTextSettings::massUnit`，自定义文本保存在 `customMassUnit` 并限制为 16 个字符。它只能改变指标文本后缀，不能在格式化器、表格模型或求解器中换算数值；编辑其他标注样式时必须保留当前单位。
+质量单位和“显示产品名称”均是项目级显示元数据：预设单位保存在 `AnnotationTextSettings::massUnit`，自定义文本保存在 `customMassUnit` 并限制为 16 个字符，产品名称开关保存在 `showProductName`。它们只能改变指标卡文本，不能在格式化器、表格模型或求解器中换算或改变数值；编辑其他标注样式时必须保留这些显示设置。格式化器仅在产品名称非空时写入名称行，避免未命名的中间物流产生无意义标题。
 
 ## 多组分数据
 
@@ -125,13 +125,57 @@
 - 项目格式 v5 保存 `kind` 和 `leftSplitPercent`，读取器继续把 v1–v4 中缺少 `kind` 的单元解释为普通浮选单元；
 - 修改二分流器后运行 `topology_test` 和 `project_io_test`，覆盖比例反算、项目往返及旧格式兼容。
 
-## 三产品浮选单元
+## 三产品单元
 
-- 使用 `UnitKind::ThreeProductFlotation` 区分三产品单元，中间物流 ID 固定为 `<unit-id>:middle`；
+- `UnitKind::ThreeProductFlotation`、`ThreeProductScreening` 与 `ThreeProductDemediumScreen` 都使用三产品端口；中间物流 ID 固定为 `<unit-id>:middle`；
 - 计算拓扑必须使用独立的 `PortKind::MiddleProduct`，不得把第三产品表达为产品合流或额外节点；
 - 守恒、节点性能、右侧输入、标注、连接、回流和导出必须遍历实际产品集合，避免重新引入固定两个产品的假设；
 - 项目格式 v6 使用 `three-product-flotation` 保存类型；v1–v5 中不存在该类型，读取行为保持不变；
 - 修改第三输出后运行全量测试，至少覆盖三产品守恒、性能指标、中间产品连接及项目保存往返。
+
+## 磁选机
+
+- `UnitKind::MagneticSeparation`、`WeakMagneticSeparation` 和 `StrongMagneticSeparation` 都是两产品分选单元：沿用一入两出拓扑、稳定物流 ID（`<unit-id>:left/right`）和物料平衡方程，不能为此复制浮选求解器；
+- 弱磁选机使用筒式滚筒与马蹄磁铁，强磁选机使用立式环与对置磁极；左、右产品默认分别命名为“磁性产品”和“非磁性产品”，名称仍可在右侧表格中修改；
+- 项目格式 v13 分别使用 `magnetic-separation`、`weak-magnetic-separation` 和 `strong-magnetic-separation` 保存类型。新增流程单元类型时，同时更新两向序列化映射、关注对象名称与项目往返测试。
+
+## 贮池
+
+- `TailingsPool` 是终端汇：只允许一条入料、没有出料；其入料物流仍是终端产品，不能为贮池添加“入=0”的守恒方程；
+- `ConcentratePool` 和 `WaterPool` 是一入一出的缓冲池：使用稳定的右侧物流 ID `<unit-id>:right`，在干质量和各组分质量方程中均施加入料=出料；
+- 画布采用无上沿的开口池体与波浪液面，默认标注尾矿池、精矿池、回水池；双击贮池可设置波浪线上方的显示名称。该名称只影响图形显示，不改变产品物流、方程或默认端口。
+- 项目格式 v13 分别使用 `tailings-pool`、`concentrate-pool`、`water-pool`；v17 通过可选 `poolLabel` 保存自定义贮池名称。读取旧项目时缺失该字段应继续使用默认名称。
+- 所有单元形象图使用同一连接布局规则：普通产品或合流输出拖拽连接默认不得移动目标单元或其连通组件；仅在松开鼠标时持有 `Ctrl` 才把下游组件对齐到产品端点。该标志属于瞬时 UI 交互，不能保存到项目或影响拓扑；不得为贮池、磁选、筛分等任一单元类型添加位置例外。
+- 新建单元 ID 必须由 `MainWindow::takeNextUnitId()` 分配；加载、删除或撤销后以最大数值 ID 加一继续编号，并在分配时再次扫描画布防止陈旧计数器产生重复 ID。读取器必须拒绝重复 ID，不能静默重命名，因为连接与测量数据无法无歧义地指向其中一个单元。
+
+## 重选设备
+
+- `SpiralChute`、`ShakingTable`、`DenseMediumCyclone` 与 `SedimentationTank` 是普通两产品分选单元，沿用一入两出守恒方程、稳定的左/右产品物流 ID、回流和合流能力；不要为设备外观复制求解逻辑；
+- 螺旋溜槽以三级椭圆槽道绘制，默认产品为“螺旋精矿 / 螺旋尾矿”；重介质旋流器以圆筒—锥体及内部旋流线绘制，默认产品为“重产品 / 轻产品”；
+- 摇床以倾斜台面和横向床条绘制，默认产品为“摇床精矿 / 摇床尾矿”；
+- `DemediumScreen` 沿用筛分的一入两出守恒方程，默认产品为“脱介产品 / 稀介质”；图形在倾斜筛面上补充喷水和水滴，避免与普通筛分机混淆。
+- `SedimentationTank` 的默认产品为“溢流 / 底流”；以矩形澄清区、液面和漏斗底部绘制。它是分选单元而非贮池，因此参与常规一入两出物料守恒。
+- `ThreeProductDemediumScreen` 复用三产品守恒方程，默认产品为“脱介产品 / 浓介质 / 稀介质”；图形使用双层筛面与喷水标识。项目格式 v19 使用 `three-product-demedium-screen` 保存类型。
+- `MediaTank` 是一入一出的固定缓冲贮池，沿用 `PoolOutput` 和入料=出料约束；以圆筒桶体和液面绘制，并可像其他贮池一样双击编辑显示名称。
+- `MixingTank` 同样是一入一出的固定缓冲贮池，多个来料应先接入入料汇流节点；图形在圆筒桶体上增加电机、搅拌轴和叶轮。它不引入额外配料或反应方程。
+- 项目格式 v13 分别使用 `spiral-chute` 和 `dense-medium-cyclone` 保存类型；v18 增加 `demedium-screen` 和 `media-tank`，v20 增加 `mixing-tank`，v21 增加 `sedimentation-tank`，并须覆盖项目保存往返测试。
+
+## 筛分与分级
+
+- `Screening` 和 `Classification` 均为普通两产品分选单元：复用一入两出守恒方程、稳定的左/右产品物流 ID，以及现有回流和汇流能力；它们只增加设备形象与默认产品名称，不能新增求解器分支；
+- 筛分机绘制倾斜筛面和筛孔，默认产品为“筛上产品 / 筛下产品”；分级机绘制倾斜槽体和螺旋轴，默认产品为“溢流 / 沉砂”；
+- 项目格式 v14 分别使用 `screening` 和 `classification` 保存类型，新增类型时必须同步两向序列化、关注对象显示名、选中提示和项目往返测试。
+
+## 自定义文字颜色
+
+- `AnnotationRecord::noteColor` 仅适用于 `UserNote`；无效 `QColor` 表示跟随项目的全局标注文字颜色，有效颜色覆盖该单个文字图层；
+- 项目格式 v15 使用可选 `noteColor` 字段（`#AARRGGBB`）。读取旧项目时字段缺失应保持跟随全局颜色，不能把主题色写回记录。
+
+## 三产品筛分器
+
+- `ThreeProductScreening` 使用与三产品浮选单元相同的 `LeftProduct`、`MiddleProduct`、`RightProduct` 端口和 `<unit-id>:left/middle/right` 稳定物流 ID；三产品能力必须通过 `hasMiddleProduct(UnitKind)` 统一判断，禁止重新写死为 `ThreeProductFlotation`；
+- 该单元绘制双层倾斜筛网，默认名称为“筛上产品 / 筛中产品 / 筛下产品”，但求解器仍仅使用三产品守恒方程，不引入筛分专属计算逻辑；
+- 项目格式 v16 使用 `three-product-screening` 保存类型，并须覆盖三产品端口及保存往返。
 
 ### 产品端口扩展规则
 
@@ -144,7 +188,7 @@
 
 - 同一连通分量内的产品到入料连接视为回流，不能按开路连接自动移动目标单元；
 - 入料与回流的画布表现放在 `FeedJunctionItem`：正常入料可以是外部新鲜入料、`ProductLineItem` 或 `MergeJunctionItem`，附加来源使用产品与合流输出集合，拓扑中统一转换为支持两条及以上输入的 `MergeNode`；
-- 项目格式 v3 使用 `feedJunctions[].sources` 数组保存多输入端点；载入器必须继续接受 v1/v2 的单一 `sourceType/source` 字段；
+- 项目格式使用 `feedJunctions[].sources` 数组保存多输入端点，并以 `hasExternalFeed` 明确区分“外部新鲜入料 + 回流”和“纯多输入汇流”；载入器必须继续接受旧版单一 `sourceType/source` 字段及未保存该标记的历史文件；
 - 将回流接入已占用入料时，汇合点必须保存原正常上游端点；断开回流及项目重新载入后都必须恢复该连接；
 - 多输入汇流点的来源支路被单独选中时，`Ctrl+B` 必须只解除该来源；选择公共汇流线时才允许整体拆除；
 - 已占用入料图元虽然隐藏，其几何线段必须继续作为拖放热区；命中后临时显示高亮，并由 `closed_loop_test` 覆盖；

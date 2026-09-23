@@ -9,12 +9,20 @@
 #include "graphics/items/ProductLineItem.h"
 #include "services/ProjectSerializer.h"
 #include "services/ProjectUndoManager.h"
+#include "services/FlowGroupClipboard.h"
+#include "services/FlowsheetCalculationService.h"
 #include "topology/OpenCircuitCalculator.h"
 #include "topology/TopologyAlgorithms.h"
 #include "topology/TopologyValidator.h"
 
 #include <QApplication>
+#include <QCoreApplication>
+#include <QDebug>
+#include <QDir>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTemporaryDir>
 #include <cmath>
 
@@ -51,6 +59,9 @@ int main(int argc, char** argv) {
     sourceDocument.setExportStreamOrder({"10:right", "10:left", "10:feed"});
     sourceDocument.setAnnotationTextSettings(
         {14, true, QColor("#336699"), MassUnit::Custom, "dry short ton"});
+    auto annotationSettings = sourceDocument.annotationTextSettings();
+    annotationSettings.showProductName = true;
+    sourceDocument.setAnnotationTextSettings(annotationSettings);
     AnnotationRecord annotation;
     annotation.id = "result:10:left";
     annotation.ownerId = "10:left";
@@ -64,6 +75,7 @@ int main(int argc, char** argv) {
     note.notePointSize = 20;
     note.noteBold = true;
     note.noteBorderVisible = false;
+    note.noteColor = QColor("#a04050");
     sourceDocument.setAnnotationRecord(note);
     AnnotationRecord reagent{"reagent-1", AnnotationKind::Reagent, AnnotationStyle::PlainText,
                              AnnotationOwnerKind::Stream, "10:left", {}, false, true};
@@ -99,6 +111,55 @@ int main(int argc, char** argv) {
         || loadedDocument.measurement("10:left").dryMassStdDev != 2.5
         || loadedDocument.measurement("10:left").gradeStdDev(DefaultComponentId) != 0.08)
         return 49;
+
+    // Legacy projects can use numeric unit IDs, nested position coordinates
+    // and omit dimensions that were implicit in early canvas prototypes.
+    const QString legacyPath = directory.filePath("legacy-geometry.afs.json");
+    const QJsonObject legacyProject{{"format", "AutoFlotationSheet"}, {"version", 1},
+        {"units", QJsonArray{QJsonObject{{"id", 7},
+            {"position", QJsonObject{{"x", "120"}, {"y", "-40"}}}}}},
+        {"connections", QJsonArray{}}, {"productMerges", QJsonArray{}},
+        {"feedJunctions", QJsonArray{}}, {"measurements", QJsonArray{}},
+        {"annotations", QJsonArray{}}};
+    QFile legacyFile(legacyPath);
+    if (!legacyFile.open(QIODevice::WriteOnly)
+        || legacyFile.write(QJsonDocument(legacyProject).toJson()) < 0) return 68;
+    legacyFile.close();
+    FlowsheetScene legacyLoaded;
+    FlowsheetDocument legacyDocument;
+    if (!ProjectSerializer::load(legacyLoaded, legacyDocument, legacyPath, &error)) return 69;
+    FlotationUnitItem* legacyUnit = nullptr;
+    for (auto* item : legacyLoaded.items())
+        if (auto* unit = dynamic_cast<FlotationUnitItem*>(item); unit) legacyUnit = unit;
+    if (!legacyUnit || legacyUnit->unit().id != "7"
+        || legacyUnit->unit().position != QPointF(120, -40)
+        || legacyUnit->unit().width != 360.0 || legacyUnit->unit().bodyHeight != 150.0) return 70;
+
+    // Allows an explicitly supplied real-world project to be checked by the
+    // complete reader/restorer pipeline without making a developer-local path
+    // part of the normal test fixture.
+    const QString externalProject = qEnvironmentVariable("AFS_PROJECT_IO_EXTERNAL_PATH");
+    if (!externalProject.isEmpty()) {
+        FlowsheetScene externalScene;
+        FlowsheetDocument externalDocument;
+        if (!ProjectSerializer::load(externalScene, externalDocument, externalProject, &error)) {
+            qWarning().noquote() << error;
+            return 71;
+        }
+        if (externalScene.items().isEmpty()) return 72;
+        const QString externalRoundTrip = directory.filePath("external-roundtrip.afs.json");
+        if (!ProjectSerializer::save(externalScene, externalDocument, externalRoundTrip, &error)) {
+            qWarning().noquote() << error;
+            return 73;
+        }
+        FlowsheetScene roundTrippedScene;
+        FlowsheetDocument roundTrippedDocument;
+        if (!ProjectSerializer::load(
+                roundTrippedScene, roundTrippedDocument, externalRoundTrip, &error)) {
+            qWarning().noquote() << error;
+            return 74;
+        }
+    }
     const auto snapshot = CanvasTopologyBuilder::build(loaded);
     if (snapshot.graph.nodeIds().size() != 4
         || !topology::TopologyAlgorithms::sort(snapshot.graph).hasCycle) return 7;
@@ -131,9 +192,9 @@ int main(int argc, char** argv) {
         || std::abs(loadedUpper->unit().width - 420) > 0.001
         || std::abs(loadedUpper->unit().bodyHeight - 170) > 0.001) return 9;
     const auto measurement = loadedDocument.measurement("upper-unused");
-    if (!measurement.dryMass || !measurement.gradePercent
+    if (!measurement.dryMass || !measurement.grade(DefaultComponentId)
         || std::abs(*measurement.dryMass - 12.5) > 0.001
-        || std::abs(*measurement.gradePercent - 3.25) > 0.001) return 10;
+        || std::abs(*measurement.grade(DefaultComponentId) - 3.25) > 0.001) return 10;
     if (loadedDocument.components().size() != 2
         || loadedDocument.components()[0].name != "Cu"
         || loadedDocument.components()[1].name != "Zn"
@@ -147,7 +208,8 @@ int main(int argc, char** argv) {
         || loadedNote.text != "自定义文字\n第二行"
         || loadedNote.manualOffset != QPointF(310, 175)
         || loadedNote.noteFontFamily != "DejaVu Serif" || loadedNote.notePointSize != 20
-        || !loadedNote.noteBold || loadedNote.noteBorderVisible) return 28;
+        || !loadedNote.noteBold || loadedNote.noteBorderVisible
+        || loadedNote.noteColor != QColor("#a04050")) return 28;
     const auto loadedReagent = loadedDocument.annotationRecord("reagent-1");
     if (loadedReagent.text != "捕收剂 A" || loadedReagent.dosage != "120"
         || loadedReagent.dosageUnit != "g/t" || !loadedReagent.manuallyPlaced
@@ -167,7 +229,8 @@ int main(int argc, char** argv) {
     if (loadedTextStyle.pointSize != 14 || !loadedTextStyle.bold
         || loadedTextStyle.color != QColor("#336699")
         || loadedTextStyle.massUnit != MassUnit::Custom
-        || loadedTextStyle.customMassUnit != "dry short ton") return 22;
+        || loadedTextStyle.customMassUnit != "dry short ton"
+        || !loadedTextStyle.showProductName) return 22;
 
     const int itemCount = loaded.items().size();
     const QString invalidPath = directory.filePath("invalid.afs.json");
@@ -304,6 +367,141 @@ int main(int argc, char** argv) {
     if (splitterSnapshot.requiredMeasurements.size() != 1
         || splitterSnapshot.requiredMeasurements.front().streamId != "splitter:left") return 42;
 
+    FlowsheetScene magneticSource;
+    FlotationUnit magneticUnit{"magnetic", {180, 120}};
+    magneticUnit.kind = UnitKind::MagneticSeparation;
+    magneticSource.addItem(new FlotationUnitItem(magneticUnit));
+    FlowsheetDocument magneticDocument;
+    const QString magneticPath = directory.filePath("magnetic.afs.json");
+    if (!ProjectSerializer::save(magneticSource, magneticDocument, magneticPath, &error)) return 50;
+    FlowsheetScene magneticLoaded;
+    FlowsheetDocument magneticLoadedDocument;
+    if (!ProjectSerializer::load(magneticLoaded, magneticLoadedDocument, magneticPath, &error)) return 51;
+    FlotationUnitItem* loadedMagnetic = nullptr;
+    for (auto* item : magneticLoaded.items())
+        if (auto* unit = dynamic_cast<FlotationUnitItem*>(item);
+            unit && unit->unit().id == "magnetic") loadedMagnetic = unit;
+    const auto magneticSnapshot = CanvasTopologyBuilder::build(magneticLoaded);
+    if (!loadedMagnetic || loadedMagnetic->unit().kind != UnitKind::MagneticSeparation
+        || loadedMagnetic->products().size() != 2
+        || magneticSnapshot.interestObjects.isEmpty()
+        || !magneticSnapshot.interestObjects.front().displayName.contains("磁选机")) return 52;
+
+    FlowsheetScene strongMagneticSource;
+    FlotationUnit strongMagneticUnit{"strong-magnetic", {220, 150}};
+    strongMagneticUnit.kind = UnitKind::StrongMagneticSeparation;
+    strongMagneticSource.addItem(new FlotationUnitItem(strongMagneticUnit));
+    const QString strongMagneticPath = directory.filePath("strong-magnetic.afs.json");
+    if (!ProjectSerializer::save(strongMagneticSource, magneticDocument,
+                                 strongMagneticPath, &error)) return 53;
+    FlowsheetScene strongMagneticLoaded;
+    FlowsheetDocument strongMagneticLoadedDocument;
+    if (!ProjectSerializer::load(strongMagneticLoaded, strongMagneticLoadedDocument,
+                                 strongMagneticPath, &error)) return 54;
+    const auto strongMagneticSnapshot = CanvasTopologyBuilder::build(strongMagneticLoaded);
+    FlotationUnitItem* loadedStrongMagnetic = nullptr;
+    for (auto* item : strongMagneticLoaded.items())
+        if (auto* unit = dynamic_cast<FlotationUnitItem*>(item);
+            unit && unit->unit().id == "strong-magnetic") loadedStrongMagnetic = unit;
+    if (!loadedStrongMagnetic
+        || loadedStrongMagnetic->unit().kind != UnitKind::StrongMagneticSeparation
+        || strongMagneticSnapshot.interestObjects.isEmpty()
+        || !strongMagneticSnapshot.interestObjects.front().displayName.contains("强磁选机")) return 55;
+
+    FlowsheetScene poolSource;
+    FlotationUnit tailingsPool{"tailings-pool", {0, 0}};
+    tailingsPool.kind = UnitKind::TailingsPool;
+    tailingsPool.poolLabel = QStringLiteral("尾矿浓缩池");
+    FlotationUnit concentratePool{"concentrate-pool", {360, 0}};
+    concentratePool.kind = UnitKind::ConcentratePool;
+    concentratePool.poolLabel = QStringLiteral("精矿缓冲池");
+    poolSource.addItem(new FlotationUnitItem(tailingsPool));
+    poolSource.addItem(new FlotationUnitItem(concentratePool));
+    const QString poolPath = directory.filePath("pools.afs.json");
+    if (!ProjectSerializer::save(poolSource, magneticDocument, poolPath, &error)) return 56;
+    FlowsheetScene poolLoaded;
+    FlowsheetDocument poolLoadedDocument;
+    if (!ProjectSerializer::load(poolLoaded, poolLoadedDocument, poolPath, &error)) return 57;
+    FlotationUnitItem* loadedTailingsPool = nullptr;
+    FlotationUnitItem* loadedConcentratePool = nullptr;
+    for (auto* item : poolLoaded.items()) {
+        if (auto* unit = dynamic_cast<FlotationUnitItem*>(item); unit) {
+            if (unit->unit().id == "tailings-pool") loadedTailingsPool = unit;
+            if (unit->unit().id == "concentrate-pool") loadedConcentratePool = unit;
+        }
+    }
+    if (!loadedTailingsPool || !loadedConcentratePool
+        || loadedTailingsPool->unit().kind != UnitKind::TailingsPool
+        || loadedTailingsPool->unit().poolLabel != QStringLiteral("尾矿浓缩池")
+        || loadedTailingsPool->products().size() != 0
+        || loadedConcentratePool->unit().kind != UnitKind::ConcentratePool
+        || loadedConcentratePool->unit().poolLabel != QStringLiteral("精矿缓冲池")
+        || loadedConcentratePool->products().size() != 1
+        || loadedConcentratePool->products().front()->side() != ProductSide::Right) return 58;
+
+    FlowsheetScene gravitySource;
+    FlotationUnit spiral{"spiral", {0, 0}};
+    spiral.kind = UnitKind::SpiralChute;
+    FlotationUnit shakingTable{"shaking-table", {180, 0}};
+    shakingTable.kind = UnitKind::ShakingTable;
+    FlotationUnit cyclone{"cyclone", {360, 0}};
+    cyclone.kind = UnitKind::DenseMediumCyclone;
+    FlotationUnit sedimentationTank{"sedimentation-tank", {540, 0}};
+    sedimentationTank.kind = UnitKind::SedimentationTank;
+    FlotationUnit screening{"screening", {720, 0}};
+    screening.kind = UnitKind::Screening;
+    FlotationUnit classifier{"classifier", {1080, 0}};
+    classifier.kind = UnitKind::Classification;
+    FlotationUnit demedium{"demedium", {1440, 0}};
+    demedium.kind = UnitKind::DemediumScreen;
+    FlotationUnit mediaTank{"media-tank", {1800, 0}};
+    mediaTank.kind = UnitKind::MediaTank;
+    FlotationUnit mixingTank{"mixing-tank", {2160, 0}};
+    mixingTank.kind = UnitKind::MixingTank;
+    gravitySource.addItem(new FlotationUnitItem(spiral));
+    gravitySource.addItem(new FlotationUnitItem(shakingTable));
+    gravitySource.addItem(new FlotationUnitItem(cyclone));
+    gravitySource.addItem(new FlotationUnitItem(sedimentationTank));
+    gravitySource.addItem(new FlotationUnitItem(screening));
+    gravitySource.addItem(new FlotationUnitItem(classifier));
+    gravitySource.addItem(new FlotationUnitItem(demedium));
+    gravitySource.addItem(new FlotationUnitItem(mediaTank));
+    gravitySource.addItem(new FlotationUnitItem(mixingTank));
+    const QString gravityPath = directory.filePath("gravity.afs.json");
+    if (!ProjectSerializer::save(gravitySource, magneticDocument, gravityPath, &error)) return 59;
+    FlowsheetScene gravityLoaded;
+    FlowsheetDocument gravityLoadedDocument;
+    if (!ProjectSerializer::load(gravityLoaded, gravityLoadedDocument, gravityPath, &error)) return 60;
+    bool loadedSpiral = false;
+    bool loadedShakingTable = false;
+    bool loadedCyclone = false;
+    bool loadedSedimentationTank = false;
+    bool loadedScreening = false;
+    bool loadedClassification = false;
+    bool loadedDemedium = false;
+    FlotationUnitItem* loadedMediaTank = nullptr;
+    FlotationUnitItem* loadedMixingTank = nullptr;
+    for (auto* item : gravityLoaded.items()) {
+        if (auto* unit = dynamic_cast<FlotationUnitItem*>(item); unit) {
+            loadedSpiral = loadedSpiral || unit->unit().kind == UnitKind::SpiralChute;
+            loadedShakingTable = loadedShakingTable || unit->unit().kind == UnitKind::ShakingTable;
+            loadedCyclone = loadedCyclone || unit->unit().kind == UnitKind::DenseMediumCyclone;
+            loadedSedimentationTank = loadedSedimentationTank
+                || unit->unit().kind == UnitKind::SedimentationTank;
+            loadedScreening = loadedScreening || unit->unit().kind == UnitKind::Screening;
+            loadedClassification = loadedClassification
+                || unit->unit().kind == UnitKind::Classification;
+            loadedDemedium = loadedDemedium || unit->unit().kind == UnitKind::DemediumScreen;
+            if (unit->unit().kind == UnitKind::MediaTank) loadedMediaTank = unit;
+            if (unit->unit().kind == UnitKind::MixingTank) loadedMixingTank = unit;
+        }
+    }
+    if (!loadedSpiral || !loadedShakingTable || !loadedCyclone || !loadedSedimentationTank || !loadedScreening || !loadedClassification
+        || !loadedDemedium || !loadedMediaTank || loadedMediaTank->products().size() != 1
+        || loadedMediaTank->products().front()->side() != ProductSide::Right
+        || !loadedMixingTank || loadedMixingTank->products().size() != 1
+        || loadedMixingTank->products().front()->side() != ProductSide::Right) return 61;
+
     FlowsheetScene threeProductSource;
     FlotationUnit threeProductUnit{"three", {240, 160}};
     threeProductUnit.kind = UnitKind::ThreeProductFlotation;
@@ -329,6 +527,52 @@ int main(int argc, char** argv) {
             "three", topology::PortKind::MiddleProduct).size() != 1
         || threeProductSnapshot.requiredMeasurements.size() != 3) return 46;
 
+    FlowsheetScene threeScreenSource;
+    FlotationUnit threeScreenUnit{"three-screen", {240, 160}};
+    threeScreenUnit.kind = UnitKind::ThreeProductScreening;
+    threeScreenSource.addItem(new FlotationUnitItem(threeScreenUnit));
+    const QString threeScreenPath = directory.filePath("three-product-screen.afs.json");
+    if (!ProjectSerializer::save(
+            threeScreenSource, threeProductDocument, threeScreenPath, &error)) return 62;
+    FlowsheetScene threeScreenLoaded;
+    FlowsheetDocument threeScreenLoadedDocument;
+    if (!ProjectSerializer::load(threeScreenLoaded, threeScreenLoadedDocument,
+                                 threeScreenPath, &error)) return 63;
+    FlotationUnitItem* loadedThreeScreen = nullptr;
+    for (auto* item : threeScreenLoaded.items())
+        if (auto* unit = dynamic_cast<FlotationUnitItem*>(item);
+            unit && unit->unit().id == "three-screen") loadedThreeScreen = unit;
+    const auto threeScreenSnapshot = CanvasTopologyBuilder::build(threeScreenLoaded);
+    if (!loadedThreeScreen
+        || loadedThreeScreen->unit().kind != UnitKind::ThreeProductScreening
+        || loadedThreeScreen->products().size() != 3
+        || threeScreenSnapshot.graph.streamsFrom(
+               "three-screen", topology::PortKind::MiddleProduct).size() != 1
+        || threeScreenSnapshot.requiredMeasurements.size() != 3) return 64;
+
+    FlowsheetScene threeDemediumSource;
+    FlotationUnit threeDemediumUnit{"three-demedium", {240, 160}};
+    threeDemediumUnit.kind = UnitKind::ThreeProductDemediumScreen;
+    threeDemediumSource.addItem(new FlotationUnitItem(threeDemediumUnit));
+    const QString threeDemediumPath = directory.filePath("three-product-demedium.afs.json");
+    if (!ProjectSerializer::save(
+            threeDemediumSource, threeProductDocument, threeDemediumPath, &error)) return 65;
+    FlowsheetScene threeDemediumLoaded;
+    FlowsheetDocument threeDemediumLoadedDocument;
+    if (!ProjectSerializer::load(threeDemediumLoaded, threeDemediumLoadedDocument,
+                                 threeDemediumPath, &error)) return 66;
+    FlotationUnitItem* loadedThreeDemedium = nullptr;
+    for (auto* item : threeDemediumLoaded.items())
+        if (auto* unit = dynamic_cast<FlotationUnitItem*>(item);
+            unit && unit->unit().id == "three-demedium") loadedThreeDemedium = unit;
+    const auto threeDemediumSnapshot = CanvasTopologyBuilder::build(threeDemediumLoaded);
+    if (!loadedThreeDemedium
+        || loadedThreeDemedium->unit().kind != UnitKind::ThreeProductDemediumScreen
+        || loadedThreeDemedium->products().size() != 3
+        || threeDemediumSnapshot.graph.streamsFrom(
+               "three-demedium", topology::PortKind::MiddleProduct).size() != 1
+        || threeDemediumSnapshot.requiredMeasurements.size() != 3) return 67;
+
     FlowsheetScene undoScene;
     FlowsheetDocument undoDocument;
     undoScene.addItem(new FlotationUnitItem({"undo-a", {0, 0}}));
@@ -349,5 +593,73 @@ int main(int argc, char** argv) {
     if (unitCount() != 2
         || undoDocument.measurement("undo-a:left").dryMass != std::optional<double>(25.0))
         return 48;
+
+    // Manual merge corridors use scene coordinates. A copied group must offset
+    // them with its cloned units, and must retain that relationship when the
+    // whole clone is subsequently dragged.
+    FlowsheetScene clipboardScene;
+    auto* copyA = new FlotationUnitItem({"copy-a", {0, 0}});
+    auto* copyB = new FlotationUnitItem({"copy-b", {300, 140}});
+    auto* copyC = new FlotationUnitItem({"copy-c", {650, 340}});
+    clipboardScene.addItem(copyA);
+    clipboardScene.addItem(copyB);
+    clipboardScene.addItem(copyC);
+    auto* copyMerge = clipboardScene.mergeProducts(
+        copyA->products().front(), copyB->products().front(), "copy-merge");
+    if (!copyMerge || !clipboardScene.connectMergeDirect(copyMerge, copyC->inputLine())) return 75;
+    copyMerge->setManualMergeY(480.0);
+    copyA->setSelected(true); copyB->setSelected(true); copyC->setSelected(true);
+    FlowsheetDocument clipboardDocument;
+    FlowGroupClipboard clipboard;
+    if (clipboard.copy(clipboardScene, clipboardDocument).merges != 1) return 76;
+    int cloneNumber = 0;
+    if (clipboard.paste(clipboardScene, clipboardDocument,
+                        [&cloneNumber] { return QString("clone-%1").arg(++cloneNumber); }).merges != 1)
+        return 77;
+    FlotationUnitItem* cloneA = nullptr;
+    FlotationUnitItem* cloneB = nullptr;
+    FlotationUnitItem* cloneC = nullptr;
+    for (auto* item : clipboardScene.items()) {
+        auto* unit = dynamic_cast<FlotationUnitItem*>(item);
+        if (!unit) continue;
+        if (unit->unit().id == "clone-1") cloneA = unit;
+        else if (unit->unit().id == "clone-2") cloneB = unit;
+        else if (unit->unit().id == "clone-3") cloneC = unit;
+    }
+    if (!cloneA || !cloneB || !cloneC) return 78;
+    auto* cloneMerge = cloneA->products().front()->mergeJunction();
+    if (!cloneMerge || !cloneMerge->manualMergeY()
+        || std::abs(*cloneMerge->manualMergeY() - 520.0) > 0.001) return 79;
+    const QPointF dragDelta(70.0, -90.0);
+    cloneA->setPos(cloneA->pos() + dragDelta);
+    cloneB->setPos(cloneB->pos() + dragDelta);
+    cloneC->setPos(cloneC->pos() + dragDelta);
+    QCoreApplication::processEvents();
+    if (!cloneMerge->manualMergeY()
+        || std::abs(*cloneMerge->manualMergeY() - 430.0) > 0.001) return 80;
+
+    FlowsheetScene exampleScene;
+    FlowsheetDocument exampleDocument;
+    QDir exampleRoot(QCoreApplication::applicationDirPath());
+    exampleRoot.cdUp();
+    exampleRoot.cdUp();
+    if (!ProjectSerializer::load(exampleScene, exampleDocument,
+                                 exampleRoot.filePath(
+                                     QStringLiteral("example/DataBalanceJSOPENLOOP.repaired.afs.json")),
+                                 &error)) {
+        qCritical() << "example load failed:" << error;
+        return 81;
+    }
+    const auto exampleSnapshot = CanvasTopologyBuilder::build(exampleScene);
+    const auto exampleFeeds = exampleSnapshot.graph.externalFeedStreams();
+    if (exampleFeeds.size() != 1 || exampleFeeds.front() != QStringLiteral("12:feed")) return 82;
+    const auto exampleResult = FlowsheetCalculationService::calculate(exampleSnapshot, exampleDocument);
+    if (!exampleResult.values.contains(QStringLiteral("12:feed"))) return 84;
+    // The example intentionally has some unmeasured terminal streams, so its
+    // feed is not expected to be fully solved.  It must nevertheless have no
+    // phantom fresh-feed boundaries at its source-only multi-input junctions.
+    for (const auto& issue : exampleResult.issues)
+        if (issue.code == topology::IssueCode::Underdetermined
+            && issue.objectId.contains(QStringLiteral(":external-feed"))) return 83;
     return 0;
 }

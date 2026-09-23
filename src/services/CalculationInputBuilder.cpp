@@ -10,10 +10,11 @@ namespace {
 std::optional<topology::LinearBalanceConstraint> globalBoundaryConstraint(
     const CanvasTopologySnapshot& snapshot) {
     const auto feedIds = snapshot.graph.externalFeedStreams();
-    if (feedIds.size() != 1) return std::nullopt;
+    if (feedIds.isEmpty()) return std::nullopt;
     topology::LinearBalanceConstraint constraint;
     constraint.id = QStringLiteral("global-boundary");
-    constraint.coefficients.insert(feedIds.front(), 1.0);
+    for (const auto& streamId : feedIds)
+        constraint.coefficients.insert(streamId, 1.0);
     const auto terminalIds = snapshot.graph.terminalProductStreams();
     if (terminalIds.isEmpty()) return std::nullopt;
     for (const auto& streamId : terminalIds)

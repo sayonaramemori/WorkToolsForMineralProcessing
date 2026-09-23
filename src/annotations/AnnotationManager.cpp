@@ -31,6 +31,8 @@ AnnotationManager::AnnotationManager(FlowsheetScene& scene, FlowsheetDocument& d
     connect(&m_scene, &FlowsheetScene::geometryChanged, this, &AnnotationManager::refreshPositions);
     connect(&m_document, &FlowsheetDocument::annotationTextSettingsChanged,
             this, &AnnotationManager::refreshTextSettings);
+    connect(&m_document, &FlowsheetDocument::productNameChanged,
+            this, [this] { synchronize(); });
     connect(&m_document, &FlowsheetDocument::currentScenarioChanged, this, [this] {
         synchronizeReagents(); synchronize();
     });
@@ -264,8 +266,7 @@ bool AnnotationManager::anchorForStream(const QString& streamId, QPointF& anchor
 void AnnotationManager::synchronize() {
     synchronizeReagents();
     synchronizeNotes();
-    m_settings.massUnit = m_document.annotationTextSettings().massUnit;
-    m_settings.customMassUnit = m_document.annotationTextSettings().customMassUnit;
+    synchronizeDisplaySettings();
     const auto* result = m_document.calculationResult();
     if (!result || result->values.isEmpty()) {
         for (auto* item : m_items) item->setVisible(false);
@@ -294,7 +295,7 @@ void AnnotationManager::synchronize() {
                 metric == componentResult->relativeToExternalFeed.cend() ? nullptr : &metric.value()});
         }
         const QString text = AnnotationContentFormatter::formatStreamResult(
-            it.value(), overall, m_settings, componentValues);
+            it.value(), overall, m_settings, componentValues, m_document.productName(it.key()));
         if (!annotation) {
             auto record = m_document.annotationRecord(annotationId);
             if (record.id.isEmpty()) {
@@ -318,6 +319,19 @@ void AnnotationManager::synchronize() {
     }
     for (auto it = m_items.begin(); it != m_items.end(); ++it)
         if (!activeIds.contains(it.key())) it.value()->setVisible(false);
+}
+
+void AnnotationManager::synchronizeDisplaySettings() {
+    const auto& persisted = m_document.annotationTextSettings();
+    m_settings.massUnit = persisted.massUnit;
+    m_settings.customMassUnit = persisted.customMassUnit;
+    m_settings.showDryMass = persisted.showDryMass;
+    m_settings.showGrade = persisted.showGrade;
+    m_settings.showOverallYield = persisted.showOverallYield;
+    m_settings.showOverallRecovery = persisted.showOverallRecovery;
+    m_settings.showProductName = persisted.showProductName;
+    m_settings.labelMode = persisted.metricLabelMode;
+    m_visible = persisted.resultAnnotationsVisible;
 }
 
 void AnnotationManager::synchronizeNotes() {
@@ -437,26 +451,34 @@ void AnnotationManager::clearGraphicsItems() {
 }
 
 void AnnotationManager::setAnnotationsVisible(bool visible) {
-    m_visible = visible;
-    for (auto* item : m_items) item->setVisible(visible && m_settings.anyVisible() && item->record().visible
-        && m_document.calculationResult()
-        && m_document.calculationResult()->values.contains(item->record().ownerId));
+    auto persisted = m_document.annotationTextSettings();
+    persisted.resultAnnotationsVisible = visible;
+    m_document.setAnnotationTextSettings(persisted);
 }
 
 void AnnotationManager::setMetricVisible(ResultMetric metric, bool visible) {
+    auto persisted = m_document.annotationTextSettings();
     switch (metric) {
-    case ResultMetric::DryMass: m_settings.showDryMass = visible; break;
-    case ResultMetric::Grade: m_settings.showGrade = visible; break;
-    case ResultMetric::OverallYield: m_settings.showOverallYield = visible; break;
-    case ResultMetric::OverallRecovery: m_settings.showOverallRecovery = visible; break;
+    case ResultMetric::DryMass: persisted.showDryMass = visible; break;
+    case ResultMetric::Grade: persisted.showGrade = visible; break;
+    case ResultMetric::OverallYield: persisted.showOverallYield = visible; break;
+    case ResultMetric::OverallRecovery: persisted.showOverallRecovery = visible; break;
     }
-    synchronize();
+    m_document.setAnnotationTextSettings(persisted);
+}
+
+void AnnotationManager::setProductNamesVisible(bool visible) {
+    auto persisted = m_document.annotationTextSettings();
+    if (persisted.showProductName == visible) return;
+    persisted.showProductName = visible;
+    m_document.setAnnotationTextSettings(persisted);
 }
 
 void AnnotationManager::setMetricLabelMode(MetricLabelMode mode) {
-    if (m_settings.labelMode == mode) return;
-    m_settings.labelMode = mode;
-    synchronize();
+    auto persisted = m_document.annotationTextSettings();
+    if (persisted.metricLabelMode == mode) return;
+    persisted.metricLabelMode = mode;
+    m_document.setAnnotationTextSettings(persisted);
 }
 
 void AnnotationManager::setMassUnit(MassUnit unit) {

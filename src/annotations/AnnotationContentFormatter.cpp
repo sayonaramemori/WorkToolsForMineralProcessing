@@ -7,8 +7,10 @@ namespace afs {
 QString AnnotationContentFormatter::formatStreamResult(
     const topology::StreamValue& value, const topology::ProductMetrics* overall,
     const ResultAnnotationSettings& settings,
-    const QVector<ComponentDisplayValue>& components) {
+    const QVector<ComponentDisplayValue>& components, const QString& productName) {
     QStringList lines;
+    if (settings.showProductName && !productName.simplified().isEmpty())
+        lines.append(QStringLiteral("产品  %1").arg(productName.simplified()));
     const int decimals = settings.decimalPlaces;
     const bool symbols = settings.labelMode == MetricLabelMode::Symbols;
     const QString massLabel = symbols ? QStringLiteral("m") : QStringLiteral("质量");

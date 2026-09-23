@@ -5,6 +5,7 @@
 #include <QMenu>
 #include <QInputDialog>
 #include <QLineEdit>
+#include <QSignalBlocker>
 
 namespace afs {
 
@@ -19,28 +20,33 @@ ResultMetricMenu::ResultMetricMenu(QWidget* parent) : QToolButton(parent) {
         action->setChecked(checked);
         connect(action, &QAction::toggled, this,
                 [this, metric](bool visible) { emit metricVisibilityChanged(metric, visible); });
+        return action;
     };
-    addMetric(tr("干质量"), ResultMetric::DryMass, true);
-    addMetric(tr("品位"), ResultMetric::Grade, true);
+    m_dryMassAction = addMetric(tr("干质量"), ResultMetric::DryMass, true);
+    m_gradeAction = addMetric(tr("品位"), ResultMetric::Grade, true);
+    m_productNameAction = popup->addAction(tr("显示产品名称"));
+    m_productNameAction->setCheckable(true);
+    connect(m_productNameAction, &QAction::toggled, this,
+            [this](bool visible) { emit productNameVisibilityChanged(visible); });
     popup->addSeparator();
-    addMetric(tr("全流程产率"), ResultMetric::OverallYield, false);
-    addMetric(tr("全流程回收率"), ResultMetric::OverallRecovery, false);
+    m_yieldAction = addMetric(tr("全流程产率"), ResultMetric::OverallYield, false);
+    m_recoveryAction = addMetric(tr("全流程回收率"), ResultMetric::OverallRecovery, false);
     popup->addSeparator();
     auto* labelsMenu = popup->addMenu(tr("指标标签"));
     labelsMenu->setToolTipsVisible(true);
     auto* labelGroup = new QActionGroup(this);
     labelGroup->setExclusive(true);
-    auto* chinese = labelsMenu->addAction(tr("中文名称"));
-    chinese->setCheckable(true);
-    chinese->setChecked(true);
-    labelGroup->addAction(chinese);
-    auto* symbols = labelsMenu->addAction(tr("符号（m、β、γ、ε）"));
-    symbols->setCheckable(true);
-    symbols->setToolTip(tr("m：干质量，β：品位，γ：产率，ε：回收率"));
-    labelGroup->addAction(symbols);
-    connect(chinese, &QAction::triggered, this,
+    m_chineseLabelAction = labelsMenu->addAction(tr("中文名称"));
+    m_chineseLabelAction->setCheckable(true);
+    m_chineseLabelAction->setChecked(true);
+    labelGroup->addAction(m_chineseLabelAction);
+    m_symbolLabelAction = labelsMenu->addAction(tr("符号（m、β、γ、ε）"));
+    m_symbolLabelAction->setCheckable(true);
+    m_symbolLabelAction->setToolTip(tr("m：干质量，β：品位，γ：产率，ε：回收率"));
+    labelGroup->addAction(m_symbolLabelAction);
+    connect(m_chineseLabelAction, &QAction::triggered, this,
             [this] { emit metricLabelModeChanged(MetricLabelMode::Chinese); });
-    connect(symbols, &QAction::triggered, this,
+    connect(m_symbolLabelAction, &QAction::triggered, this,
             [this] { emit metricLabelModeChanged(MetricLabelMode::Symbols); });
     popup->addSeparator();
     auto* unitMenu = popup->addMenu(tr("质量单位"));
@@ -76,6 +82,26 @@ ResultMetricMenu::ResultMetricMenu(QWidget* parent) : QToolButton(parent) {
         }
     });
     setMenu(popup);
+}
+
+void ResultMetricMenu::setSettings(const AnnotationTextSettings& settings) {
+    // Project loading and the annotation-style dialog both update the document.
+    // Reflect that state without sending UI-originated changes back to it.
+    const auto setCheckedSilently = [](QAction* action, bool checked) {
+        if (!action) return;
+        const QSignalBlocker blocker(action);
+        action->setChecked(checked);
+    };
+    setCheckedSilently(m_dryMassAction, settings.showDryMass);
+    setCheckedSilently(m_gradeAction, settings.showGrade);
+    setCheckedSilently(m_productNameAction, settings.showProductName);
+    setCheckedSilently(m_yieldAction, settings.showOverallYield);
+    setCheckedSilently(m_recoveryAction, settings.showOverallRecovery);
+    setCheckedSilently(m_chineseLabelAction,
+                       settings.metricLabelMode == MetricLabelMode::Chinese);
+    setCheckedSilently(m_symbolLabelAction,
+                       settings.metricLabelMode == MetricLabelMode::Symbols);
+    setMassUnit(settings.massUnit, settings.customMassUnit);
 }
 
 void ResultMetricMenu::setMassUnit(MassUnit unit, const QString& customUnit) {

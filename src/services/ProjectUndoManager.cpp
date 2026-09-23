@@ -91,6 +91,13 @@ void ProjectUndoManager::markClean() {
     m_stack->setClean();
 }
 
+void ProjectUndoManager::shutdown() {
+    m_timer->stop();
+    m_pendingDescription.clear();
+    m_restoring = true;
+    m_currentSnapshot.clear();
+}
+
 bool ProjectUndoManager::isClean() const { return m_stack->isClean(); }
 
 bool ProjectUndoManager::restore(const QByteArray& snapshot) {

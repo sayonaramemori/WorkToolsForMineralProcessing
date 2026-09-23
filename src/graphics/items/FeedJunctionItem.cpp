@@ -117,6 +117,13 @@ bool FeedJunctionItem::selectSourceStream(const QString& streamId) {
 void FeedJunctionItem::clearProcessSource() {
     m_processProduct = nullptr;
     m_processMerge = nullptr;
+    m_hasExternalFeed = true;
+    updatePath();
+}
+
+void FeedJunctionItem::setExternalFeed(bool enabled) {
+    if (m_hasExternalFeed == enabled) return;
+    m_hasExternalFeed = enabled;
     updatePath();
 }
 
@@ -173,9 +180,19 @@ void FeedJunctionItem::resetManualRoutes() {
     updatePath();
 }
 
+void FeedJunctionItem::translateManualRoutes(const QPointF& delta) {
+    if (delta.isNull()) return;
+    if (!qFuzzyIsNull(delta.x()))
+        for (auto it = m_manualRouteXs.begin(); it != m_manualRouteXs.end(); ++it)
+            it.value() += delta.x();
+    if (!qFuzzyIsNull(delta.y()))
+        for (auto it = m_manualRouteYs.begin(); it != m_manualRouteYs.end(); ++it)
+            it.value() += delta.y();
+}
+
 QPainterPath FeedJunctionItem::shape() const {
     QPainterPathStroker stroker;
-    stroker.setWidth(FlotationGeometry::HitWidth);
+    stroker.setWidth(FlotationGeometry::RouteHitWidth);
     QPainterPath hit = stroker.createStroke(m_linePath);
     hit.addEllipse(m_junctionPosition, kJunctionRadius + 2.0, kJunctionRadius + 2.0);
     return hit;
@@ -220,13 +237,19 @@ void FeedJunctionItem::updatePath() {
     if (hasExternalFeed()) {
         m_processAnnotationAnchor = QPointF();
         m_commonPath.moveTo(freshFeedStart);
-    } else {
+    } else if (hasProcessSource()) {
         const QPointF processStart = processSourceAnchor();
         m_processAnnotationAnchor = QPointF(
             processStart.x(), (processStart.y() + m_junctionPosition.y()) / 2.0);
         m_commonPath.moveTo(processStart);
         m_commonPath.lineTo(processStart.x(), m_junctionPosition.y());
         m_commonPath.lineTo(m_junctionPosition);
+        m_commonPath.moveTo(m_junctionPosition);
+    } else {
+        // Several source branches can jointly feed a unit without either a
+        // designated process source or fresh external feed.  The branches
+        // already terminate at this junction; only draw its common outlet.
+        m_processAnnotationAnchor = QPointF();
         m_commonPath.moveTo(m_junctionPosition);
     }
     m_commonPath.lineTo(targetTop);
@@ -323,7 +346,7 @@ void FeedJunctionItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
     }
     if (closest.isEmpty()) {
         QPainterPathStroker stroker;
-        stroker.setWidth(FlotationGeometry::HitWidth);
+        stroker.setWidth(FlotationGeometry::RouteHitWidth);
         for (auto it = m_sourcePaths.cbegin(); it != m_sourcePaths.cend(); ++it) {
             if (stroker.createStroke(it.value()).contains(event->scenePos())) {
                 closest = it.key(); break;

@@ -10,10 +10,12 @@ namespace afs::topology {
 using NodeId = QString;
 using StreamId = QString;
 
-enum class NodeKind { Flotation, Merge };
+enum class NodeKind { Flotation, Merge, StoragePool };
 enum class MergeRole { ProductMerge, FeedJunction };
 enum class ProductRole { Concentrate, Tailing, Middling, Unknown };
-enum class PortKind { Feed, LeftProduct, MiddleProduct, RightProduct, MergeInput, MergeOutput };
+enum class PortKind {
+    Feed, LeftProduct, MiddleProduct, RightProduct, MergeInput, MergeOutput, PoolOutput
+};
 
 struct PortRef {
     NodeId nodeId;
@@ -34,6 +36,13 @@ struct FlotationNode {
 struct MergeNode {
     NodeId id;
     MergeRole role{MergeRole::ProductMerge};
+};
+
+// A terminal pool consumes its inlet as a terminal boundary. A buffer pool
+// has one inlet and one outlet and therefore only contributes inlet=outlet.
+struct StoragePoolNode {
+    NodeId id;
+    bool terminal{false};
 };
 
 struct MaterialStream {
@@ -125,6 +134,8 @@ struct ComponentCalculationResult {
     QHash<StreamId, ProductMetrics> relativeToExternalFeed;
     bool complete{false};
     bool fullySolved{false};
+    QHash<StreamId, ReconciliationResidual> residuals;
+    double maximumAbsoluteStandardizedResidual{0.0};
 };
 
 struct CalculationResult {

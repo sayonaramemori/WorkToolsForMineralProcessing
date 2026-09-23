@@ -24,6 +24,7 @@ public:
     void refreshAppearance();
     void setAnnotationsVisible(bool visible);
     void setMetricVisible(ResultMetric metric, bool visible);
+    void setProductNamesVisible(bool visible);
     void setMetricLabelMode(MetricLabelMode mode);
     void setMassUnit(MassUnit unit);
     void setCustomMassUnit(const QString& unit);
@@ -49,6 +50,7 @@ private:
                                        QPointF& defaultOffset) const;
     void synchronizeReagents();
     void synchronizeNotes();
+    void synchronizeDisplaySettings();
     bool eventFilter(QObject* watched, QEvent* event) override;
     [[nodiscard]] QString selectedLineStreamId(QGraphicsItem** owner = nullptr) const;
 };

@@ -16,7 +16,8 @@ public:
     static QString formatStreamResult(const topology::StreamValue& value,
                                       const topology::ProductMetrics* overall,
                                       const ResultAnnotationSettings& settings,
-                                      const QVector<ComponentDisplayValue>& components = {});
+                                      const QVector<ComponentDisplayValue>& components = {},
+                                      const QString& productName = {});
 };
 
 } // namespace afs

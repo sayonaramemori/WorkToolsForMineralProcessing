@@ -2,6 +2,7 @@
 
 #include <QPointF>
 #include <QColor>
+#include <QColor>
 #include <QString>
 
 namespace afs {
@@ -29,6 +30,15 @@ struct AnnotationTextSettings {
     QColor color;
     MassUnit massUnit{MassUnit::Gram};
     QString customMassUnit;
+    bool resultAnnotationsVisible{true};
+    bool showDryMass{true};
+    bool showGrade{true};
+    bool showOverallYield{false};
+    bool showOverallRecovery{false};
+    // Product names are an optional heading for result cards.  Keep this
+    // separate from metrics because it is descriptive rather than calculated.
+    bool showProductName{false};
+    MetricLabelMode metricLabelMode{MetricLabelMode::Chinese};
 };
 
 struct ResultAnnotationSettings {
@@ -36,6 +46,7 @@ struct ResultAnnotationSettings {
     bool showGrade{true};
     bool showOverallYield{false};
     bool showOverallRecovery{false};
+    bool showProductName{false};
     int decimalPlaces{2};
     MetricLabelMode labelMode{MetricLabelMode::Chinese};
     MassUnit massUnit{MassUnit::Gram};
@@ -51,7 +62,8 @@ struct ResultAnnotationSettings {
         return false;
     }
     [[nodiscard]] bool anyVisible() const {
-        return showDryMass || showGrade || showOverallYield || showOverallRecovery;
+        return showDryMass || showGrade || showOverallYield || showOverallRecovery
+            || showProductName;
     }
 };
 
@@ -72,6 +84,8 @@ struct AnnotationRecord {
     int notePointSize{0};
     bool noteBold{false};
     bool noteBorderVisible{true};
+    // Invalid means follow AnnotationTextSettings::color/theme text color.
+    QColor noteColor;
 };
 
 } // namespace afs

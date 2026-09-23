@@ -159,11 +159,27 @@ QVariant TerminalProductTableModel::data(const QModelIndex& index, int role) con
             : hasCalculatedValue ? QColor(40, 110, 180) : QColor(120, 120, 120));
     if (role == Qt::ToolTipRole) {
         if (calculation && calculation->reconciled && hasCalculatedValue
-            && calculation->residuals.contains(stream.streamId)) {
+            && calculation->residuals.contains(stream.streamId)
+            && index.column() == MassColumn) {
             const auto residual = calculation->residuals.value(stream.streamId);
             return QString("显示协调值；双击编辑原始实测值。质量修正 %1（%2σ）")
                 .arg(residual.dryMass, 0, 'g', 6)
                 .arg(residual.dryMassStandardized, 0, 'f', 2);
+        }
+        if (calculation && calculation->reconciled && isGradeColumn(index.column())) {
+            const QString componentId = componentIdForColumn(index.column());
+            const auto observedGrade = measurement.grade(componentId);
+            const auto component = calculation->components.constFind(componentId);
+            if (observedGrade && component != calculation->components.cend()
+                && component->values.contains(stream.streamId)) {
+                const double reconciledGrade = component->values.value(stream.streamId).gradePercent();
+                const double correction = reconciledGrade - *observedGrade;
+                const double sigma = measurement.gradeStdDev(componentId).value_or(0.1);
+                return QString("显示协调值；双击编辑原始实测值。%1 品位修正 %2 个百分点（%3σ）")
+                    .arg(componentId)
+                    .arg(correction, 0, 'g', 6)
+                    .arg(correction / sigma, 0, 'f', 2);
+            }
         }
         if (index.column() == MassColumn)
             return QString("请输入非负绝对干质量；留空表示未知");

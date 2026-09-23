@@ -16,6 +16,13 @@ bool TopologyGraph::addMergeNode(MergeNode node) {
     return true;
 }
 
+bool TopologyGraph::addStoragePoolNode(StoragePoolNode node) {
+    if (node.id.isEmpty() || containsNode(node.id)) return false;
+    m_nodeOrder.append(node.id);
+    m_storagePoolNodes.insert(node.id, std::move(node));
+    return true;
+}
+
 bool TopologyGraph::addStream(MaterialStream streamValue) {
     if (streamValue.id.isEmpty() || m_streams.contains(streamValue.id)) return false;
     m_streamOrder.append(streamValue.id);
@@ -24,11 +31,14 @@ bool TopologyGraph::addStream(MaterialStream streamValue) {
 }
 
 bool TopologyGraph::containsNode(const NodeId& id) const {
-    return m_flotationNodes.contains(id) || m_mergeNodes.contains(id);
+    return m_flotationNodes.contains(id) || m_mergeNodes.contains(id)
+        || m_storagePoolNodes.contains(id);
 }
 
 NodeKind TopologyGraph::nodeKind(const NodeId& id) const {
-    return m_mergeNodes.contains(id) ? NodeKind::Merge : NodeKind::Flotation;
+    if (m_mergeNodes.contains(id)) return NodeKind::Merge;
+    if (m_storagePoolNodes.contains(id)) return NodeKind::StoragePool;
+    return NodeKind::Flotation;
 }
 
 const FlotationNode* TopologyGraph::flotationNode(const NodeId& id) const {
@@ -39,6 +49,11 @@ const FlotationNode* TopologyGraph::flotationNode(const NodeId& id) const {
 const MergeNode* TopologyGraph::mergeNode(const NodeId& id) const {
     const auto it = m_mergeNodes.constFind(id);
     return it == m_mergeNodes.cend() ? nullptr : &it.value();
+}
+
+const StoragePoolNode* TopologyGraph::storagePoolNode(const NodeId& id) const {
+    const auto it = m_storagePoolNodes.constFind(id);
+    return it == m_storagePoolNodes.cend() ? nullptr : &it.value();
 }
 
 const MaterialStream* TopologyGraph::stream(const StreamId& id) const {
@@ -81,7 +96,16 @@ QVector<StreamId> TopologyGraph::externalFeedStreams() const {
 
 QVector<StreamId> TopologyGraph::terminalProductStreams() const {
     QVector<StreamId> result;
-    for (const auto& id : m_streamOrder) if (m_streams[id].source && !m_streams[id].target) result.append(id);
+    for (const auto& id : m_streamOrder) {
+        const auto& item = m_streams[id];
+        if (item.source && !item.target) {
+            result.append(id);
+        } else if (item.source && item.target
+                   && nodeKind(item.target->nodeId) == NodeKind::StoragePool) {
+            const auto* pool = storagePoolNode(item.target->nodeId);
+            if (pool && pool->terminal) result.append(id);
+        }
+    }
     return result;
 }
 

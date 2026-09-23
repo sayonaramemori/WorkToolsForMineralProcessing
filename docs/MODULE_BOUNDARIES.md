@@ -42,7 +42,7 @@ topology ────► QtCore
 - `CalculationInputBuilder` 是文档测量转换成单组分求解输入的唯一入口。
 - `OpenCircuitCalculator` 组装守恒方程；通用消元和加权最小二乘分别委托给数值求解器。
 - `ProjectSerializer` 只编排文件 I/O、安全验证和恢复，JSON 读写与场景恢复分别由独立类负责。
-- `MainWindow` 的实现按装配、项目生命周期和导出命令拆分，不承载数值公式。
+- `MainWindow` 的实现按装配、画布命令、呈现/计算命令、项目生命周期、方案和导出命令拆分，不承载数值公式。
 
 ## 修改原则
 

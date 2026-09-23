@@ -7,31 +7,32 @@
 
 namespace afs {
 
+struct ComponentMeasurement {
+    std::optional<double> gradePercent;
+    std::optional<double> gradeStdDev;
+    std::optional<double> sharePercent;
+};
+
 struct StreamMeasurement {
     std::optional<double> dryMass;
-    std::optional<double> gradePercent;
     std::optional<double> dryMassSharePercent;
-    std::optional<double> componentSharePercent;
     std::optional<double> dryMassStdDev;
-    QHash<QString, double> gradePercents;
-    QHash<QString, double> gradeStdDevs;
-    QHash<QString, double> componentSharePercents;
+    QHash<QString, ComponentMeasurement> components;
 
-    [[nodiscard]] bool complete() const { return dryMass.has_value() && gradePercent.has_value(); }
+    [[nodiscard]] bool complete() const {
+        return dryMass.has_value() && grade(QStringLiteral("component-1")).has_value();
+    }
     [[nodiscard]] std::optional<double> grade(const QString& componentId) const {
-        const auto found = gradePercents.constFind(componentId);
-        if (found != gradePercents.cend()) return found.value();
-        return componentId == QStringLiteral("component-1") ? gradePercent : std::nullopt;
+        const auto found = components.constFind(componentId);
+        return found == components.cend() ? std::nullopt : found->gradePercent;
     }
     [[nodiscard]] std::optional<double> componentShare(const QString& componentId) const {
-        const auto found = componentSharePercents.constFind(componentId);
-        if (found != componentSharePercents.cend()) return found.value();
-        return componentId == QStringLiteral("component-1") ? componentSharePercent : std::nullopt;
+        const auto found = components.constFind(componentId);
+        return found == components.cend() ? std::nullopt : found->sharePercent;
     }
     [[nodiscard]] std::optional<double> gradeStdDev(const QString& componentId) const {
-        const auto found = gradeStdDevs.constFind(componentId);
-        return found == gradeStdDevs.cend() ? std::nullopt
-                                            : std::optional<double>(found.value());
+        const auto found = components.constFind(componentId);
+        return found == components.cend() ? std::nullopt : found->gradeStdDev;
     }
     [[nodiscard]] bool completeFor(const QStringList& componentIds) const {
         if (!dryMass) return false;

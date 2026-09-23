@@ -26,6 +26,7 @@ struct FeedJunctionData {
     QString id; QVector<QString> sourceTypes; QVector<QString> sourceIds;
     QVector<std::optional<double>> routeXs; QVector<std::optional<double>> routeYs;
     QString targetUnitId; QString processSourceType; QString processSourceId;
+    bool hasExternalFeed{false};
 };
 struct ProjectData {
     QVector<UnitData> units;

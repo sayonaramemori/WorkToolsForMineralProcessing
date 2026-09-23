@@ -17,7 +17,8 @@ void appendComponentResult(topology::CalculationResult& combined,
     if (primaryComponent) combined = result;
     combined.components.insert(component.id, {
         result.values, result.flotationPerformance, result.relativeToExternalFeed,
-        result.complete, result.fullySolved});
+        result.complete, result.fullySolved, result.residuals,
+        result.maximumAbsoluteStandardizedResidual});
     combined.complete = combined.complete && result.complete;
     combined.fullySolved = combined.fullySolved && result.fullySolved;
     combined.dryMassDegreesOfFreedom = std::max(

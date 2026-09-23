@@ -14,30 +14,48 @@
 
 namespace afs {
 namespace {
-constexpr int kFormatVersion = 9;
+constexpr int kFormatVersion = 23;
 QString unitKindKey(UnitKind kind) {
     switch (kind) {
     case UnitKind::Flotation: return "flotation";
+    case UnitKind::MagneticSeparation: return "magnetic-separation";
+    case UnitKind::WeakMagneticSeparation: return "weak-magnetic-separation";
+    case UnitKind::StrongMagneticSeparation: return "strong-magnetic-separation";
+    case UnitKind::SpiralChute: return "spiral-chute";
+    case UnitKind::ShakingTable: return "shaking-table";
+    case UnitKind::DenseMediumCyclone: return "dense-medium-cyclone";
+    case UnitKind::SedimentationTank: return "sedimentation-tank";
+    case UnitKind::DemediumScreen: return "demedium-screen";
+    case UnitKind::Screening: return "screening";
+    case UnitKind::Classification: return "classification";
+    case UnitKind::TailingsPool: return "tailings-pool";
+    case UnitKind::ConcentratePool: return "concentrate-pool";
+    case UnitKind::WaterPool: return "water-pool";
+    case UnitKind::MediaTank: return "media-tank";
+    case UnitKind::MixingTank: return "mixing-tank";
     case UnitKind::BinarySplitter: return "binary-splitter";
     case UnitKind::ThreeProductFlotation: return "three-product-flotation";
+    case UnitKind::ThreeProductScreening: return "three-product-screening";
+    case UnitKind::ThreeProductDemediumScreen: return "three-product-demedium-screen";
     }
     return {};
 }
 QJsonObject measurementObject(const QString& streamId, const StreamMeasurement& value) {
     QJsonObject object{{"streamId", streamId}};
     object.insert("dryMass", value.dryMass ? QJsonValue(*value.dryMass) : QJsonValue::Null);
-    object.insert("gradePercent", value.gradePercent ? QJsonValue(*value.gradePercent) : QJsonValue::Null);
     object.insert("dryMassSharePercent", value.dryMassSharePercent ? QJsonValue(*value.dryMassSharePercent) : QJsonValue::Null);
-    object.insert("componentSharePercent", value.componentSharePercent ? QJsonValue(*value.componentSharePercent) : QJsonValue::Null);
     object.insert("dryMassStdDev", value.dryMassStdDev ? QJsonValue(*value.dryMassStdDev) : QJsonValue::Null);
     QJsonObject grades;
-    for (auto it = value.gradePercents.cbegin(); it != value.gradePercents.cend(); ++it) grades.insert(it.key(), it.value());
+    for (auto it = value.components.cbegin(); it != value.components.cend(); ++it)
+        if (it->gradePercent) grades.insert(it.key(), *it->gradePercent);
     object.insert("gradePercents", grades);
     QJsonObject gradeStdDevs;
-    for (auto it = value.gradeStdDevs.cbegin(); it != value.gradeStdDevs.cend(); ++it) gradeStdDevs.insert(it.key(), it.value());
+    for (auto it = value.components.cbegin(); it != value.components.cend(); ++it)
+        if (it->gradeStdDev) gradeStdDevs.insert(it.key(), *it->gradeStdDev);
     object.insert("gradeStdDevs", gradeStdDevs);
     QJsonObject shares;
-    for (auto it = value.componentSharePercents.cbegin(); it != value.componentSharePercents.cend(); ++it) shares.insert(it.key(), it.value());
+    for (auto it = value.components.cbegin(); it != value.components.cend(); ++it)
+        if (it->sharePercent) shares.insert(it.key(), *it->sharePercent);
     object.insert("componentSharePercents", shares);
     return object;
 }
@@ -66,6 +84,8 @@ QByteArray ProjectJsonWriter::serialize(const FlowsheetScene& scene,
             {"kind", unitKindKey(value.kind)}};
         if (value.kind == UnitKind::BinarySplitter)
             unitObject.insert("leftSplitPercent", value.leftSplitPercent);
+        if (isStoragePool(value.kind) && !value.poolLabel.isEmpty())
+            unitObject.insert("poolLabel", value.poolLabel);
         QJsonObject terminalLengths;
         for (auto* product : unit->products())
             if (product->terminalLengthOverride())
@@ -111,7 +131,8 @@ QByteArray ProjectJsonWriter::serialize(const FlowsheetScene& scene,
             sources.append(source);
         }
         QJsonObject object{{"id", feed->id()}, {"sources", sources},
-                           {"targetUnit", feed->targetUnit()->unit().id}};
+                           {"targetUnit", feed->targetUnit()->unit().id},
+                           {"hasExternalFeed", feed->hasExternalFeed()}};
         if (feed->processProduct()) {
             object.insert("processSourceType", "product");
             object.insert("processSource", feed->processProduct()->streamId());
@@ -141,7 +162,9 @@ QByteArray ProjectJsonWriter::serialize(const FlowsheetScene& scene,
             {"dosageUnit", value.dosageUnit}, {"note", value.note},
             {"noteFontFamily", value.noteFontFamily},
             {"notePointSize", value.notePointSize}, {"noteBold", value.noteBold},
-            {"noteBorderVisible", value.noteBorderVisible}});
+            {"noteBorderVisible", value.noteBorderVisible},
+            {"noteColor", value.noteColor.isValid()
+                ? value.noteColor.name(QColor::HexArgb) : QString{}}});
     }
     QJsonArray scenarioArray;
     for (const auto& scenario : document.scenarios()) {
@@ -183,7 +206,14 @@ QByteArray ProjectJsonWriter::serialize(const FlowsheetScene& scene,
         {"color", textSettings.color.isValid() ? textSettings.color.name(QColor::HexArgb)
                                                  : QString()},
         {"massUnit", textSettings.massUnit == MassUnit::Custom
-             ? textSettings.customMassUnit : massUnitSymbol(textSettings.massUnit)}};
+             ? textSettings.customMassUnit : massUnitSymbol(textSettings.massUnit)},
+        {"resultAnnotationsVisible", textSettings.resultAnnotationsVisible},
+        {"showDryMass", textSettings.showDryMass}, {"showGrade", textSettings.showGrade},
+        {"showOverallYield", textSettings.showOverallYield},
+        {"showOverallRecovery", textSettings.showOverallRecovery},
+        {"showProductName", textSettings.showProductName},
+        {"metricLabelMode", textSettings.metricLabelMode == MetricLabelMode::Symbols
+             ? "symbols" : "chinese"}};
     const QJsonObject root{{"format", "AutoFlotationSheet"}, {"version", kFormatVersion},
         {"units", unitArray}, {"connections", connectionArray},
         {"productMerges", mergeArray}, {"feedJunctions", feedArray},
@@ -198,4 +228,3 @@ QByteArray ProjectJsonWriter::serialize(const FlowsheetScene& scene,
 }
 
 } // namespace afs
-

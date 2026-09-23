@@ -25,6 +25,10 @@ public:
     void scheduleCheckpoint(const QString& description = QStringLiteral("编辑项目"));
     void clearHistory();
     void markClean();
+    // Must be called before the scene/document referenced by this manager are
+    // destroyed. It cancels delayed snapshot work that could otherwise run
+    // while Qt is tearing down the window.
+    void shutdown();
     [[nodiscard]] bool isClean() const;
     [[nodiscard]] QUndoStack* stack() const { return m_stack; }
 

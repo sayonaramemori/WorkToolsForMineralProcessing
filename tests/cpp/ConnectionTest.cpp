@@ -1,5 +1,6 @@
 #include "core/FlotationUnit.h"
 #include "editor/FlowsheetScene.h"
+#include "graphics/FlotationGeometry.h"
 #include "graphics/items/FlotationUnitItem.h"
 #include "graphics/items/InputLineItem.h"
 #include "graphics/items/ProductLineItem.h"
@@ -26,7 +27,7 @@ int main(int argc, char** argv) {
 
     if (!scene.connectProduct(product, lower->inputLine())) return 1;
     if (!product->isConnected() || lower->inputLine()->isVisible()) return 2;
-    if (!closePoint(lower->pos(), QPointF(180, 222))) return 3;
+    if (!closePoint(lower->pos(), QPointF(500, 400))) return 3;
 
     const QPointF lowerBeforeMove = lower->pos();
     upper->setPos(upper->pos() + QPointF(25, 30));
@@ -74,7 +75,21 @@ int main(int argc, char** argv) {
             threeProduct->products()[1], downstream->inputLine())) return 17;
     if (!threeProduct->products()[1]->isConnected()
         || downstream->inputLine()->sourceProduct() != threeProduct->products()[1]
-        || !closePoint(downstream->pos(), QPointF(0, 222))) return 18;
+        || !closePoint(downstream->pos(), QPointF(500, 400))) return 18;
+    auto* middleProduct = threeProduct->products()[1];
+    middleProduct->setManualRouteY(240.0);
+    threeProduct->setPos(threeProduct->pos() + QPointF(0, -120));
+    if (!middleProduct->manualRouteY()
+        || std::abs(*middleProduct->manualRouteY() - 240.0) > 0.001
+        || !closePoint(downstream->pos(), QPointF(500, 280))) return 23;
+
+    FlowsheetScene alignScene;
+    auto* alignSource = new FlotationUnitItem({"align-source", {0, 0}});
+    auto* alignTarget = new FlotationUnitItem({"align-target", {500, 400}});
+    alignScene.addItem(alignSource);
+    alignScene.addItem(alignTarget);
+    if (!alignScene.connectProduct(alignSource->products().at(1), alignTarget->inputLine(), true)
+        || !closePoint(alignTarget->pos(), QPointF(180, 222))) return 22;
 
     const double originalTerminalLength = product->terminalLength();
     if (!product->adjustTerminalLength(4000.0)
@@ -86,5 +101,27 @@ int main(int argc, char** argv) {
     if (!threeProductScene.removeUnit(threeProduct)
         || !downstream->inputLine()->isVisible()
         || downstream->inputLine()->sourceProduct()) return 20;
+
+    // Every downstream unit follows the same connection contract: ordinary
+    // linking preserves its position; Ctrl alignment moves it to the product
+    // endpoint, including a storage pool.
+    FlowsheetScene poolScene;
+    auto* poolSource = new FlotationUnitItem({"pool-source", {0, 0}});
+    FlotationUnit poolData{"pool", {740, 460}};
+    poolData.kind = UnitKind::TailingsPool;
+    auto* pool = new FlotationUnitItem(poolData);
+    poolScene.addItem(poolSource);
+    poolScene.addItem(pool);
+    const QPointF poolPosition = pool->pos();
+    if (!poolScene.connectProduct(poolSource->products().at(1), pool->inputLine())
+        || pool->pos() != poolPosition
+        || !poolSource->products().at(1)->isConnected()
+        || poolSource->products().at(1)->brush().style() != Qt::NoBrush
+        || poolSource->products().at(1)->path().elementCount() < 4) return 21;
+    if (!poolScene.disconnectProduct(poolSource->products().at(1))) return 24;
+    const QPointF alignedPoolInput = poolSource->products().at(1)->unconnectedEndScenePosition();
+    if (!poolScene.connectProduct(poolSource->products().at(1), pool->inputLine(), true)
+        || !closePoint(pool->mapToScene(QPointF(0, -FlotationGeometry::InputHeight)),
+                       alignedPoolInput)) return 25;
     return 0;
 }
