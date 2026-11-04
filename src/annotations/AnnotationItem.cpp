@@ -127,17 +127,25 @@ void AnnotationItem::updateBounds() {
                       std::ceil(content.height()) + 16.0);
 }
 
-QRectF AnnotationItem::boundingRect() const { return m_bounds.adjusted(-2, -2, 2, 2); }
+QRectF AnnotationItem::boundingRect() const {
+    // Reserve the selected stroke's full extent so wide borders are not clipped.
+    const qreal margin = m_calculatedResultEmphasis
+        ? std::max(2.0, (m_calculatedResultBorderWidth + 0.6) / 2.0 + 1.0) : 2.0;
+    return m_bounds.adjusted(-margin, -margin, margin, margin);
+}
 
 void AnnotationItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*) {
     const QPalette palette = qApp->palette();
     QColor background = palette.color(QPalette::Base);
     background.setAlpha(230);
     const QColor border = isSelected() ? palette.color(QPalette::Highlight)
-                                       : palette.color(QPalette::Midlight);
+        : palette.color(m_calculatedResultEmphasis ? QPalette::Mid : QPalette::Midlight);
     painter->setRenderHint(QPainter::Antialiasing);
     if (m_record.kind != AnnotationKind::UserNote || m_record.noteBorderVisible) {
-        painter->setPen(QPen(border, isSelected() ? 1.8 : 1.0));
+        const qreal borderWidth = m_calculatedResultEmphasis
+            ? m_calculatedResultBorderWidth + (isSelected() ? 0.6 : 0.0)
+            : (isSelected() ? 1.8 : 1.0);
+        painter->setPen(QPen(border, borderWidth));
         painter->setBrush(background);
         painter->drawRoundedRect(m_bounds, 6, 6);
     } else if (isSelected()) {
@@ -165,6 +173,22 @@ void AnnotationItem::setText(QString text) {
     if (m_text == text) return;
     m_text = std::move(text);
     updateBounds();
+    update();
+}
+
+void AnnotationItem::setCalculatedResultEmphasis(bool emphasized) {
+    emphasized = emphasized && m_record.kind == AnnotationKind::StreamResult;
+    if (m_calculatedResultEmphasis == emphasized) return;
+    prepareGeometryChange();
+    m_calculatedResultEmphasis = emphasized;
+    update();
+}
+
+void AnnotationItem::setCalculatedResultBorderWidth(qreal width) {
+    width = ResultBorderStyle::boundedWidth(width);
+    if (m_calculatedResultBorderWidth == width) return;
+    prepareGeometryChange();
+    m_calculatedResultBorderWidth = width;
     update();
 }
 

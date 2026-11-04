@@ -4,6 +4,8 @@
 #include <QColor>
 #include <QColor>
 #include <QString>
+#include <algorithm>
+#include <cmath>
 
 namespace afs {
 
@@ -13,6 +15,16 @@ enum class AnnotationOwnerKind { Stream, FlotationUnit, Free };
 enum class ResultMetric { DryMass, Grade, OverallYield, OverallRecovery };
 enum class MetricLabelMode { Chinese, Symbols };
 enum class MassUnit { Gram, Kilogram, Tonne, Custom };
+
+struct ResultBorderStyle {
+    static constexpr qreal DefaultWidth = 2.4;
+    static constexpr qreal MinimumWidth = 1.2;
+    static constexpr qreal MaximumWidth = 8.0;
+
+    [[nodiscard]] static qreal boundedWidth(qreal width) {
+        return std::isfinite(width) ? std::clamp(width, MinimumWidth, MaximumWidth) : DefaultWidth;
+    }
+};
 
 [[nodiscard]] inline QString massUnitSymbol(MassUnit unit) {
     switch (unit) {
@@ -51,6 +63,8 @@ struct ResultAnnotationSettings {
     MetricLabelMode labelMode{MetricLabelMode::Chinese};
     MassUnit massUnit{MassUnit::Gram};
     QString customMassUnit;
+
+    bool distinguishValueSources{true};
 
     [[nodiscard]] bool visible(ResultMetric metric) const {
         switch (metric) {

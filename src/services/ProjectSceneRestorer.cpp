@@ -103,9 +103,9 @@ bool ProjectSceneRestorer::restore(const project_serialization::ProjectData& dat
             }
             const QString routeId = item.sourceTypes[index] == "product"
                 ? item.sourceIds[index] : item.sourceIds[index] + ":output";
-            if (index < item.routeXs.size() && item.routeXs[index])
+            if (item.routeXs[index])
                 junction->setManualRouteX(routeId, item.routeXs[index]);
-            if (index < item.routeYs.size() && item.routeYs[index])
+            if (item.routeYs[index])
                 junction->setManualRouteY(routeId, item.routeYs[index]);
         }
         junction->setExternalFeed(item.hasExternalFeed);

@@ -7,6 +7,7 @@
 #include <QFile>
 #include <QSet>
 #include <QVector>
+#include <algorithm>
 
 namespace afs {
 namespace {
@@ -89,7 +90,7 @@ bool writeZip(const QString& path, QVector<ZipEntry> entries, QString* error) {
 }
 
 QByteArray worksheetXml(const FlowsheetDocument& document,
-                        const CanvasTopologySnapshot& snapshot) {
+                        const QVector<CanvasStreamDescriptor>& orderedStreams) {
     QByteArray rows;
     rows += "<row r=\"1\" ht=\"24\" customHeight=\"1\">";
     QStringList headers{"方案名称", "产物名称", "重量", "产率 / %"};
@@ -104,20 +105,6 @@ QByteArray worksheetXml(const FlowsheetDocument& document,
     QByteArray merges;
     int mergeCount = 0;
     int row = 2;
-    QVector<CanvasStreamDescriptor> orderedStreams;
-    QHash<QString, CanvasStreamDescriptor> byId;
-    for (const auto& stream : snapshot.reportStreams) byId.insert(stream.streamId, stream);
-    QSet<QString> added;
-    for (const auto& streamId : document.exportStreamOrder()) {
-        const auto found = byId.constFind(streamId);
-        if (found == byId.cend()) continue;
-        orderedStreams.append(found.value()); added.insert(streamId);
-    }
-    for (const auto& stream : snapshot.reportStreams) {
-        if (added.contains(stream.streamId)) continue;
-        orderedStreams.append(stream); added.insert(stream.streamId);
-    }
-
     for (const auto& scenario : document.scenarios()) {
         const auto* result = scenario.calculationResult ? &*scenario.calculationResult : nullptr;
         if (!result) continue;
@@ -125,12 +112,10 @@ QByteArray worksheetXml(const FlowsheetDocument& document,
         bool firstProductInScenario = true;
         for (const auto& product : orderedStreams) {
             if (!result->values.contains(product.streamId)) continue;
-            const QString configuredName = document.productName(product.streamId).simplified();
-            const QString displayName = configuredName.isEmpty() ? product.displayName : configuredName;
             rows += "<row r=\"" + QByteArray::number(row) + "\">";
             rows += textCell("A" + QString::number(row),
                              firstProductInScenario ? scenario.name : QString(), 1);
-            rows += textCell("B" + QString::number(row), displayName, 3);
+            rows += textCell("B" + QString::number(row), product.displayName, 3);
             const auto value = result->values.value(product.streamId);
             rows += numberCell("C" + QString::number(row), value.dryMass);
             const auto metrics = result->relativeToExternalFeed.constFind(product.streamId);
@@ -188,11 +173,43 @@ QByteArray worksheetXml(const FlowsheetDocument& document,
 
 } // namespace
 
+QVector<CanvasStreamDescriptor> ExcelDataExporter::namedStreams(
+    const FlowsheetDocument& document, const CanvasTopologySnapshot& snapshot) {
+    QHash<QString, CanvasStreamDescriptor> byId;
+    for (auto stream : snapshot.reportStreams) {
+        stream.displayName = document.productName(stream.streamId).simplified();
+        if (!stream.displayName.isEmpty()) {
+            const QString id = stream.streamId;
+            byId.insert(id, std::move(stream));
+        }
+    }
+    QVector<CanvasStreamDescriptor> streams;
+    QSet<QString> added;
+    const auto append = [&](const QString& id) {
+        const auto found = byId.constFind(id);
+        if (found == byId.cend() || added.contains(id)) return;
+        streams.append(found.value()); added.insert(id);
+    };
+    for (const auto& id : document.exportStreamOrder()) append(id);
+    for (const auto& stream : snapshot.reportStreams) append(stream.streamId);
+    return streams;
+}
+
 bool ExcelDataExporter::exportWorkbook(const FlowsheetDocument& document,
                                        const CanvasTopologySnapshot& snapshot,
                                        const QString& filePath, QString* error) {
-    if (snapshot.reportStreams.isEmpty()) {
-        if (error) *error = QObject::tr("当前流程没有可导出的产品物流。");
+    const auto streams = namedStreams(document, snapshot);
+    if (streams.isEmpty()) {
+        if (error) *error = QObject::tr("当前流程没有已命名的产品，请先在右侧表格填写产品名称。");
+        return false;
+    }
+    const bool hasResults = std::any_of(document.scenarios().cbegin(), document.scenarios().cend(),
+        [&](const auto& scenario) {
+            return scenario.calculationResult && std::any_of(streams.cbegin(), streams.cend(),
+                [&](const auto& stream) { return scenario.calculationResult->values.contains(stream.streamId); });
+        });
+    if (!hasResults) {
+        if (error) *error = QObject::tr("已命名的产品暂无计算结果，请先完成计算。");
         return false;
     }
     const QByteArray contentTypes = R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>)";
@@ -203,7 +220,7 @@ bool ExcelDataExporter::exportWorkbook(const FlowsheetDocument& document,
     return writeZip(filePath, {
         {"[Content_Types].xml", contentTypes}, {"_rels/.rels", rootRels},
         {"xl/workbook.xml", workbook}, {"xl/_rels/workbook.xml.rels", workbookRels},
-        {"xl/styles.xml", styles}, {"xl/worksheets/sheet1.xml", worksheetXml(document, snapshot)}
+        {"xl/styles.xml", styles}, {"xl/worksheets/sheet1.xml", worksheetXml(document, streams)}
     }, error);
 }
 

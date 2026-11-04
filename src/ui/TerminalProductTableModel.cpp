@@ -158,6 +158,8 @@ QVariant TerminalProductTableModel::data(const QModelIndex& index, int role) con
             : hasAnyMeasurement ? QColor(210, 125, 25)
             : hasCalculatedValue ? QColor(40, 110, 180) : QColor(120, 120, 120));
     if (role == Qt::ToolTipRole) {
+        if (index.column() == ProductNameColumn)
+            return QString("产品名称默认留空；仅已命名且具有计算结果的物流参与 Excel 导出");
         if (calculation && calculation->reconciled && hasCalculatedValue
             && calculation->residuals.contains(stream.streamId)
             && index.column() == MassColumn) {

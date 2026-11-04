@@ -1,4 +1,6 @@
+#include "services/ProjectUnitKindCodec.h"
 #include "services/ProjectJsonWriter.h"
+#include "services/ProjectFormat.h"
 #include "annotations/AnnotationTypes.h"
 #include "document/FlowsheetDocument.h"
 #include "editor/FlowsheetScene.h"
@@ -14,32 +16,6 @@
 
 namespace afs {
 namespace {
-constexpr int kFormatVersion = 23;
-QString unitKindKey(UnitKind kind) {
-    switch (kind) {
-    case UnitKind::Flotation: return "flotation";
-    case UnitKind::MagneticSeparation: return "magnetic-separation";
-    case UnitKind::WeakMagneticSeparation: return "weak-magnetic-separation";
-    case UnitKind::StrongMagneticSeparation: return "strong-magnetic-separation";
-    case UnitKind::SpiralChute: return "spiral-chute";
-    case UnitKind::ShakingTable: return "shaking-table";
-    case UnitKind::DenseMediumCyclone: return "dense-medium-cyclone";
-    case UnitKind::SedimentationTank: return "sedimentation-tank";
-    case UnitKind::DemediumScreen: return "demedium-screen";
-    case UnitKind::Screening: return "screening";
-    case UnitKind::Classification: return "classification";
-    case UnitKind::TailingsPool: return "tailings-pool";
-    case UnitKind::ConcentratePool: return "concentrate-pool";
-    case UnitKind::WaterPool: return "water-pool";
-    case UnitKind::MediaTank: return "media-tank";
-    case UnitKind::MixingTank: return "mixing-tank";
-    case UnitKind::BinarySplitter: return "binary-splitter";
-    case UnitKind::ThreeProductFlotation: return "three-product-flotation";
-    case UnitKind::ThreeProductScreening: return "three-product-screening";
-    case UnitKind::ThreeProductDemediumScreen: return "three-product-demedium-screen";
-    }
-    return {};
-}
 QJsonObject measurementObject(const QString& streamId, const StreamMeasurement& value) {
     QJsonObject object{{"streamId", streamId}};
     object.insert("dryMass", value.dryMass ? QJsonValue(*value.dryMass) : QJsonValue::Null);
@@ -81,7 +57,10 @@ QByteArray ProjectJsonWriter::serialize(const FlowsheetScene& scene,
         const auto& value = unit->unit();
         QJsonObject unitObject{{"id", value.id}, {"x", value.position.x()},
             {"y", value.position.y()}, {"width", value.width}, {"bodyHeight", value.bodyHeight},
-            {"kind", unitKindKey(value.kind)}};
+            {"kind", project_serialization::unitKindKey(value.kind)}};
+        if (value.inputLength) unitObject.insert("inputLength", *value.inputLength);
+        if (value.kind == UnitKind::BallMill)
+            unitObject.insert("ballMillDiameter", value.ballMillDiameter);
         if (value.kind == UnitKind::BinarySplitter)
             unitObject.insert("leftSplitPercent", value.leftSplitPercent);
         if (isStoragePool(value.kind) && !value.poolLabel.isEmpty())
@@ -142,11 +121,6 @@ QByteArray ProjectJsonWriter::serialize(const FlowsheetScene& scene,
         }
         feedArray.append(object);
     }
-    QJsonArray measurementArray;
-    QStringList measurementIds = document.measurements().keys();
-    std::sort(measurementIds.begin(), measurementIds.end());
-    for (const auto& id : measurementIds)
-        measurementArray.append(measurementObject(id, document.measurements().value(id)));
     QJsonArray annotationArray;
     QStringList annotationIds = document.annotationRecords().keys();
     std::sort(annotationIds.begin(), annotationIds.end());
@@ -214,10 +188,10 @@ QByteArray ProjectJsonWriter::serialize(const FlowsheetScene& scene,
         {"showProductName", textSettings.showProductName},
         {"metricLabelMode", textSettings.metricLabelMode == MetricLabelMode::Symbols
              ? "symbols" : "chinese"}};
-    const QJsonObject root{{"format", "AutoFlotationSheet"}, {"version", kFormatVersion},
+    const QJsonObject root{{"format", "AutoFlotationSheet"}, {"version", project_serialization::FormatVersion},
         {"units", unitArray}, {"connections", connectionArray},
         {"productMerges", mergeArray}, {"feedJunctions", feedArray},
-        {"measurements", measurementArray}, {"productNames", productNameArray},
+        {"productNames", productNameArray},
         {"components", componentArray},
         {"exportStreamOrder", exportOrderArray},
         {"annotationTextStyle", annotationTextStyleObject},

@@ -104,6 +104,8 @@ private:
     AnnotationTextSettings m_textSettings;
 
     [[nodiscard]] double sideX() const;
+    [[nodiscard]] QPointF sourceAnchorPosition() const;
+    [[nodiscard]] double defaultRouteY(const QPointF& end) const;
     void setHighlightedInput(InputLineItem* input);
     void setHighlightedProduct(ProductLineItem* product);
 };

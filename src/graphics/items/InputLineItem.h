@@ -14,6 +14,9 @@ public:
     explicit InputLineItem(FlotationUnitItem* unit);
 
     [[nodiscard]] QPainterPath shape() const override;
+    [[nodiscard]] double length() const;
+    [[nodiscard]] QPointF startScenePosition() const { return mapToScene(line().p1()); }
+    void updateGeometry();
 
     [[nodiscard]] FlotationUnitItem* unit() const { return m_unit; }
     [[nodiscard]] ProductLineItem* sourceProduct() const { return m_sourceProduct; }

@@ -83,6 +83,8 @@ protected:
     void keyPressEvent(QKeyEvent* event) override;
 
 private:
+    static constexpr double JunctionRadius = 4.5;
+
     QString m_id;
     QVector<ProductLineItem*> m_recycleProducts;
     QVector<MergeJunctionItem*> m_recycleMerges;

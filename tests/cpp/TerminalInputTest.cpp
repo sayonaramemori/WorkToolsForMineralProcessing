@@ -69,6 +69,10 @@ int main(int argc, char** argv) {
     FlowsheetDocument document;
     TerminalProductTableModel model(document);
     model.setStreams(connected.terminalProducts);
+    if (!model.data(model.index(0, TerminalProductTableModel::ProductNameColumn), Qt::DisplayRole).toString().isEmpty()
+        || !model.data(model.index(0, TerminalProductTableModel::ProductNameColumn), Qt::EditRole).toString().isEmpty()
+        || model.data(model.index(0, TerminalProductTableModel::NameColumn), Qt::DisplayRole).toString().isEmpty())
+        return 80;
     if (model.data(model.index(0, TerminalProductTableModel::MassColumn),
                    Qt::BackgroundRole).isValid()
         || model.data(model.index(0, TerminalProductTableModel::GradeColumn),
@@ -85,7 +89,9 @@ int main(int argc, char** argv) {
         || document.productName(model.streamAt(0)->streamId) != "精矿产品") return 30;
     if (!model.setData(model.index(0, TerminalProductTableModel::ProductNameColumn),
                        "", Qt::EditRole)
-        || !document.productName(model.streamAt(0)->streamId).isEmpty()) return 31;
+        || !document.productName(model.streamAt(0)->streamId).isEmpty()
+        || !model.data(model.index(0, TerminalProductTableModel::ProductNameColumn), Qt::DisplayRole).toString().isEmpty())
+        return 31;
     if (model.setData(model.index(0, TerminalProductTableModel::GradeColumn), "101", Qt::EditRole)) return 9;
     const auto id = model.streamAt(0)->streamId;
     if (!document.measurement(id).complete()) return 10;
@@ -216,6 +222,19 @@ int main(int argc, char** argv) {
     if (filterTable->model()->rowCount() != 2) return 57;
     filterCombo->setCurrentText("浮选入料");
     if (filterTable->model()->rowCount() != 1) return 58;
+    // The selected-unit filter is a one-hop canvas focus: it retains the
+    // selected unit's input/output streams and directly attached neighbours,
+    // but does not expand to the full connected circuit.
+    TerminalProductDock connectionFilterDock(document);
+    connectionFilterDock.setSnapshot(connected);
+    auto* connectionFilterCombo = connectionFilterDock.findChild<QComboBox*>("streamFilterCombo");
+    auto* connectionFilterTable = connectionFilterDock.findChild<QTableView*>("terminalProductTable");
+    if (!connectionFilterCombo || !connectionFilterTable) return 82;
+    connectionFilterCombo->setCurrentText("选中流程关联");
+    connectionFilterDock.setSelectedUnitIds({"first"});
+    if (connectionFilterTable->model()->rowCount() != 3) return 83;
+    connectionFilterDock.setSelectedUnitIds({"second"});
+    if (connectionFilterTable->model()->rowCount() != 3) return 84;
     filterTable->setCurrentIndex(filterTable->model()->index(
         0, TerminalProductTableModel::MassColumn));
     QKeyEvent deleteMeasurement(QEvent::KeyPress, Qt::Key_Delete, Qt::NoModifier);

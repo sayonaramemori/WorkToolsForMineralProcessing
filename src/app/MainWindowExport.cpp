@@ -5,21 +5,14 @@
 #include "services/ExcelDataExporter.h"
 #include "services/RasterExporter.h"
 #include "services/SvgExporter.h"
+#include "ui/StreamOrderDialog.h"
 
-#include <QAbstractItemView>
-#include <QDialog>
-#include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGraphicsScene>
 #include <QInputDialog>
-#include <QLabel>
-#include <QListWidget>
 #include <QMessageBox>
-#include <QPushButton>
-#include <QSet>
 #include <QStatusBar>
-#include <QVBoxLayout>
 
 namespace afs {
 
@@ -69,6 +62,11 @@ void MainWindow::exportScene() {
 
 void MainWindow::exportExcelData() {
     const auto snapshot = CanvasTopologyBuilder::build(*static_cast<FlowsheetScene*>(m_scene));
+    if (ExcelDataExporter::namedStreams(*m_document, snapshot).isEmpty()) {
+        QMessageBox::information(this, tr("导出 Excel"),
+            tr("当前流程没有已命名的产品，请先在右侧表格填写产品名称。"));
+        return;
+    }
     QString path = QFileDialog::getSaveFileName(this, tr("导出方案数据"),
         "flotation-scenarios.xlsx", tr("Excel 工作簿 (*.xlsx)"));
     if (path.isEmpty()) return;
@@ -82,52 +80,24 @@ void MainWindow::exportExcelData() {
 
 void MainWindow::editExcelExportOrder() {
     const auto snapshot = CanvasTopologyBuilder::build(*static_cast<FlowsheetScene*>(m_scene));
-    if (snapshot.reportStreams.isEmpty()) {
-        QMessageBox::information(this, tr("Excel 导出顺序"), tr("当前流程没有可排序的物流。"));
+    const auto streams = ExcelDataExporter::namedStreams(*m_document, snapshot);
+    if (streams.isEmpty()) {
+        QMessageBox::information(this, tr("Excel 导出顺序"),
+            tr("当前流程没有已命名的产品，请先在右侧表格填写产品名称。"));
         return;
     }
-    QDialog dialog(this); dialog.setWindowTitle(tr("Excel 导出顺序")); dialog.resize(520, 520);
-    auto* layout = new QVBoxLayout(&dialog);
-    auto* hint = new QLabel(tr("拖动调整导出顺序。总入料、最终产品和中间产品均可自由排序。"),
-                            &dialog);
-    hint->setWordWrap(true); layout->addWidget(hint);
-    auto* list = new QListWidget(&dialog);
-    list->setDragDropMode(QAbstractItemView::InternalMove);
-    list->setDefaultDropAction(Qt::MoveAction);
-    list->setSelectionMode(QAbstractItemView::SingleSelection); layout->addWidget(list, 1);
-    QHash<QString, CanvasStreamDescriptor> byId;
-    for (const auto& stream : snapshot.reportStreams) byId.insert(stream.streamId, stream);
-    const auto appendItem = [this, list](const CanvasStreamDescriptor& stream) {
-        const QString configuredName = m_document->productName(stream.streamId).simplified();
-        const QString label = configuredName.isEmpty() ? stream.displayName
-            : QString("%1（%2）").arg(configuredName, stream.displayName);
-        auto* item = new QListWidgetItem(label, list);
-        item->setData(Qt::UserRole, stream.streamId);
-        item->setToolTip(tr("物流 ID：%1").arg(stream.streamId));
-    };
-    QSet<QString> added;
-    for (const auto& id : m_document->exportStreamOrder()) {
-        const auto found = byId.constFind(id);
-        if (found == byId.cend()) continue;
-        appendItem(found.value()); added.insert(id);
-    }
-    for (const auto& stream : snapshot.reportStreams) {
-        if (!added.contains(stream.streamId)) { appendItem(stream); added.insert(stream.streamId); }
-    }
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
-                                         &dialog);
-    auto* reset = buttons->addButton(tr("恢复流程顺序"), QDialogButtonBox::ResetRole);
-    connect(reset, &QPushButton::clicked, &dialog, [list, snapshot, appendItem] {
-        list->clear(); for (const auto& stream : snapshot.reportStreams) appendItem(stream);
+    QVector<StreamOrderEntry> ordered;
+    for (const auto& stream : streams) ordered.append({stream.streamId, stream.displayName});
+    auto order = editStreamOrderDialog(this, ordered, [this, snapshot] {
+        QVector<StreamOrderEntry> entries;
+        for (const auto& stream : snapshot.reportStreams) {
+            const auto name = m_document->productName(stream.streamId).simplified();
+            if (!name.isEmpty()) entries.append({stream.streamId, name});
+        }
+        return entries;
     });
-    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    layout->addWidget(buttons);
-    if (dialog.exec() != QDialog::Accepted) return;
-    QStringList order;
-    for (int row = 0; row < list->count(); ++row)
-        order.append(list->item(row)->data(Qt::UserRole).toString());
-    m_document->setExportStreamOrder(std::move(order));
+    if (!order) return;
+    m_document->setExportStreamOrder(std::move(*order));
     statusBar()->showMessage(tr("Excel 导出顺序已更新"), 3000);
 }
 

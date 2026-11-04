@@ -1,5 +1,6 @@
 #include "graphics/items/InputLineItem.h"
 #include "graphics/FlotationGeometry.h"
+#include "graphics/ThickenerGeometry.h"
 #include "graphics/items/FlotationUnitItem.h"
 
 #include <QApplication>
@@ -11,11 +12,24 @@ namespace afs {
 
 InputLineItem::InputLineItem(FlotationUnitItem* unit)
     : QGraphicsLineItem(unit), m_unit(unit) {
-    setLine(0, -FlotationGeometry::InputHeight, 0, 0);
+    updateGeometry();
     setPen(QPen(QApplication::palette().color(QPalette::Text),
                 FlotationGeometry::BodyLineWidth, Qt::SolidLine, Qt::SquareCap));
     setZValue(1.0);
     setFlag(ItemIsSelectable);
+}
+
+double InputLineItem::length() const {
+    return m_unit->unit().inputLength.value_or(m_unit->unit().kind == UnitKind::BallMill
+        ? FlotationGeometry::InputHeight - FlotationGeometry::BallMillRadius
+        : FlotationGeometry::InputHeight);
+}
+
+void InputLineItem::updateGeometry() {
+    const double anchorY = m_unit->unit().kind == UnitKind::Thickener ? ThickenerGeometry::Top
+        : m_unit->unit().kind == UnitKind::BallMill
+        ? -m_unit->unit().ballMillDiameter / 2.0 : 0.0;
+    setLine(0, anchorY - length(), 0, anchorY);
 }
 
 QPainterPath InputLineItem::shape() const {

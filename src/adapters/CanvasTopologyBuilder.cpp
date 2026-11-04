@@ -29,6 +29,8 @@ QString unitDisplayName(UnitKind kind) {
     case UnitKind::WaterPool: return QStringLiteral("回水池");
     case UnitKind::MediaTank: return QStringLiteral("介质桶");
     case UnitKind::MixingTank: return QStringLiteral("混料桶");
+    case UnitKind::BallMill: return QStringLiteral("球磨机");
+    case UnitKind::Thickener: return QStringLiteral("浓密池");
     case UnitKind::BinarySplitter: return QStringLiteral("二分流器");
     case UnitKind::ThreeProductFlotation: return QStringLiteral("三产品浮选单元");
     case UnitKind::ThreeProductScreening: return QStringLiteral("三产品筛分器");
@@ -38,6 +40,8 @@ QString unitDisplayName(UnitKind kind) {
 }
 
 QString productDisplayLabel(const FlotationUnitItem& unit, ProductSide side) {
+    if (unit.unit().kind == UnitKind::BallMill) return QStringLiteral("磨矿");
+    if (unit.unit().kind == UnitKind::Thickener) return QStringLiteral("浓密出料");
     if (isStoragePool(unit.unit().kind)) return QStringLiteral("池出料");
     if (unit.unit().kind == UnitKind::SpiralChute)
         return side == ProductSide::Left ? QStringLiteral("螺旋精") : QStringLiteral("螺旋尾");
@@ -95,7 +99,7 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
         result.interestObjects.append({unit->unit().id,
                                        QString("%1 · %2")
                                            .arg(unitDisplayName(unit->unit().kind), unit->unit().id)});
-        if (isStoragePool(unit->unit().kind)) {
+        if (isNonSeparatingUnit(unit->unit().kind)) {
             result.graph.addStoragePoolNode({unit->unit().id,
                                               isTerminalStoragePool(unit->unit().kind)});
         } else {
@@ -130,7 +134,7 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
         for (int index = 0; index < products.size(); ++index) {
             auto* product = products[index];
             const auto side = product->side();
-            const auto sourcePort = isStoragePool(unit->unit().kind)
+            const auto sourcePort = isNonSeparatingUnit(unit->unit().kind)
                 ? topology::PortKind::PoolOutput
                 : side == ProductSide::Left ? topology::PortKind::LeftProduct
                 : side == ProductSide::Middle ? topology::PortKind::MiddleProduct

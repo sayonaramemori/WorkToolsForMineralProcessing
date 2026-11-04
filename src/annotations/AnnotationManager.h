@@ -25,6 +25,10 @@ public:
     void setAnnotationsVisible(bool visible);
     void setMetricVisible(ResultMetric metric, bool visible);
     void setProductNamesVisible(bool visible);
+    void setDistinguishValueSources(bool enabled);
+    [[nodiscard]] bool distinguishValueSources() const { return m_settings.distinguishValueSources; }
+    void setCalculatedResultBorderWidth(qreal width);
+    [[nodiscard]] qreal calculatedResultBorderWidth() const { return m_calculatedResultBorderWidth; }
     void setMetricLabelMode(MetricLabelMode mode);
     void setMassUnit(MassUnit unit);
     void setCustomMassUnit(const QString& unit);
@@ -33,6 +37,9 @@ public:
     bool nudgeSelectedReagents(qreal verticalDelta);
     [[nodiscard]] bool isMetricVisible(ResultMetric metric) const { return m_settings.visible(metric); }
     [[nodiscard]] int annotationCount() const { return m_items.size(); }
+
+signals:
+    void valueSourcesVisibilityChanged(bool enabled);
 
 private:
     FlowsheetScene& m_scene;
@@ -45,11 +52,13 @@ private:
     QSet<QString> m_temporarilyHiddenResults;
     bool m_visible{true};
     ResultAnnotationSettings m_settings;
+    qreal m_calculatedResultBorderWidth{ResultBorderStyle::DefaultWidth};
 
     [[nodiscard]] bool anchorForStream(const QString& streamId, QPointF& anchor,
                                        QPointF& defaultOffset) const;
     void synchronizeReagents();
     void synchronizeNotes();
+    void loadDisplayPreferences();
     void synchronizeDisplaySettings();
     bool eventFilter(QObject* watched, QEvent* event) override;
     [[nodiscard]] QString selectedLineStreamId(QGraphicsItem** owner = nullptr) const;

@@ -2,6 +2,7 @@
 
 #include <QPointF>
 #include <QString>
+#include <optional>
 
 namespace afs {
 
@@ -29,7 +30,9 @@ enum class UnitKind {
     BinarySplitter,
     ThreeProductFlotation,
     ThreeProductScreening,
-    ThreeProductDemediumScreen
+    ThreeProductDemediumScreen,
+    BallMill,
+    Thickener
 };
 
 [[nodiscard]] inline bool isMagneticSeparation(UnitKind kind) {
@@ -42,6 +45,15 @@ enum class UnitKind {
     return kind == UnitKind::TailingsPool || kind == UnitKind::ConcentratePool
         || kind == UnitKind::WaterPool || kind == UnitKind::MediaTank
         || kind == UnitKind::MixingTank;
+}
+
+// These units retain total mass and each component in at most one outlet.
+[[nodiscard]] inline bool isNonSeparatingUnit(UnitKind kind) {
+    return isStoragePool(kind) || kind == UnitKind::BallMill || kind == UnitKind::Thickener;
+}
+
+[[nodiscard]] inline bool hasCenteredVerticalPorts(UnitKind kind) {
+    return kind == UnitKind::BallMill || kind == UnitKind::Thickener;
 }
 
 [[nodiscard]] inline bool isMediaTank(UnitKind kind) {
@@ -81,6 +93,8 @@ struct FlotationUnit {
     // Display-only name rendered above the liquid wave for storage pools.
     // An empty value uses the kind-specific default (tailings/concentrate/water pool).
     QString poolLabel;
+    std::optional<double> inputLength;
+    double ballMillDiameter{64.0};
 };
 
 } // namespace afs

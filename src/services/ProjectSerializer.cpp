@@ -68,11 +68,10 @@ bool ProjectSerializer::deserialize(FlowsheetScene& scene, FlowsheetDocument& do
         setError(errorMessage, QString("项目连接关系无效：%1").arg(validationError)); return false;
     }
     if (!ProjectSceneRestorer::restore(data, scene, errorMessage)) return false;
-    document.replaceProjectData(data.measurements, data.annotations, data.productNames,
+    document.replaceProjectData(data.annotations, data.productNames,
                                 data.annotationTextSettings, data.exportStreamOrder);
     document.setComponents(data.components);
-    if (!data.scenarios.isEmpty())
-        document.replaceScenarios(std::move(data.scenarios), data.currentScenarioIndex);
+    document.replaceScenarios(std::move(data.scenarios), data.currentScenarioIndex);
     if (!data.calculatedScenarioIds.isEmpty()) {
         const int requestedScenario = document.currentScenarioIndex();
         const auto snapshot = CanvasTopologyBuilder::build(scene);

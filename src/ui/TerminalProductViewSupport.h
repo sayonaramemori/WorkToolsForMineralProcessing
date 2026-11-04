@@ -8,10 +8,13 @@ namespace afs {
 
 class StreamFilterProxyModel final : public QSortFilterProxyModel {
 public:
-    enum Mode { All, Entered, NeedsInput, Terminal, Feed, Recycle };
+    enum Mode { All, Entered, NeedsInput, Terminal, Feed, Recycle, SelectedUnit };
     using QSortFilterProxyModel::QSortFilterProxyModel;
     void setMode(Mode mode);
     void setInterestedOwners(QSet<QString> ids);
+    // This is intentionally separate from "interest" objects. Interest is a
+    // user-chosen scope; selected units are a transient canvas focus.
+    void setSelectedUnitIds(QSet<QString> ids);
 
 protected:
     bool filterAcceptsRow(int row, const QModelIndex& parent) const override;
@@ -19,6 +22,7 @@ protected:
 private:
     Mode m_mode{All};
     QSet<QString> m_interestedOwners;
+    QSet<QString> m_selectedUnitIds;
 };
 
 class NumberDelegate final : public QStyledItemDelegate {

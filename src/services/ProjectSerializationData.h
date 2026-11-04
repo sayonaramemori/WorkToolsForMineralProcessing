@@ -33,14 +33,13 @@ struct ProjectData {
     QVector<DirectConnectionData> connections;
     QVector<ProductMergeData> productMerges;
     QVector<FeedJunctionData> feedJunctions;
-    QHash<QString, StreamMeasurement> measurements;
     QHash<QString, QString> productNames;
     QHash<QString, AnnotationRecord> annotations;
     QVector<ExperimentScenario> scenarios;
     QSet<QString> calculatedScenarioIds;
     int currentScenarioIndex{0};
     AnnotationTextSettings annotationTextSettings;
-    QVector<ComponentDefinition> components{{DefaultComponentId, DefaultComponentName}};
+    QVector<ComponentDefinition> components;
     QStringList exportStreamOrder;
 };
 

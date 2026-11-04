@@ -2,6 +2,7 @@
 
 namespace afs::FlotationGeometry {
 inline constexpr double InputHeight = 72.0;
+inline constexpr double BallMillRadius = 32.0;
 inline constexpr double DoubleLineGap = 14.0;
 inline constexpr double TopLineWidth = 4.2;
 inline constexpr double BodyLineWidth = 2.2;

@@ -55,11 +55,13 @@ signals:
 
 protected:
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
+    void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
     void drawForeground(QPainter* painter, const QRectF& rect) override;
 
 private:
     bool m_movingComponent{false};
-    bool m_groupMoveActive{false};
+    bool m_dispatchingMouseMove{false};
+    QSet<FlotationUnitItem*> m_groupMovedUnits;
     int m_nextMergeId{1};
     int m_nextFeedJunctionId{1};
     [[nodiscard]] QSet<FlotationUnitItem*> connectedComponent(FlotationUnitItem* start) const;

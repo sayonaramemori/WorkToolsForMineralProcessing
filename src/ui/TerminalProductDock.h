@@ -26,7 +26,9 @@ class TerminalProductDock final : public QDockWidget {
 public:
     TerminalProductDock(FlowsheetDocument& document, QWidget* parent = nullptr);
     void setSnapshot(CanvasTopologySnapshot snapshot);
+    void setSelectedUnitIds(QSet<QString> unitIds);
     void selectGraphicsItem(const QGraphicsItem* item);
+    [[nodiscard]] QString selectedStreamIdForGraphicsItem(const QGraphicsItem* item) const;
     void refreshAppearance();
     void showStreamResult(const QString& streamId);
     void showUnitResult(const QString& unitId, const topology::TopologyGraph& graph);
@@ -55,6 +57,7 @@ private:
     ResultDetailsView* m_resultDetails;
     CanvasTopologySnapshot m_snapshot;
     QSet<QString> m_interestedOwners;
+    QSet<QString> m_selectedUnitIds;
 
     void updateSummary();
     void applyPanelStyle();

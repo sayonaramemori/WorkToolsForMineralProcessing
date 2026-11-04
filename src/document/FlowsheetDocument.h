@@ -53,8 +53,7 @@ public:
     [[nodiscard]] QHash<QString, AnnotationRecord> annotationRecords() const;
     void setAnnotationRecord(AnnotationRecord record);
     void removeAnnotationRecord(const QString& annotationId);
-    void replaceProjectData(QHash<QString, StreamMeasurement> measurements,
-                            QHash<QString, AnnotationRecord> annotations,
+    void replaceProjectData(QHash<QString, AnnotationRecord> annotations,
                             QHash<QString, QString> productNames = {},
                             AnnotationTextSettings annotationTextSettings = {},
                             QStringList exportStreamOrder = {});

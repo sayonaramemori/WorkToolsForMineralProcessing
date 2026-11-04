@@ -1,6 +1,7 @@
 #include "editor/CanvasActions.h"
 #include "editor/FlowsheetScene.h"
 #include "graphics/items/FlotationUnitItem.h"
+#include "graphics/items/InputLineItem.h"
 #include "graphics/items/FeedJunctionItem.h"
 #include "graphics/items/MergeJunctionItem.h"
 #include "graphics/items/ProductLineItem.h"
@@ -12,7 +13,9 @@ ResizeSelectionResult CanvasActions::resizeSelection(FlowsheetScene& scene, doub
     for (auto* selected : scene.selectedItems()) {
         if (auto* unit = dynamic_cast<FlotationUnitItem*>(selected)) {
             if (unit->adjustWidth(delta)) ++result.resizedUnits;
-            result.lastUnitWidth = unit->unit().width;
+            result.lastUnitWidth = unit->symbolWidth();
+        } else if (auto* input = dynamic_cast<InputLineItem*>(selected)) {
+            if (input->unit()->adjustInputLength(delta)) ++result.resizedConnections;
         } else if (auto* product = dynamic_cast<ProductLineItem*>(selected)) {
             const bool resized = product->isConnected()
                 ? scene.adjustConnectionLength(product, delta)

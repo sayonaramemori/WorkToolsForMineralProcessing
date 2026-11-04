@@ -1,36 +1,25 @@
 #include "ui/TerminalProductDock.h"
-#include "adapters/CanvasTopologyBuilder.h"
 #include "document/FlowsheetDocument.h"
 #include "ui/ResultDetailsView.h"
 #include "ui/TerminalProductStyle.h"
 #include "ui/TerminalProductTableModel.h"
 #include "ui/TerminalProductViewSupport.h"
-#include "services/FlowsheetCalculationService.h"
-
-#include <algorithm>
-
 #include <QAbstractItemView>
+#include <QAction>
 #include <QApplication>
-#include <QDoubleValidator>
+#include <QComboBox>
 #include <QFrame>
 #include <QHeaderView>
 #include <QHBoxLayout>
-#include <QLabel>
-#include <QLineEdit>
 #include <QInputDialog>
-#include <QPainter>
-#include <QPushButton>
-#include <QComboBox>
-#include <QMenu>
-#include <QAction>
 #include <QKeyEvent>
-#include <QSet>
+#include <QLabel>
+#include <QMenu>
+#include <QPushButton>
 #include <QSignalBlocker>
-#include <QSortFilterProxyModel>
-#include <QStyledItemDelegate>
-#include <QStyle>
 #include <QTableView>
 #include <QVBoxLayout>
+#include <utility>
 
 namespace afs {
 
@@ -89,6 +78,7 @@ TerminalProductDock::TerminalProductDock(FlowsheetDocument& document, QWidget* p
     m_filterCombo->addItem("终端产品", StreamFilterProxyModel::Terminal);
     m_filterCombo->addItem("浮选入料", StreamFilterProxyModel::Feed);
     m_filterCombo->addItem("回流", StreamFilterProxyModel::Recycle);
+    m_filterCombo->addItem("选中流程关联", StreamFilterProxyModel::SelectedUnit);
     filterRow->addWidget(m_filterCombo);
     m_interestButton->setObjectName("interestObjectButton");
     m_interestButton->setMenu(m_interestMenu);
@@ -243,143 +233,9 @@ void TerminalProductDock::applyPanelStyle() {
     m_panel->update();
 }
 
-void TerminalProductDock::setSnapshot(CanvasTopologySnapshot snapshot) {
-    m_snapshot = std::move(snapshot);
-    QSet<QString> editableIds;
-    for (const auto& stream : m_snapshot.reportStreams) editableIds.insert(stream.streamId);
-    m_model->setStreams(m_snapshot.reportStreams, std::move(editableIds));
-    rebuildInterestMenu();
-}
-
-void TerminalProductDock::rebuildInterestMenu() {
-    m_interestMenu->clear();
-    QSet<QString> validSelection;
-    for (const auto& object : m_snapshot.interestObjects) {
-        auto* action = m_interestMenu->addAction(object.displayName);
-        action->setCheckable(true);
-        action->setData(object.id);
-        if (m_interestedOwners.contains(object.id)) {
-            action->setChecked(true);
-            validSelection.insert(object.id);
-        }
-        connect(action, &QAction::toggled, this, [this] {
-            QSet<QString> selected;
-            int count = 0;
-            for (auto* candidate : m_interestMenu->actions()) {
-                if (!candidate->isChecked()) continue;
-                selected.insert(candidate->data().toString());
-                ++count;
-            }
-            m_interestedOwners = selected;
-            m_filterModel->setInterestedOwners(std::move(selected));
-            m_interestButton->setText(count == 0
-                ? "关注对象：全部" : QString("关注对象：%1 个").arg(count));
-            updateSummary();
-        });
-    }
-    if (m_snapshot.interestObjects.isEmpty()) {
-        auto* empty = m_interestMenu->addAction("暂无可选对象");
-        empty->setEnabled(false);
-    }
-    m_interestedOwners = std::move(validSelection);
-    m_filterModel->setInterestedOwners(m_interestedOwners);
-    m_interestButton->setText(m_interestedOwners.isEmpty()
-        ? "关注对象：全部" : QString("关注对象：%1 个").arg(m_interestedOwners.size()));
-}
-
-void TerminalProductDock::selectGraphicsItem(const QGraphicsItem* item) {
-    const int row = m_model->rowForGraphicsItem(item);
-    if (row < 0) { m_table->clearSelection(); return; }
-    const QModelIndex current = m_filterModel->mapToSource(m_table->currentIndex());
-    if (current.isValid() && current.row() == row) return;
-    const QModelIndex source = m_model->index(row, TerminalProductTableModel::MassColumn);
-    const QModelIndex target = m_filterModel->mapFromSource(source);
-    if (!target.isValid()) { m_table->clearSelection(); return; }
-    m_table->selectRow(target.row());
-    m_table->setCurrentIndex(target);
-    m_table->scrollTo(target);
-}
-
 void TerminalProductDock::refreshAppearance() {
     applyPanelStyle();
     m_table->viewport()->update();
-}
-
-void TerminalProductDock::showStreamResult(const QString& streamId) {
-    m_resultDetails->showStream(streamId);
-}
-
-void TerminalProductDock::showUnitResult(const QString& unitId, const topology::TopologyGraph& graph) {
-    m_resultDetails->showUnit(unitId, graph);
-}
-
-void TerminalProductDock::clearResultDetails() { m_resultDetails->showPlaceholder(); }
-
-void TerminalProductDock::setScenarioName(const QString& name) {
-    setWindowTitle(QString("物流实测参数 · %1").arg(name));
-}
-
-void TerminalProductDock::updateSummary() {
-    const int complete = m_model->completedCount();
-    m_progressLabel->setText(m_model->rowCount() == 0
-        ? "暂无物流" : QString("显示 %1/%2 · 已录入 %3")
-              .arg(m_filterModel->rowCount()).arg(m_model->rowCount()).arg(complete));
-}
-
-void TerminalProductDock::updateCalculationState() {
-    const bool hasCompleteInput = m_model->completedCount() > 0;
-    m_calculateButton->setEnabled(hasCompleteInput);
-    const auto* result = m_document.calculationResult();
-    if (result && result->complete) {
-        if (result->reconciled) {
-            m_calculationStatus->setText(QString("数据协调完成 · 最大标准化残差 %1σ%2")
-                .arg(result->maximumAbsoluteStandardizedResidual, 0, 'f', 2)
-                .arg(result->maximumAbsoluteStandardizedResidual > 3.0
-                    ? " · 存在可疑测量" : ""));
-        } else m_calculationStatus->setText(result->fullySolved
-            ? "平衡计算成功 · 选择画布对象查看详细结果"
-            : "全流程平衡已完成 · 部分中间物流未唯一求解");
-        m_calculateButton->setText("重新计算");
-    } else if (result) {
-        const int missing = std::max(result->dryMassDegreesOfFreedom,
-                                     result->componentMassDegreesOfFreedom);
-        const bool conflict = std::any_of(result->issues.cbegin(), result->issues.cend(),
-            [](const auto& issue) {
-                return issue.code == topology::IssueCode::InconsistentBalance
-                    || issue.code == topology::IssueCode::InvalidMeasurement;
-            });
-        m_calculationStatus->setText(conflict
-            ? QString("计算未完成 · 输入数据或支路占比相互矛盾")
-            : missing > 0
-                ? QString("计算未完成 · 方程组仍有 %1 个独立自由度，请补充实测物流")
-                      .arg(missing)
-                : QString("计算未完成 · %1 个流程问题").arg(result->issues.size()));
-        m_calculateButton->setText("重新计算");
-    } else {
-        const auto preview = FlowsheetCalculationService::calculate(
-            m_snapshot, m_document);
-        const int missing = std::max(preview.dryMassDegreesOfFreedom,
-                                     preview.componentMassDegreesOfFreedom);
-        m_calculationStatus->setText(m_model->rowCount() == 0
-            ? "请先在画布中建立流程"
-            : missing > 0
-                ? QString("当前方程组还有 %1 个独立自由度 · 可补充任意实测物流")
-                      .arg(missing)
-                : hasCompleteInput
-                    ? "当前约束已足够，可以计算"
-                    : "可填写总入料或任意产品物流的质量和各组分品位");
-        m_calculateButton->setText("计算");
-    }
-}
-
-void TerminalProductDock::showCalculationExplanation() {
-    // Once an input changes, its stored result is invalidated.  Use a preview
-    // in that case so the explanation always describes the values on screen.
-    const auto* stored = m_document.calculationResult();
-    const auto preview = stored ? topology::CalculationResult{}
-                                : FlowsheetCalculationService::calculate(m_snapshot, m_document);
-    const auto& result = stored ? *stored : preview;
-    m_resultDetails->showCalculationExplanation(result, m_document.calculationMode());
 }
 
 } // namespace afs

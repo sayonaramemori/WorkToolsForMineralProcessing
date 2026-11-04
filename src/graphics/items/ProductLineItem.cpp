@@ -1,23 +1,15 @@
 #include "graphics/items/ProductLineItem.h"
+#include "graphics/ThickenerGeometry.h"
 #include "graphics/FlotationGeometry.h"
 #include "graphics/items/FlotationUnitItem.h"
-#include "editor/FlowsheetScene.h"
-#include "graphics/items/InputLineItem.h"
-#include "graphics/items/MergeJunctionItem.h"
-
 #include <QApplication>
 #include <QBrush>
-#include <QGraphicsSceneMouseEvent>
-#include <QGraphicsSceneContextMenuEvent>
 #include <QGraphicsSimpleTextItem>
-#include <QKeyEvent>
-#include <QMenu>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPainterPathStroker>
 #include <QPalette>
 #include <QPen>
-#include <cmath>
 
 namespace afs {
 
@@ -39,15 +31,26 @@ ProductLineItem::ProductLineItem(FlotationUnitItem* sourceUnit, ProductSide side
 }
 
 double ProductLineItem::sideX() const {
+    if (hasCenteredVerticalPorts(m_sourceUnit->unit().kind)) return 0.0;
     return productSideDirection(m_side) * m_sourceUnit->unit().width / 2.0;
 }
 
+QPointF ProductLineItem::sourceAnchorPosition() const {
+    return {sideX(), m_sourceUnit->unit().kind == UnitKind::Thickener ? ThickenerGeometry::Bottom
+        : m_sourceUnit->unit().kind == UnitKind::BallMill
+        ? m_sourceUnit->unit().ballMillDiameter / 2.0 : 0.0};
+}
+
+double ProductLineItem::defaultRouteY(const QPointF& end) const {
+    return (end.y() + sourceAnchorPosition().y() + m_sourceUnit->unit().bodyHeight) / 2.0;
+}
+
 QPointF ProductLineItem::unconnectedEndScenePosition() const {
-    return m_sourceUnit->mapToScene(QPointF(sideX(), terminalLength()));
+    return m_sourceUnit->mapToScene(sourceAnchorPosition() + QPointF(0, terminalLength()));
 }
 
 QPointF ProductLineItem::sourceAnchorScenePosition() const {
-    return m_sourceUnit->mapToScene(QPointF(sideX(), 0));
+    return m_sourceUnit->mapToScene(sourceAnchorPosition());
 }
 
 QPainterPath ProductLineItem::shape() const {
@@ -96,15 +99,15 @@ void ProductLineItem::setDropHighlighted(bool highlighted) {
 void ProductLineItem::updatePath() {
     prepareGeometryChange();
     const double x = sideX();
-    QPointF end(x, terminalLength());
+    QPointF end = sourceAnchorPosition() + QPointF(0, terminalLength());
     if (m_dragging) {
         end = m_dragEnd;
     } else if (m_targetUnit) {
-        end = m_sourceUnit->mapFromScene(m_targetUnit->mapToScene(QPointF(0, 0)));
+        end = m_sourceUnit->mapFromScene(m_targetUnit->inputAnchorScenePosition());
     }
-    QPainterPath p(QPointF(x, 0));
+    QPainterPath p(sourceAnchorPosition());
     if (m_targetUnit && !m_dragging) {
-        const double routeY = m_manualRouteY.value_or((end.y() + m_sourceUnit->unit().bodyHeight) / 2.0);
+        const double routeY = m_manualRouteY.value_or(defaultRouteY(end));
         p.lineTo(x, routeY);
         p.lineTo(end.x(), routeY);
         p.lineTo(end);
@@ -184,157 +187,12 @@ void ProductLineItem::refreshAppearance() {
     update();
 }
 
-void ProductLineItem::setHighlightedInput(InputLineItem* input) {
-    if (m_highlightedInput == input) return;
-    if (m_highlightedInput) m_highlightedInput->setDropHighlighted(false);
-    m_highlightedInput = input;
-    if (m_highlightedInput) m_highlightedInput->setDropHighlighted(true);
-}
-
-void ProductLineItem::setHighlightedProduct(ProductLineItem* product) {
-    if (m_highlightedProduct == product) return;
-    if (m_highlightedProduct) m_highlightedProduct->setDropHighlighted(false);
-    m_highlightedProduct = product;
-    if (m_highlightedProduct) m_highlightedProduct->setDropHighlighted(true);
-}
-
-void ProductLineItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
-    if (event->button() != Qt::LeftButton) {
-        QGraphicsPathItem::mousePressEvent(event);
-        return;
-    }
-    if (!(event->modifiers() & Qt::ControlModifier)) scene()->clearSelection();
-    setSelected(true);
-    setFocus();
-    refreshAppearance();
-    if (isConnected()) {
-        m_routeEditing = true;
-        if (!m_manualRouteY) {
-            const QPointF end = mapFromScene(m_targetUnit->mapToScene(QPointF(0, 0)));
-            m_manualRouteY = (end.y() + m_sourceUnit->unit().bodyHeight) / 2.0;
-        }
-    } else if (isAvailable()) {
-        m_dragging = true;
-        m_dragEnd = mapFromScene(event->scenePos());
-        updatePath();
-    }
-    event->accept();
-}
-
-void ProductLineItem::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
-    if (m_routeEditing) {
-        m_manualRouteY = std::round(event->pos().y() / 10.0) * 10.0;
-        updatePath();
-        event->accept();
-        return;
-    }
-    if (!m_dragging) {
-        event->accept();
-        return;
-    }
-    m_dragEnd = mapFromScene(event->scenePos());
-    InputLineItem* candidate = nullptr;
-    ProductLineItem* productCandidate = nullptr;
-    MergeJunctionItem* mergeCandidate = nullptr;
-    for (auto* item : scene()->items(event->scenePos())) {
-        auto* input = dynamic_cast<InputLineItem*>(item);
-        if (input && input->isVisible() && input->unit() != m_sourceUnit) {
-            candidate = input;
-            break;
-        }
-        auto* product = dynamic_cast<ProductLineItem*>(item);
-        if (product && product != this && product->isAvailable()
-            && product->sourceUnit() != m_sourceUnit) productCandidate = product;
-        auto* merge = dynamic_cast<MergeJunctionItem*>(item);
-        if (merge && merge->isAvailable()) mergeCandidate = merge;
-    }
-    if (!candidate) {
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) {
-            auto* hiddenInput = flowsheet->inputAtDropPosition(event->scenePos());
-            if (hiddenInput && hiddenInput->unit() != m_sourceUnit) candidate = hiddenInput;
-        }
-    }
-    setHighlightedInput(candidate);
-    setHighlightedProduct(candidate ? nullptr : productCandidate);
-    m_highlightedMerge = (candidate || productCandidate) ? nullptr : mergeCandidate;
-    updatePath();
-    event->accept();
-}
-
-void ProductLineItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
-    if (m_routeEditing) {
-        m_routeEditing = false;
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
-        updatePath();
-        event->accept();
-        return;
-    }
-    if (!m_dragging) {
-        event->accept();
-        return;
-    }
-    InputLineItem* targetInput = m_highlightedInput;
-    ProductLineItem* targetProduct = m_highlightedProduct;
-    MergeJunctionItem* targetMerge = m_highlightedMerge;
-    setHighlightedInput(nullptr);
-    setHighlightedProduct(nullptr);
-    m_highlightedMerge = nullptr;
-    m_dragging = false;
-    if (targetInput) {
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene()))
-            flowsheet->connectProduct(this, targetInput,
-                                      event->modifiers() & Qt::ControlModifier);
-    } else if (targetProduct) {
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene()))
-            flowsheet->mergeProducts(this, targetProduct);
-    } else if (targetMerge) {
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene()))
-            flowsheet->addProductToMerge(this, targetMerge);
-    }
-    // Always restore the canonical path. A drop target can become invalid
-    // between hover and release, in which case no scene operation updates it.
-    updatePath();
-    event->accept();
-}
-
-void ProductLineItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) {
-    if (isConnected()) {
-        m_manualRouteY = std::round(event->pos().y() / 10.0) * 10.0;
-        updatePath();
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
-        event->accept();
-        return;
-    }
-    QGraphicsPathItem::mouseDoubleClickEvent(event);
-}
-
-void ProductLineItem::contextMenuEvent(QGraphicsSceneContextMenuEvent* event) {
-    QMenu menu;
-    auto* reset = menu.addAction(QStringLiteral("恢复自动布线"));
-    reset->setEnabled(m_manualRouteY.has_value());
-    if (menu.exec(event->screenPos()) == reset) {
-        setManualRouteY(std::nullopt);
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
-    }
-    event->accept();
-}
-
-void ProductLineItem::keyPressEvent(QKeyEvent* event) {
-    if (event->key() == Qt::Key_Delete && m_manualRouteY) {
-        setManualRouteY(std::nullopt);
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
-        event->accept();
-        return;
-    }
-    QGraphicsPathItem::keyPressEvent(event);
-}
-
 void ProductLineItem::paint(QPainter* painter, const QStyleOptionGraphicsItem* option,
                             QWidget* widget) {
     QGraphicsPathItem::paint(painter, option, widget);
     if (!isSelected() || !isConnected()) return;
-    const QPointF end = mapFromScene(m_targetUnit->mapToScene(QPointF(0, 0)));
-    const double routeY = m_manualRouteY.value_or((end.y() + m_sourceUnit->unit().bodyHeight) / 2.0);
+    const QPointF end = mapFromScene(m_targetUnit->inputAnchorScenePosition());
+    const double routeY = m_manualRouteY.value_or(defaultRouteY(end));
     painter->setPen(QPen(QApplication::palette().color(QPalette::Highlight), 1.5));
     painter->setBrush(QApplication::palette().color(QPalette::Base));
     painter->drawRect(QRectF(QPointF((sideX() + end.x()) / 2.0 - 4.0, routeY - 4.0), QSizeF(8, 8)));

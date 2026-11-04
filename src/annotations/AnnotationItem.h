@@ -28,6 +28,10 @@ public:
     void refreshAppearance();
     void setTextSettings(AnnotationTextSettings settings);
     [[nodiscard]] const AnnotationTextSettings& textSettings() const { return m_textSettings; }
+    void setCalculatedResultEmphasis(bool emphasized);
+    [[nodiscard]] bool calculatedResultEmphasized() const { return m_calculatedResultEmphasis; }
+    void setCalculatedResultBorderWidth(qreal width);
+    [[nodiscard]] qreal calculatedResultBorderWidth() const { return m_calculatedResultBorderWidth; }
 
 signals:
     void placementEdited(const afs::AnnotationRecord& record);
@@ -45,6 +49,8 @@ private:
     bool m_hasAnchor{false};
     bool m_updatingPosition{false};
     AnnotationTextSettings m_textSettings;
+    bool m_calculatedResultEmphasis{false};
+    qreal m_calculatedResultBorderWidth{ResultBorderStyle::DefaultWidth};
 
     void updateBounds();
 };

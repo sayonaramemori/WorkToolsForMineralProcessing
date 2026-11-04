@@ -15,7 +15,7 @@
 
 namespace afs {
 namespace {
-struct Segment { QGraphicsItem* owner; QPointF a; QPointF b; bool horizontal; };
+struct Segment { QPointF a; QPointF b; bool horizontal; };
 }
 
 void CrossingBridgeRenderer::draw(const QGraphicsScene& scene, QPainter& painter) {
@@ -33,7 +33,7 @@ void CrossingBridgeRenderer::draw(const QGraphicsScene& scene, QPainter& painter
                 const bool horizontal = std::abs(a.y() - b.y()) < 0.01;
                 const bool vertical = std::abs(a.x() - b.x()) < 0.01;
                 if ((horizontal || vertical) && QLineF(a, b).length() > 12.0)
-                    segments.append({item, a, b, horizontal});
+                    segments.append({a, b, horizontal});
             }
         }
     }
@@ -46,7 +46,11 @@ void CrossingBridgeRenderer::draw(const QGraphicsScene& scene, QPainter& painter
         const double right = std::max(h.a.x(), h.b.x());
         for (int second = 0; second < segments.size(); ++second) {
             const auto& v = segments[second];
-            if (v.horizontal || v.owner == h.owner) continue;
+            // A feed item contains several independent inlet branches. They
+            // can cross inside that same item, so item identity cannot decide
+            // whether to draw a bridge. Strict interior intersections below
+            // exclude route bends and the explicit junction endpoints.
+            if (v.horizontal) continue;
             const double top = std::min(v.a.y(), v.b.y());
             const double bottom = std::max(v.a.y(), v.b.y());
             const QPointF point(v.a.x(), h.a.y());
@@ -63,13 +67,23 @@ void CrossingBridgeRenderer::draw(const QGraphicsScene& scene, QPainter& painter
         ? palette.color(QPalette::Base) : scene.backgroundBrush().color();
     painter.setRenderHint(QPainter::Antialiasing);
     for (const auto& point : crossings) {
-        painter.setPen(QPen(background, 5.0, Qt::SolidLine, Qt::RoundCap));
-        painter.drawLine(point - QPointF(radius + 1.0, 0), point + QPointF(radius + 1.0, 0));
+        // Clear only the horizontal stroke replaced by the arch, leaving the
+        // vertical stroke intact at the center. One full-width mask also
+        // erases that vertical line and makes it appear disconnected.
+        painter.setPen(QPen(background, 5.0, Qt::SolidLine, Qt::FlatCap));
+        const double halfStroke = FlotationGeometry::BodyLineWidth / 2.0;
+        painter.drawLine(point - QPointF(radius, 0), point - QPointF(halfStroke, 0));
+        painter.drawLine(point + QPointF(halfStroke, 0), point + QPointF(radius, 0));
         painter.setPen(QPen(palette.color(QPalette::Text), FlotationGeometry::BodyLineWidth,
                             Qt::SolidLine, Qt::RoundCap));
         QPainterPath bridge(point - QPointF(radius, 0));
-        bridge.cubicTo(point + QPointF(-radius * 0.55, -radius),
-                       point + QPointF(radius * 0.55, -radius), point + QPointF(radius, 0));
+        // Horizontal endpoint tangents join the unchanged straight segments
+        // smoothly, including when the scene is magnified or exported.
+        const double height = radius * 0.75;
+        bridge.cubicTo(point + QPointF(-radius * 0.5, 0),
+                       point + QPointF(-radius * 0.5, -height), point + QPointF(0, -height));
+        bridge.cubicTo(point + QPointF(radius * 0.5, -height),
+                       point + QPointF(radius * 0.5, 0), point + QPointF(radius, 0));
         painter.drawPath(bridge);
     }
 }

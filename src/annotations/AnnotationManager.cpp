@@ -11,18 +11,13 @@
 #include "graphics/items/ProductLineItem.h"
 
 #include <QSet>
-#include <QGraphicsSceneContextMenuEvent>
-#include <QInputDialog>
-#include <QKeyEvent>
-#include <QLineEdit>
-#include <QMenu>
-#include <algorithm>
 #include <utility>
 
 namespace afs {
 
 AnnotationManager::AnnotationManager(FlowsheetScene& scene, FlowsheetDocument& document, QObject* parent)
     : QObject(parent), m_scene(scene), m_document(document) {
+    loadDisplayPreferences();
     connect(&m_document, &FlowsheetDocument::calculationChanged, this, [this] {
         // A new calculation (or invalidation) starts a fresh display session.
         m_temporarilyHiddenResults.clear();
@@ -39,154 +34,6 @@ AnnotationManager::AnnotationManager(FlowsheetScene& scene, FlowsheetDocument& d
     m_scene.installEventFilter(this);
     synchronizeReagents();
     synchronizeNotes();
-}
-
-QString AnnotationManager::selectedLineStreamId(QGraphicsItem** owner) const {
-    for (auto* item : m_scene.selectedItems()) {
-        if (auto* product = dynamic_cast<ProductLineItem*>(item)) {
-            if (owner) *owner = product; return product->streamId();
-        }
-        if (auto* merge = dynamic_cast<MergeJunctionItem*>(item)) {
-            if (owner) *owner = merge; return merge->outputStreamId();
-        }
-        if (auto* input = dynamic_cast<InputLineItem*>(item)) {
-            if (owner) *owner = input; return input->unit()->unit().id + ":feed";
-        }
-        if (auto* feed = dynamic_cast<FeedJunctionItem*>(item)) {
-            if (owner) *owner = feed;
-            return feed->selectedSourceStreamId().isEmpty()
-                ? feed->outputStreamId() : feed->selectedSourceStreamId();
-        }
-    }
-    return {};
-}
-
-bool AnnotationManager::eventFilter(QObject* watched, QEvent* event) {
-    if (watched != &m_scene) return QObject::eventFilter(watched, event);
-    if (event->type() == QEvent::GraphicsSceneContextMenu) {
-        auto* context = static_cast<QGraphicsSceneContextMenuEvent*>(event);
-        QGraphicsItem* owner = nullptr;
-        QString streamId = selectedLineStreamId(&owner);
-        // QGraphicsItem's default right-button handling can clear the previous
-        // selection before the scene receives its context-menu event. Resolve
-        // the line under the pointer and restore its selection in that case.
-        if (streamId.isEmpty()) {
-            for (auto* hit : m_scene.items(context->scenePos())) {
-                QGraphicsItem* candidate = hit;
-                while (candidate) {
-                    if (auto* product = dynamic_cast<ProductLineItem*>(candidate)) {
-                        streamId = product->streamId(); owner = product; break;
-                    }
-                    if (auto* merge = dynamic_cast<MergeJunctionItem*>(candidate)) {
-                        streamId = merge->outputStreamId(); owner = merge; break;
-                    }
-                    if (auto* input = dynamic_cast<InputLineItem*>(candidate)) {
-                        streamId = input->unit()->unit().id + ":feed"; owner = input; break;
-                    }
-                    if (auto* feed = dynamic_cast<FeedJunctionItem*>(candidate)) {
-                        streamId = feed->outputStreamId(); owner = feed; break;
-                    }
-                    candidate = candidate->parentItem();
-                }
-                if (!streamId.isEmpty()) break;
-            }
-            if (owner) {
-                m_scene.clearSelection();
-                owner->setSelected(true);
-            }
-        }
-        QMenu menu;
-        auto* addReagent = streamId.isEmpty() ? nullptr : menu.addAction(tr("添加药剂标注"));
-        auto* addNote = menu.addAction(tr("添加自定义文字"));
-        QAction* resetRoute = nullptr;
-        if (auto* product = dynamic_cast<ProductLineItem*>(owner); product && product->manualRouteY())
-            resetRoute = menu.addAction(tr("恢复自动布线"));
-        else if (auto* merge = dynamic_cast<MergeJunctionItem*>(owner); merge && merge->manualMergeY())
-            resetRoute = menu.addAction(tr("恢复自动布线"));
-        else if (auto* feed = dynamic_cast<FeedJunctionItem*>(owner);
-                 feed && (!feed->manualRouteXs().isEmpty() || !feed->manualRouteYs().isEmpty()))
-            resetRoute = menu.addAction(tr("恢复全部支路自动布线"));
-        auto* selectedAction = menu.exec(context->screenPos());
-        if (!selectedAction) return true;
-        if (selectedAction == resetRoute) {
-            if (auto* product = dynamic_cast<ProductLineItem*>(owner))
-                product->setManualRouteY(std::nullopt);
-            else if (auto* merge = dynamic_cast<MergeJunctionItem*>(owner))
-                merge->setManualMergeY(std::nullopt);
-            else if (auto* feed = dynamic_cast<FeedJunctionItem*>(owner)) {
-                feed->resetManualRoutes();
-            }
-            m_scene.notifyRouteChanged();
-        } else if (selectedAction == addReagent) {
-            int next = 1;
-            while (m_document.annotationRecords().contains(QString("reagent-%1").arg(next))) ++next;
-            AnnotationRecord record{QString("reagent-%1").arg(next), AnnotationKind::Reagent,
-                AnnotationStyle::PlainText, AnnotationOwnerKind::Stream, streamId, {}, false, true};
-            if (!ReagentAnnotationItem::editRecord(nullptr, record, tr("添加药剂标注"))) return true;
-            m_document.setAnnotationRecord(record);
-            synchronizeReagents();
-            if (auto* item = m_reagentItems.value(record.id)) {
-                m_scene.clearSelection(); item->setSelected(true);
-            }
-        } else if (selectedAction == addNote) {
-            int next = 1;
-            while (m_document.annotationRecords().contains(QString("note-%1").arg(next))) ++next;
-            AnnotationRecord record{QString("note-%1").arg(next), AnnotationKind::UserNote,
-                AnnotationStyle::Note, AnnotationOwnerKind::Free, QStringLiteral("canvas"),
-                context->scenePos(), true, true};
-            if (!AnnotationItem::editUserNote(nullptr, record,
-                    m_document.annotationTextSettings(), tr("添加自定义文字"))) return true;
-            m_document.setAnnotationRecord(record);
-            synchronizeNotes();
-            if (auto* item = m_noteItems.value(record.id)) {
-                m_scene.clearSelection(); item->setSelected(true);
-            }
-        }
-        return true;
-    }
-    if (event->type() == QEvent::KeyPress) {
-        auto* key = static_cast<QKeyEvent*>(event);
-        if (key->key() != Qt::Key_Delete) return false;
-        bool removed = false;
-        for (auto* selected : m_scene.selectedItems()) {
-            if (auto* note = dynamic_cast<AnnotationItem*>(selected);
-                note && note->record().kind == AnnotationKind::UserNote) {
-                const QString id = note->record().id;
-                m_document.removeAnnotationRecord(id);
-                m_noteItems.remove(id);
-                m_scene.removeItem(note); delete note; removed = true;
-                continue;
-            }
-            if (auto* result = dynamic_cast<AnnotationItem*>(selected);
-                result && result->record().kind == AnnotationKind::StreamResult) {
-                m_temporarilyHiddenResults.insert(result->record().id);
-                result->setSelected(false);
-                result->setVisible(false);
-                removed = true;
-                continue;
-            }
-            auto* reagent = dynamic_cast<ReagentAnnotationItem*>(selected);
-            if (!reagent) continue;
-            const QString id = reagent->record().id;
-            m_document.removeAnnotationRecord(id);
-            m_reagentItems.remove(id);
-            m_scene.removeItem(reagent); delete reagent; removed = true;
-        }
-        return removed;
-    }
-    return false;
-}
-
-bool AnnotationManager::nudgeSelectedReagents(qreal verticalDelta) {
-    if (qFuzzyIsNull(verticalDelta)) return false;
-    bool moved = false;
-    for (auto* selected : m_scene.selectedItems()) {
-        auto* reagent = dynamic_cast<ReagentAnnotationItem*>(selected);
-        if (!reagent) continue;
-        reagent->setPos(reagent->pos() + QPointF(0.0, verticalDelta));
-        moved = true;
-    }
-    return moved;
 }
 
 bool AnnotationManager::anchorForStream(const QString& streamId, QPointF& anchor,
@@ -285,6 +132,15 @@ void AnnotationManager::synchronize() {
         const topology::ProductMetrics* overall = metricsIt == result->relativeToExternalFeed.cend()
             ? nullptr : &metricsIt.value();
         QVector<ComponentDisplayValue> componentValues;
+        bool hasCalculatedGrade = false;
+        const auto measurement = m_document.measurement(it.key());
+        // Only complete mass/grade observations are consumed by the solver.
+        // An unused partial input must not turn a derived result into a measurement.
+        const auto measured = [&](const QString& componentId) {
+            const auto grade = measurement.grade(componentId);
+            return measurement.dryMass && grade
+                && topology::StreamValue::fromMassAndGrade(*measurement.dryMass, *grade).has_value();
+        };
         for (const auto& component : m_document.components()) {
             const auto componentResult = result->components.constFind(component.id);
             if (componentResult == result->components.cend()
@@ -293,7 +149,11 @@ void AnnotationManager::synchronize() {
             componentValues.append({component.name,
                 componentResult->values.value(it.key()).gradePercent(),
                 metric == componentResult->relativeToExternalFeed.cend() ? nullptr : &metric.value()});
+            hasCalculatedGrade = hasCalculatedGrade || !measured(component.id);
         }
+        const bool primaryMeasured = !m_document.components().isEmpty()
+            && measured(m_document.components().front().id);
+        if (componentValues.isEmpty()) hasCalculatedGrade = !primaryMeasured;
         const QString text = AnnotationContentFormatter::formatStreamResult(
             it.value(), overall, m_settings, componentValues, m_document.productName(it.key()));
         if (!annotation) {
@@ -312,6 +172,10 @@ void AnnotationManager::synchronize() {
         } else {
             annotation->setText(text);
         }
+        annotation->setCalculatedResultBorderWidth(m_calculatedResultBorderWidth);
+        annotation->setCalculatedResultEmphasis(m_settings.distinguishValueSources
+            && ((m_settings.showDryMass && !primaryMeasured)
+                || (m_settings.showGrade && hasCalculatedGrade)));
         annotation->setAnchor(anchor, defaultOffset);
         annotation->setVisible(m_visible && m_settings.anyVisible()
             && annotation->record().visible
@@ -319,89 +183,6 @@ void AnnotationManager::synchronize() {
     }
     for (auto it = m_items.begin(); it != m_items.end(); ++it)
         if (!activeIds.contains(it.key())) it.value()->setVisible(false);
-}
-
-void AnnotationManager::synchronizeDisplaySettings() {
-    const auto& persisted = m_document.annotationTextSettings();
-    m_settings.massUnit = persisted.massUnit;
-    m_settings.customMassUnit = persisted.customMassUnit;
-    m_settings.showDryMass = persisted.showDryMass;
-    m_settings.showGrade = persisted.showGrade;
-    m_settings.showOverallYield = persisted.showOverallYield;
-    m_settings.showOverallRecovery = persisted.showOverallRecovery;
-    m_settings.showProductName = persisted.showProductName;
-    m_settings.labelMode = persisted.metricLabelMode;
-    m_visible = persisted.resultAnnotationsVisible;
-}
-
-void AnnotationManager::synchronizeNotes() {
-    QSet<QString> active;
-    const auto records = m_document.annotationRecords();
-    for (auto it = records.cbegin(); it != records.cend(); ++it) {
-        const auto& record = it.value();
-        if (record.kind != AnnotationKind::UserNote || record.text.isEmpty()) continue;
-        active.insert(record.id);
-        auto* item = m_noteItems.value(record.id, nullptr);
-        if (!item) {
-            item = new AnnotationItem(record, record.text);
-            m_scene.addItem(item); m_noteItems.insert(record.id, item);
-            connect(item, &AnnotationItem::placementEdited, &m_document,
-                    &FlowsheetDocument::setAnnotationRecord);
-            connect(item, &AnnotationItem::recordEdited, &m_document,
-                    &FlowsheetDocument::setAnnotationRecord);
-        } else {
-            item->setRecord(record);
-        }
-        item->setTextSettings(m_document.annotationTextSettings());
-        item->setAnchor({}, record.manualOffset);
-        item->setVisible(record.visible);
-    }
-    for (auto it = m_noteItems.begin(); it != m_noteItems.end();) {
-        if (active.contains(it.key())) { ++it; continue; }
-        auto* item = it.value(); it = m_noteItems.erase(it);
-        m_scene.removeItem(item); delete item;
-    }
-}
-
-void AnnotationManager::synchronizeReagents() {
-    QSet<QString> active;
-    const auto records = m_document.annotationRecords();
-    QVector<AnnotationRecord> reagentRecords;
-    for (auto it = records.cbegin(); it != records.cend(); ++it) {
-        const auto& record = it.value();
-        if (record.kind == AnnotationKind::Reagent
-            && (!record.text.isEmpty() || !record.dosage.isEmpty() || !record.note.isEmpty()))
-            reagentRecords.append(record);
-    }
-    std::sort(reagentRecords.begin(), reagentRecords.end(),
-              [](const auto& a, const auto& b) {
-                  if (a.ownerId != b.ownerId) return a.ownerId < b.ownerId;
-                  return a.id < b.id;
-              });
-    QHash<QString, qreal> ownerStackOffsets;
-    for (const auto& record : reagentRecords) {
-        QPointF anchor, offset;
-        if (!anchorForStream(record.ownerId, anchor, offset)) continue;
-        active.insert(record.id);
-        auto* item = m_reagentItems.value(record.id, nullptr);
-        if (!item) {
-            item = new ReagentAnnotationItem(record);
-            m_scene.addItem(item); m_reagentItems.insert(record.id, item);
-            connect(item, &ReagentAnnotationItem::recordEdited, &m_document,
-                    &FlowsheetDocument::setAnnotationRecord);
-        } else item->setRecord(record);
-        item->setTextSettings(m_document.annotationTextSettings());
-        const qreal stackOffset = ownerStackOffsets.value(record.ownerId, 0.0);
-        item->setAnchor(anchor + QPointF(0.0, stackOffset));
-        ownerStackOffsets.insert(record.ownerId,
-                                 stackOffset + item->boundingRect().height() + 8.0);
-        item->setVisible(record.visible);
-    }
-    for (auto it = m_reagentItems.begin(); it != m_reagentItems.end();) {
-        if (active.contains(it.key())) { ++it; continue; }
-        auto* item = it.value(); it = m_reagentItems.erase(it);
-        m_scene.removeItem(item); delete item;
-    }
 }
 
 void AnnotationManager::refreshPositions() {
@@ -413,25 +194,6 @@ void AnnotationManager::refreshPositions() {
     }
     synchronizeReagents();
     synchronizeNotes();
-}
-
-void AnnotationManager::refreshAppearance() {
-    for (auto* item : m_items) item->refreshAppearance();
-    for (auto* item : m_reagentItems) item->refreshAppearance();
-    for (auto* item : m_noteItems) item->refreshAppearance();
-}
-
-void AnnotationManager::refreshTextSettings() {
-    for (auto* item : m_items)
-        item->setTextSettings(m_document.annotationTextSettings());
-    for (auto* item : m_reagentItems)
-        item->setTextSettings(m_document.annotationTextSettings());
-    for (auto* item : m_noteItems)
-        item->setTextSettings(m_document.annotationTextSettings());
-    // Text settings also carry the mass-unit label, which changes result-card
-    // content rather than only font geometry.
-    synchronize();
-    refreshPositions();
 }
 
 void AnnotationManager::clearGraphicsItems() {
@@ -448,51 +210,6 @@ void AnnotationManager::clearGraphicsItems() {
         m_scene.removeItem(item); delete item;
     }
     m_noteItems.clear();
-}
-
-void AnnotationManager::setAnnotationsVisible(bool visible) {
-    auto persisted = m_document.annotationTextSettings();
-    persisted.resultAnnotationsVisible = visible;
-    m_document.setAnnotationTextSettings(persisted);
-}
-
-void AnnotationManager::setMetricVisible(ResultMetric metric, bool visible) {
-    auto persisted = m_document.annotationTextSettings();
-    switch (metric) {
-    case ResultMetric::DryMass: persisted.showDryMass = visible; break;
-    case ResultMetric::Grade: persisted.showGrade = visible; break;
-    case ResultMetric::OverallYield: persisted.showOverallYield = visible; break;
-    case ResultMetric::OverallRecovery: persisted.showOverallRecovery = visible; break;
-    }
-    m_document.setAnnotationTextSettings(persisted);
-}
-
-void AnnotationManager::setProductNamesVisible(bool visible) {
-    auto persisted = m_document.annotationTextSettings();
-    if (persisted.showProductName == visible) return;
-    persisted.showProductName = visible;
-    m_document.setAnnotationTextSettings(persisted);
-}
-
-void AnnotationManager::setMetricLabelMode(MetricLabelMode mode) {
-    auto persisted = m_document.annotationTextSettings();
-    if (persisted.metricLabelMode == mode) return;
-    persisted.metricLabelMode = mode;
-    m_document.setAnnotationTextSettings(persisted);
-}
-
-void AnnotationManager::setMassUnit(MassUnit unit) {
-    auto settings = m_document.annotationTextSettings();
-    if (settings.massUnit == unit) return;
-    settings.massUnit = unit;
-    m_document.setAnnotationTextSettings(std::move(settings));
-}
-
-void AnnotationManager::setCustomMassUnit(const QString& unit) {
-    auto settings = m_document.annotationTextSettings();
-    settings.massUnit = MassUnit::Custom;
-    settings.customMassUnit = unit;
-    m_document.setAnnotationTextSettings(std::move(settings));
 }
 
 } // namespace afs

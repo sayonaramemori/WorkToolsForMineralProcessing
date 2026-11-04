@@ -35,6 +35,9 @@ protected:
     void closeEvent(QCloseEvent* event) override;
 
 private:
+    struct UndoActions { QAction* undo; QAction* redo; };
+    UndoActions createToolbar();
+
     QGraphicsScene* m_scene;
     CanvasView* m_view;
     QAction* m_themeAction{nullptr};
@@ -45,6 +48,7 @@ private:
     bool m_darkTheme{false};
     bool m_projectDirty{false};
     bool m_loadingProject{false};
+    bool m_selectingGraphicsFromTable{false};
     int m_nextUnitId{1};
     QString m_projectPath;
     QComboBox* m_scenarioCombo{nullptr};
@@ -55,6 +59,8 @@ private:
     QMenu* m_recentProjectsMenu{nullptr};
 
     void addFlotationUnit();
+    void addBallMill();
+    void addThickener();
     void addMagneticSeparator(UnitKind kind);
     void addGravitySeparator(UnitKind kind);
     void addSizingSeparator(UnitKind kind);
