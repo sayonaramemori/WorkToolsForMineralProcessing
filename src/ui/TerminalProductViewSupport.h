@@ -11,9 +11,7 @@ public:
     enum Mode { All, Entered, NeedsInput, Terminal, Feed, Recycle, SelectedUnit };
     using QSortFilterProxyModel::QSortFilterProxyModel;
     void setMode(Mode mode);
-    void setInterestedOwners(QSet<QString> ids);
-    // This is intentionally separate from "interest" objects. Interest is a
-    // user-chosen scope; selected units are a transient canvas focus.
+    // Selected units are a transient, one-hop canvas focus.
     void setSelectedUnitIds(QSet<QString> ids);
 
 protected:
@@ -21,7 +19,6 @@ protected:
 
 private:
     Mode m_mode{All};
-    QSet<QString> m_interestedOwners;
     QSet<QString> m_selectedUnitIds;
 };
 

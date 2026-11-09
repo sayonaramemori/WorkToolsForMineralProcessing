@@ -30,7 +30,8 @@ int checkProjectFormat(const FlowsheetScene& source, const FlowsheetDocument& so
         return true;
     };
     for (int version = 1; version <= project_serialization::FormatVersion + 1; ++version) {
-        if (version == project_serialization::FormatVersion) continue;
+        if (version == project_serialization::FormatVersion
+            || version == project_serialization::LegacyFormatVersion) continue;
         auto project = currentProject;
         project.insert("version", version);
         if (!rejectProject(QString("version %1").arg(version), project)) return 69;
@@ -41,7 +42,8 @@ int checkProjectFormat(const FlowsheetScene& source, const FlowsheetDocument& so
         project.remove(field);
         if (!rejectProject(QString("missing %1").arg(field), project)) return 70;
     }
-    for (const QJsonValue version : {QJsonValue("23"), QJsonValue(23.5), QJsonValue(QJsonValue::Null)}) {
+    for (const QJsonValue version : {QJsonValue(QString::number(project_serialization::FormatVersion)),
+             QJsonValue(project_serialization::FormatVersion + 0.5), QJsonValue(QJsonValue::Null)}) {
         auto project = currentProject;
         project.insert("version", version);
         if (!rejectProject("invalid version type", project)) return 85;
@@ -104,7 +106,7 @@ int checkProjectFormat(const FlowsheetScene& source, const FlowsheetDocument& so
         scenarios[0] = scenario; project.insert("scenarios", scenarios);
         if (!rejectProject(QString("missing measurement %1").arg(field), project)) return 88;
     }
-    for (const auto& field : {"calculated", "calculationMode"}) {
+    for (const auto& field : {"calculated", "calculationMode", "notes"}) {
         auto project = currentProject;
         auto scenarios = project.value("scenarios").toArray();
         auto scenario = scenarios.first().toObject();

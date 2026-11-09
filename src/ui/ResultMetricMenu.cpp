@@ -9,11 +9,8 @@
 
 namespace afs {
 
-ResultMetricMenu::ResultMetricMenu(QWidget* parent) : QToolButton(parent) {
-    setText(tr("指标设置"));
-    setPopupMode(QToolButton::InstantPopup);
-    auto* popup = new QMenu(this);
-    popup->setTitle(tr("指标设置"));
+ResultMetricMenu::ResultMetricMenu(QWidget* parent) : QMenu(tr("指标设置"), parent) {
+    auto* popup = this;
     const auto addMetric = [this, popup](const QString& text, ResultMetric metric, bool checked) {
         auto* action = popup->addAction(text);
         action->setCheckable(true);
@@ -71,7 +68,7 @@ ResultMetricMenu::ResultMetricMenu(QWidget* parent) : QToolButton(parent) {
     connect(custom, &QAction::triggered, this, [this] {
         bool accepted = false;
         const QString unit = QInputDialog::getText(
-            this, tr("自定义质量单位"), tr("单位（最多 16 个字符）"),
+            parentWidget(), tr("自定义质量单位"), tr("单位（最多 16 个字符）"),
             QLineEdit::Normal, m_customMassUnit, &accepted).simplified().left(16);
         if (accepted && !unit.isEmpty()) {
             m_massUnit = MassUnit::Custom;
@@ -81,7 +78,6 @@ ResultMetricMenu::ResultMetricMenu(QWidget* parent) : QToolButton(parent) {
             setMassUnit(m_massUnit, m_customMassUnit);
         }
     });
-    setMenu(popup);
 }
 
 void ResultMetricMenu::setSettings(const AnnotationTextSettings& settings) {

@@ -1,9 +1,11 @@
 #pragma once
 
 #include "services/FlowGroupClipboard.h"
+#include "services/ReagentClipboard.h"
 
 #include <QMainWindow>
 #include <QString>
+#include <memory>
 
 class QAction;
 class QGraphicsScene;
@@ -20,6 +22,11 @@ class TerminalProductDock;
 class AnnotationManager;
 class OperationLogDock;
 class ProjectUndoManager;
+class ObjectPropertiesDock;
+class CalculationIssuesDock;
+class FlowTemplateDock;
+class WorkspaceSidebar;
+class FlowTemplatePreviewSession;
 enum class UnitKind;
 
 class MainWindow final : public QMainWindow {
@@ -37,6 +44,10 @@ protected:
 private:
     struct UndoActions { QAction* undo; QAction* redo; };
     UndoActions createToolbar();
+    UndoActions populateFlowMenu(QMenu* menu);
+    void populateEquipmentMenu(QMenu* menu);
+    void populateDisplayMenu(QMenu* menu, QWidget* controlParent);
+    void setupCanvasShortcuts();
 
     QGraphicsScene* m_scene;
     CanvasView* m_view;
@@ -56,7 +67,35 @@ private:
     OperationLogDock* m_operationLog{nullptr};
     ProjectUndoManager* m_undoManager{nullptr};
     FlowGroupClipboard m_flowClipboard;
+    ReagentClipboard m_reagentClipboard;
+    enum class CanvasClipboardKind { Empty, FlowGroup, Reagent };
+    CanvasClipboardKind m_canvasClipboardKind{CanvasClipboardKind::Empty};
     QMenu* m_recentProjectsMenu{nullptr};
+    ObjectPropertiesDock* m_propertiesDock{nullptr};
+    CalculationIssuesDock* m_issuesDock{nullptr};
+    FlowTemplateDock* m_templatesDock{nullptr};
+    std::unique_ptr<FlowTemplatePreviewSession> m_templatePreview;
+    WorkspaceSidebar* m_workspaceSidebar{nullptr};
+    bool m_propertyRefreshPending{false};
+    QString m_lastTemplateId;
+    QPointF m_lastTemplateCenter;
+    int m_templateInsertCount{0};
+
+    void setupWorkspaceTools();
+    void setupReagentClipboard();
+    void copyReagentAnnotation(const QString& id);
+    void pasteReagentAnnotation(const QString& streamId);
+    void copyCanvasSelection();
+    void pasteCanvasSelection();
+    void schedulePropertyRefresh();
+    void refreshCalculationIssues(bool reveal = false);
+    void locateCalculationIssue(const QString& objectId, const QString& streamId,
+                                const QString& componentId, bool grade, bool edit);
+    void refreshFlowTemplates();
+    void previewFlowTemplate(const QString& id);
+    void saveFlowTemplate();
+    void insertFlowTemplate(const QString& id);
+    void synchronizePastedAnnotations(const FlowGroupClipboard::PasteResult& result);
 
     void addFlotationUnit();
     void addBallMill();
@@ -94,7 +133,6 @@ private:
     void syncCanvasSelectionToTable();
     void refreshSelectionStatus();
     void calculateFlowsheet();
-    void refreshSelectedResult();
     void refreshScenarioUi();
     void addScenario(bool copyCurrent);
     void renameScenario();

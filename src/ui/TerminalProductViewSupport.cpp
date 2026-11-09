@@ -12,11 +12,6 @@ void StreamFilterProxyModel::setMode(Mode mode) {
     beginFilterChange(); m_mode = mode; endFilterChange(Direction::Rows);
 }
 
-void StreamFilterProxyModel::setInterestedOwners(QSet<QString> ids) {
-    beginFilterChange(); m_interestedOwners = std::move(ids);
-    endFilterChange(Direction::Rows);
-}
-
 void StreamFilterProxyModel::setSelectedUnitIds(QSet<QString> ids) {
     if (m_selectedUnitIds == ids) return;
     beginFilterChange(); m_selectedUnitIds = std::move(ids);
@@ -27,12 +22,6 @@ bool StreamFilterProxyModel::filterAcceptsRow(int row, const QModelIndex& parent
     const auto* model = qobject_cast<const TerminalProductTableModel*>(sourceModel());
     const auto* stream = model ? model->streamAt(row) : nullptr;
     if (!model || !stream) return false;
-    if (!m_interestedOwners.isEmpty()) {
-        bool belongs = false;
-        for (const auto& ownerId : stream->ownerIds)
-            if (m_interestedOwners.contains(ownerId)) { belongs = true; break; }
-        if (!belongs) return false;
-    }
     if (m_mode == SelectedUnit) {
         // ownerIds is produced by CanvasTopologyBuilder. It contains both
         // endpoints for a direct product line and the owning junction for a

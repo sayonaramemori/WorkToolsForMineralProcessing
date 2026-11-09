@@ -20,7 +20,6 @@
 #include <QApplication>
 #include <QDebug>
 #include <QFile>
-#include <QLabel>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTest>
@@ -102,8 +101,8 @@ void testThickener(const QString& directory) {
         "Thickener must use one-in/one-out topology");
     document->setCalculationResult(std::move(result));
     scene->clearSelection(); thickener->setSelected(true);
-    require(window.findChild<QLabel*>("resultDetailTitle")->text().contains(id + ":right"),
-            "Selected thickener did not display its output result");
+    require(thickener->isSelected() && !window.findChild<QWidget*>("resultDetails"),
+            "Selecting equipment restored the removed result panel");
     auto* downstream = new FlotationUnitItem({"downstream", {600, 600}}); scene->addItem(downstream);
     require(scene->connectProductDirect(thickener->products().front(), downstream->inputLine()),
             "Thickener output connection failed");

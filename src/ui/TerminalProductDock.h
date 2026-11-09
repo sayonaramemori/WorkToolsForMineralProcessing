@@ -4,6 +4,7 @@
 
 #include <QDockWidget>
 #include <QSet>
+#include <QVector>
 
 class QTableView;
 class QGraphicsItem;
@@ -11,15 +12,12 @@ class QLabel;
 class QWidget;
 class QPushButton;
 class QComboBox;
-class QMenu;
 
 namespace afs {
 
 class FlowsheetDocument;
 class TerminalProductTableModel;
-class ResultDetailsView;
 class StreamFilterProxyModel;
-namespace topology { class TopologyGraph; }
 
 class TerminalProductDock final : public QDockWidget {
     Q_OBJECT
@@ -30,10 +28,8 @@ public:
     void selectGraphicsItem(const QGraphicsItem* item);
     [[nodiscard]] QString selectedStreamIdForGraphicsItem(const QGraphicsItem* item) const;
     void refreshAppearance();
-    void showStreamResult(const QString& streamId);
-    void showUnitResult(const QString& unitId, const topology::TopologyGraph& graph);
-    void clearResultDetails();
     void setScenarioName(const QString& name);
+    bool focusMeasurement(const QString& streamId, const QString& componentId, bool grade, bool edit);
     [[nodiscard]] TerminalProductTableModel* model() const { return m_model; }
 
 signals:
@@ -46,26 +42,28 @@ private:
     StreamFilterProxyModel* m_filterModel;
     QComboBox* m_filterCombo;
     QComboBox* m_modeCombo;
-    QPushButton* m_interestButton;
-    QMenu* m_interestMenu;
     QLabel* m_progressLabel;
     QWidget* m_panel;
     FlowsheetDocument& m_document;
     QPushButton* m_calculateButton;
     QPushButton* m_explanationButton;
     QLabel* m_calculationStatus;
-    ResultDetailsView* m_resultDetails;
     CanvasTopologySnapshot m_snapshot;
-    QSet<QString> m_interestedOwners;
     QSet<QString> m_selectedUnitIds;
+    QVector<int> m_defaultColumnWidths;
+    bool m_columnsManuallyResized{false};
+    bool m_applyingColumnWidths{false};
+    bool m_columnFitPending{false};
 
+    void setupPanel();
     void updateSummary();
     void applyPanelStyle();
     void updateCalculationState();
     void showCalculationExplanation();
     void configureColumns();
     void editComponents();
-    void rebuildInterestMenu();
+    void scheduleColumnFit();
+    void fitColumnsToViewport();
     bool eventFilter(QObject* watched, QEvent* event) override;
 };
 

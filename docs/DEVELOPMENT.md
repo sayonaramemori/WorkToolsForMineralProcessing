@@ -1,5 +1,19 @@
 # 开发指南
 
+## 维护入口
+
+先阅读 [模块职责与依赖边界](MODULE_BOUNDARIES.md) 决定代码归属，再查 [架构说明](ARCHITECTURE.md) 的实现入口。业务状态归文档、求解归 topology、画布到计算图归 adapters、跨模块用例归 app。
+
+配置好 Qt/xmake 后运行：
+
+```bash
+python3 scripts/validate.py --clean
+```
+
+该命令执行全目标干净构建、从 `xmake.lua` 发现的全部 15 个检查，以及 v23、v24 项目启动/退出验证。日志和退出码位于 `build/validation/latest/`，任一检查失败时脚本以非零状态退出。已经构建且源码未变化时可使用 `--skip-build`；xmake 未加入 PATH 时传入 `--xmake /path/to/xmake`。默认使用 Qt offscreen 平台，可用 `--platform` 指定其他已安装插件。验证脚本只依赖 Python 3 标准库。
+
+修改 UI 布局时先保持交互和数据流不变；按需复用现有工作区预览检查。拆分同一 Qt 类时保留统一头文件及唯一 MOC 输入；`terminal_input_test`、`project_io_test` 等按需链接目标必须显式包含新实现依赖，完整应用目标则通过共用源码集收集。
+
 ## 开发原则
 
 1. 先确定数据归属，再添加界面。
@@ -22,7 +36,7 @@
 
 ## Qt 约定
 
-- 含 `Q_OBJECT` 的头文件必须加入对应 xmake target 的 `add_files`，否则不会生成 MOC。
+- 含 `Q_OBJECT` 的头文件必须登记为 xmake 的 MOC 输入。主程序及完整应用测试统一使用 `add_application_sources()` 中的头文件清单；仅按需链接的目标仍显式登记其依赖，不能依赖其他目标生成的 MOC。
 - 图元颜色读取当前 `QApplication::palette()`，主题切换后显式刷新。
 - 不在 `paint()` 中修改业务状态。
 - 结果标注拖动和药剂标注键盘微调都保存相对锚点的偏移，不保存锚定标注的绝对位置。
@@ -30,8 +44,9 @@
 
 ## 撤销与重做
 
-- 第一版撤销由 `ProjectUndoManager` 管理，快照必须调用 `ProjectSerializer::serialize/deserialize`，不得另外维护一套项目复制格式。
+- 撤销由 `ProjectUndoManager` 管理，快照必须调用 `ProjectSerializer::serialize/deserialize`，不得另外维护一套项目复制格式。
 - 连续信号在 200 ms 内合并为一个编辑事务；执行撤销或重做前先提交尚未到期的事务。
+- 单条药剂粘贴在写入前后调用 `commitPending()`，每次粘贴形成独立事务，不能与前一次连续输入或下一次粘贴合并。
 - 快照恢复前必须清除 `AnnotationManager` 的非拥有型图元索引，恢复期间使用 `m_loadingProject` 和管理器内部标志阻止结果失效及递归记录。
 - 导入项目后清空撤销历史；保存项目后将当前撤销栈位置标记为干净状态。
 
@@ -39,19 +54,19 @@
 
 1. 在 `TopologyTypes.h` 中确定结果结构。
 2. 在 `OpenCircuitCalculator` 中计算并测试。
-3. 在 `ResultDetailsView` 中决定详细显示。
+3. 如需对比或导出，扩展方案对比与 Excel 展示。
 4. 如需画布显示，扩展 `ResultMetric` 和 `AnnotationContentFormatter`。
 5. 在 `ResultMetricMenu` 中加入入口。
 
 ## 扩展方程求解
 
-- 流程守恒、实测值、分流比例及边界约束的方程组装只放在 `OpenCircuitCalculator`；不要把物流或浮选语义加入 `LinearSystemSolver`。
+- 流程守恒、实测值、分流比例及边界约束由 `BalanceEquationSolver` 组装为标量方程，`OpenCircuitCalculator` 负责校验、求解调度及结果编排；不要把物流或浮选语义加入 `LinearSystemSolver`。
 - 通用加权约束最小二乘只放在 `WeightedLeastSquaresSolver`，不得依赖画布或文档类型。
-- 工具栏、分组菜单和快捷键的装配放在 `MainWindowActions.cpp`；项目生命周期命令放在 `MainWindowProject.cpp`，画布编辑命令放在 `MainWindowCanvas.cpp`，计算和结果联动放在 `MainWindowResults.cpp`，主题、状态与样式命令放在 `MainWindowPresentation.cpp`，导出命令放在 `MainWindowExport.cpp`。自定义编辑窗口放在 `ui`，只返回编辑值；表格筛选及绘制委托放在 `TerminalProductViewSupport`。
+- 工具栏编排放在 `MainWindowActions.cpp`，流程菜单及画布快捷键注册放在 `MainWindowFlowActions.cpp`，设备添加菜单放在 `MainWindowEquipmentActions.cpp`，显示设置菜单放在 `MainWindowDisplayActions.cpp`；项目生命周期命令放在 `MainWindowProject.cpp`，画布编辑及流程组粘贴放在 `MainWindowCanvas.cpp`，复制粘贴类型分派放在 `MainWindowClipboard.cpp`，单条药剂命令放在 `MainWindowReagents.cpp`；计算和结果联动放在 `MainWindowResults.cpp`，主题、状态与样式命令放在 `MainWindowPresentation.cpp`，导出命令放在 `MainWindowExport.cpp`。自定义编辑窗口放在 `ui`，只返回编辑值；表格筛选及绘制委托放在 `TerminalProductViewSupport`。
 - 项目解析先生成 `ProjectSerializationData`，画布重建统一调用 `ProjectSceneRestorer`；不要在 JSON 解析器中直接修改当前场景。
 - `ProjectJsonReader` 仅负责 JSON、当前版本与根结构检查，然后按顺序调用显示设置、几何连接、共享标注、方案测量的分段读取；共用读取工具放在内部 `ProjectJsonReadSupport.h/.cpp`。格式写出归 `ProjectJsonWriter`；`ProjectSerializer` 不应重新积累具体 JSON 字段或连接重建逻辑。
 - 新的跨节点线性关系使用 `LinearBalanceConstraint` 表达，系数键必须是当前计算子图中的稳定物流 ID。
-- “关注对象”只能用于 `StreamFilterProxyModel` 的表格显示筛选，不得传入计算服务或改变拓扑方程范围；求解始终使用完整流程和全部已录入测量值。
+- “显示”下拉框及选中流程关联只能用于 `StreamFilterProxyModel` 的表格显示筛选，不得传入计算服务或改变拓扑方程范围；求解始终使用完整流程和全部已录入测量值。
 - `CalculationInputBuilder::build()` 是文档数据到单组分计算输入的唯一组装入口；项目导入、界面重算和后续批处理必须复用 `FlowsheetCalculationService`。
 - 物理解校验失败时只保留实测值。不得继续显示或累计来自同一个非法联立解的其他推导值。
 - 数值算法调整至少补充 `topology_test`，覆盖矛盾、欠定、部分唯一、不同质量尺度和物理非法解。
@@ -81,8 +96,8 @@
 - 组分定义属于项目共享状态，使用稳定 `ComponentDefinition::id`；修改显示名称不能改变 ID。
 - `StreamMeasurement::components` 按组分 ID 保存品位、标准差和支路占比，质量仍只保存一次。JSON 使用 `gradePercents`、`gradeStdDevs` 和 `componentSharePercents` 对象；支路占比不在右侧主表展示或编辑，但仍作为计算约束保存。
 - `FlowsheetCalculationService` 对每个组分调用一次守恒计算器，结果写入 `CalculationResult::components`；第一个组分同时提供公共结果字段，供默认质量及结果视图使用。
-- 右侧输入表、结果详情、方案对比和 XLSX 导出必须遍历组分定义，不得假设只有一个品位列。
-- 项目只接受 `ProjectFormat.h` 定义的当前 v23 格式，拒绝其他版本。测量仅保存于 `scenarios[].measurements`，药剂仅保存于 `scenarios[].reagents`；组分定义、方案、当前方案索引和显示样式均为必填字段，不做旧字段迁移。
+- 右侧输入表、方案对比和 XLSX 导出必须遍历组分定义，不得假设只有一个品位列。
+- 项目读取接受 `ProjectFormat.h` 定义的 v23 和 v24，保存仅使用 v24。`ProjectJsonReader` 在入口将 v23 共享文字复制到各方案并转换为 v24 结构，再交给同一套校验器，拒绝其他版本。测量仅保存于 `scenarios[].measurements`，药剂仅保存于 `scenarios[].reagents`，自定义文字仅保存于 `scenarios[].notes`；组分定义、方案、当前方案索引和显示样式均为必填字段；除 v23 文字归属转换外不做旧字段迁移。
 
 ## 球磨机
 
@@ -126,11 +141,13 @@
 ## 正交布线
 
 - 普通连接、产品合流横杆和回流走廊分别保存最小人工段参数，不保存由端点推导出的完整 `QPainterPath`；回流支路分别保存 `routeX` 和 `routeY`；
+- 普通产品连接的自动横向折点使用实际产品线长，并保持在来源与目标入料锚点之间，避免短间距时越过下游设备再折回；人工路线仍使用用户指定坐标。`connection_test` 覆盖缩短产品线后的对齐连接、横向错位、压缩间距、等高和向上连接。
 - 路线拖动按 10 个画布单位吸附，完成后发出 `geometryChanged`，不得使计算结果失效；
 - 右键菜单由 `AnnotationManager` 的场景事件过滤器统一构建，新增线路命令必须合并到该菜单，避免图元菜单被过滤器截获；
-- 跨线桥在 `FlowsheetScene::drawForeground` 中动态绘制，只处理不同物流图元的水平—垂直内部交点，不得修改拓扑；
+- 跨线桥由 `FlowsheetScene::drawForeground` 委托 `CrossingBridgeRenderer` 动态绘制，处理水平—垂直内部交点，包括同一个汇流图元内不同支路的交叉；排除端点转角和实际汇合，不得修改拓扑。桥形与水平线以水平切线衔接，遮罩不得擦断中心竖线；
 - 项目保存普通线 `routeY`、合流 `mergeY` 和各入料来源的 `routeX/routeY`；这些字段只在设置了手动路线时写入，缺失表示自动布线；
-- 回流支路选择必须基于各自的路径轮廓；横向和纵向控制柄只修改对应轴，选中来源用于高亮及确定药剂标注归属；
+- 回流支路选择必须基于各自的路径轮廓；横向和纵向控制柄只修改对应轴。`selectedSourceStreamId()` 用于回流高亮和断开来源；药剂快捷键读取独立的 `selectedAnnotationStreamId()`，涵盖回流、主入料、外部入料和公共输出，不得沿用上一次回流选择作为药剂目标；
+- 产品线和合流线的 `shape()` 使用线条轮廓与实际箭头，不能填充开放折线形成的区域；否则可能把空白变为点击目标，或因填充规则抵消可见线段的命中范围。`connection_test` 和 `ReagentMenuTargetChecks.cpp` 覆盖相关回归；
 - 修改布线路径后运行 `connection_test`、`merge_test`、`project_io_test` 和导出测试。
 - 终端产品长度属于 `ProductLineItem`，只能对 `isAvailable()` 的产品通过快捷键调整，范围为 30～5000；项目在单元的 `terminalLengths` 对象中按产品侧别保存覆盖值。
 
@@ -139,7 +156,7 @@
 - 二分流器使用 `UnitKind::BinarySplitter`，连接端口及稳定物流 ID 与普通一入两出单元一致；不要根据图形或名称推断节点类型；
 - `leftSplitPercent` 必须为有限数且严格位于 `(0, 100)`，右支路比例始终由 `100 - left` 推导，不保存第二份状态；
 - 计算拓扑为干质量和各组分质量同时生成比例约束，且不得为二分流器生成浮选性能指标；
-- 当两条支路均为终端产品时，右支路不列为必填实测物流，避免要求录入可由比例直接推导的数据；
+- 二分流器按同一比例约束反算支路，不维护固定必填物流清单；是否已有足够独立约束由方程秩判断；
 - 项目必须保存 `kind`，二分流器还必须保存 `leftSplitPercent`，缺失字段直接拒绝；
 - 修改二分流器后运行 `topology_test` 和 `project_io_test`，覆盖比例反算、项目往返及无效格式拒绝。
 
@@ -155,7 +172,7 @@
 
 - `UnitKind::MagneticSeparation`、`WeakMagneticSeparation` 和 `StrongMagneticSeparation` 都是两产品分选单元：沿用一入两出拓扑、稳定物流 ID（`<unit-id>:left/right`）和物料平衡方程，不能为此复制浮选求解器；
 - 弱磁选机使用筒式滚筒与马蹄磁铁，强磁选机使用立式环与对置磁极；左、右产品的定位描述使用“磁性产品”和“非磁性产品”。这些描述不写入产品名称，产品名称仍默认为空；
-- 项目分别使用 `magnetic-separation`、`weak-magnetic-separation` 和 `strong-magnetic-separation` 保存类型。新增流程单元类型时，同时更新两向序列化映射、关注对象名称与项目往返测试。
+- 项目分别使用 `magnetic-separation`、`weak-magnetic-separation` 和 `strong-magnetic-separation` 保存类型。新增流程单元类型时，同时更新两向序列化映射、对象定位名称与项目往返测试。
 
 ## 贮池
 
@@ -184,7 +201,7 @@
 
 - `Screening` 和 `Classification` 均为普通两产品分选单元：复用一入两出守恒方程、稳定的左/右产品物流 ID，以及现有回流和汇流能力；它们只增加设备形象与定位描述，不能新增求解器分支；
 - 筛分机绘制倾斜筛面和筛孔，定位描述区分筛上、筛下产品；分级机绘制倾斜槽体和螺旋轴，定位描述区分溢流、沉砂；
-- 项目分别使用 `screening` 和 `classification` 保存类型，新增类型时必须同步两向序列化、关注对象显示名、选中提示和项目往返测试。
+- 项目分别使用 `screening` 和 `classification` 保存类型，新增类型时必须同步两向序列化、对象定位显示名、选中提示和项目往返测试。
 
 ## 自定义文字颜色
 
@@ -202,7 +219,7 @@
 - 画布代码使用 `productSideSuffix()`、`productSideLabel()` 和 `productSideDirection()`，不要新增侧别三元表达式或手工拼接物流后缀；
 - 计算代码使用 `flotationProductPorts()` 和 `TopologyGraph::flotationProductStreams()` 遍历实际产品，保持端口与物流顺序一致；
 - 节点性能通过 `FlotationPerformance::forPort()` 和 `setForPort()` 访问，界面不直接判断列号对应哪个具名字段；
-- 项目单元类型字符串只在序列化器的 `unitKindKey()`/`unitKindFromKey()` 中维护；新增类型时必须同时扩展两向映射和往返测试。
+- 项目单元类型字符串只在 `ProjectUnitKindCodec` 的 `unitKindKey()`/`unitKindFromKey()` 中维护；新增类型时必须同时扩展两向映射和往返测试。
 
 ## 闭路连接
 
@@ -216,8 +233,8 @@
 - 多回流项目保存/载入由 `project_io_test` 覆盖，载入后汇合点 ID、外部入料数量和闭路检测结果必须保持一致；
 - 产品合并输出接入回流后必须从终端产品列表移除，断开后恢复；
 - `Cycle` 表示已经识别到闭路，不再作为拓扑结构错误；
-- `requiredMeasurements` 仅表示传统建议取样组合，不得作为输入白名单或计算按钮启用条件；所有 `reportStreams` 都允许录入，求解服务必须收集其中所有完整实测值；
-- 闭路计算必须覆盖回流、内部入料、外部新鲜入料以及全流程指标；缺少撕裂流实测值时应返回 `Underdetermined`；
+- 所有 `reportStreams` 都允许录入，求解服务必须收集其中所有完整实测值；不恢复旧的固定必填/取样清单或输入白名单；
+- 闭路计算必须覆盖回流、内部入料、外部新鲜入料以及全流程指标；缺少足够独立约束时应返回 `Underdetermined`，不能把未填写某条建议撕裂流直接当作欠定判据；
 - 求解器必须从完整方程组判断秩，不能依赖节点顺序进行局部传播；新增约束类型时分别为干质量和组分质量生成方程，并保留矛盾、欠定和非物理解诊断；
 - `topology_test` 必须包含至少一个没有局部传播起点、只能通过联立消元求解的闭路；
 - 修改回流连接、断开或路由规则后运行 `closed_loop_test`。
@@ -256,7 +273,7 @@ Windows：
 C:\Users\13427\xmake\xmake.exe build -a
 ```
 
-`build -a` 同时构建主程序和全部 14 个测试目标。逐项执行命令及职责见 [README 测试说明](../README.md#测试)；Qt Test 用于主窗口交互测试。全部检查通过后再执行 `xmake deploy` 生成部署目录或刷新平台运行时。
+`build -a` 同时构建主程序和全部 15 个测试目标。逐项执行命令及职责见 [README 测试说明](../README.md#测试)；Qt Test 用于主窗口交互测试。全部检查通过后再执行 `xmake deploy` 生成部署目录或刷新平台运行时。
 
 ## 筛选联动回归测试
 
@@ -267,19 +284,29 @@ xmake build stream_filter_interaction_test
 QT_QPA_PLATFORM=offscreen xmake run stream_filter_interaction_test
 ```
 
-该目标链接完整应用模块和 Qt Test，通过真实 `MainWindow`、鼠标/键盘事件与菜单动作验证完整信号链，不直接调用筛选器的焦点设置接口。临时项目和 QSettings 配置均写入独立临时目录。测试同时检查可见物流 ID、行选择、编辑列、结果详情、显示计数，以及筛选不修改项目数据或使计算失效。
+该目标链接完整应用模块和 Qt Test，通过真实 `MainWindow`、鼠标/键盘事件与菜单动作验证完整信号链，不直接调用筛选器的焦点设置接口。临时项目和 QSettings 配置均写入独立临时目录。测试同时检查可见物流 ID、行选择、编辑列、当前物流、显示计数，以及筛选不修改项目数据或使计算失效。
 
 同一目标还运行 `ExcelExportInteractionChecks.cpp`，验证表格产品名称默认为空但保留定位信息、真实名称编辑影响导出资格、排序列表只含命名项，以及无命名产品时在打开保存对话框前给出提示。
 
 ## 画布对象复制粘贴
 
+画布的复制粘贴快捷键只注册一次，由 `MainWindowClipboard` 与流程菜单共用分派入口。选择中包含设备或 `UserNote` 时沿用流程组复制；仅选中一条药剂时调用单条药剂复制。`CanvasClipboardKind` 区分 `Empty`、`FlowGroup` 和 `Reagent`；不支持的选择执行复制后进入 `Empty`，避免再次粘贴上一个对象。单条药剂的右键菜单和快捷键共用 `MainWindowReagents` 命令及 `ReagentClipboard` 值快照；流程组和药剂各自保留内容，右键粘贴药剂不受当前快捷键类型限制。
+
 `FlowGroupClipboard` 保存选中的单元与 `UserNote` 文字快照。复制时不得保存图元指针；粘贴时为文字生成未使用的标注 ID，完整保留文字样式，并与单元共享平移偏移。由 `AnnotationManager` 创建副本文字图元，再选中副本。单独粘贴文字不得发送 `topologyChanged` 或清空计算结果。复制粘贴快捷键仅在画布中生效，保留输入框的普通文本剪贴板操作。
 
-流程组同时快照当前方案中属于实际复制物流的 `Reagent` 记录：产品线、未连接的主入料，以及完整复制的产品汇流、入料汇流总料和外部新鲜入料。粘贴时用原物流 ID 到副本物流 ID 的映射重写 `ownerId`，保留相对偏移，不再叠加组平移；新记录只写入粘贴时的当前方案。药剂 ID 使用未占用的批次前缀与等宽序号，保持原 ID 的相对排序，以免同一物流的自动堆叠顺序改变。主窗口在药剂粘贴后显式同步标注，保证无需计算即可显示副本。
+流程组同时快照当前方案中属于实际复制物流的 `Reagent` 记录：产品线、未连接的主入料，以及完整复制的产品汇流、入料汇流总料和外部新鲜入料。粘贴时用原物流 ID 到副本物流 ID 的映射重写 `ownerId`，保留相对偏移，不再叠加组平移；新记录只写入粘贴时的当前方案。采集顺序与图元堆叠共用 `ReagentOrder`，再用未占用的批次前缀与等宽序号生成副本 ID，保留普通药剂和单条粘贴药剂的显示顺序。主窗口在药剂粘贴后显式同步标注，保证无需计算即可显示副本。
 
 修改时运行 `clipboard_interaction_test` 和 `project_io_test`，覆盖单独/多选/混合复制、重复粘贴与 ID 冲突、样式和位置、撤销重做以及项目保存往返。药剂专项检查位于 `ReagentClipboardChecks.cpp`，由同一交互测试目标执行，覆盖无需选中药剂、多药剂堆叠、不可变快照、方案切换、完整/部分流程及汇流回流的归属映射。
 
 产品线的 `terminalLengthOverride` 也属于流程组几何快照；已连接到回流或合流的产品仍使用这个端点长度，不能只复制未连接产品的长度。粘贴时先恢复长度，再重建连接。`CopyMoveInteractionChecks.cpp` 加载 `tests/copy-move.afs.json`，通过画布复制粘贴和鼠标拖动比较整条回流路径及产品路径的平移结果。多选拖动的路线平移按每个场景鼠标移动事件、每个连通组件各执行一次，不能用零延时定时器合并，否则连续鼠标事件会漏掉位移。程序调用单个单元的 `setPos` 则直接平移整个连通组件。
+
+## 清理已移除的 UI 功能
+
+删除入口时同步检查派生状态、数据目录、菜单回调及仅服务于旧入口的兼容接口。计算快照不再包含关注对象目录和固定取样列表；诊断标题直接使用计算图节点/汇流角色，实际观测仍来自全部报表物流。不要为尚无入口的未来功能保留逐次构建的数据。
+
+`ResultMetricMenu` 自身就是 `QMenu`，不创建隐藏的旧工具按钮；线路的右键动作仅由 `AnnotationManagerContextMenu.cpp` 构建，图元保留鼠标与键盘处理，不再复制一套被场景过滤器覆盖的右键菜单。单来源/前两支路的旧便利接口统一改用来源集合，场景中多个来源的语义保持一致。
+
+回归检查覆盖指标菜单、单位编辑及取消/同步、统一右键恢复三类线路、诊断节点标题与输入定位、多来源连接、保存读取和计算；测试不再验证删除的对象目录或固定必填清单，而验证实际报表物流、拓扑端口及求解结果。
 
 ## 文件职责拆分
 
@@ -288,15 +315,43 @@ QT_QPA_PLATFORM=offscreen xmake run stream_filter_interaction_test
 - 项目读写器统一调用 `ProjectUnitKindCodec`；类型键的双向对应关系只定义一次，中文显示名称继续由呈现层管理。
 
 - 场景事件与命中留在 `FlowsheetScene.cpp`；连接/断开/删除放在 `FlowsheetSceneConnections.cpp`，连通组件和尺寸移动放在 `FlowsheetSceneMovement.cpp`。
-- 设备几何与交互留在 `FlotationUnitItem.cpp`，纯绘制函数放在 `FlotationUnitItemPainting.cpp`，按设备类型组织；绘制函数不能修改拓扑或文档。
-- 结果卡同步、锚点与生命周期留在 `AnnotationManager.cpp`；药剂/自由文字同步放在 `AnnotationManagerContent.cpp`，显示设置及本机偏好放在 `AnnotationManagerDisplay.cpp`，场景事件放在 `AnnotationManagerInteraction.cpp`。
-- 产品合流的状态与绘制留在 `MergeJunctionItem.cpp`，路线与手动汇合高度放在 `MergeJunctionItemRouting.cpp`，交互事件放在 `MergeJunctionItemInteraction.cpp`。
-- 入料汇流的来源集合与绘制留在 `FeedJunctionItem.cpp`，路径与锚点放在 `FeedJunctionItemRouting.cpp`，事件处理放在 `FeedJunctionItemInteraction.cpp`；产品线的几何与显示留在 `ProductLineItem.cpp`，拖拽、路线编辑及菜单事件放在 `ProductLineItemInteraction.cpp`。
-- `TerminalProductDock.cpp` 负责面板装配与列编辑；关注对象和画布选择联动放在 `TerminalProductDockSelection.cpp`，进度、计算状态和详情放在 `TerminalProductDockResults.cpp`。
-- `FlowsheetDocument.cpp` 保留项目共享元数据、标注和替换/清理；当前方案测量、组分及计算结果放在 `FlowsheetDocumentMeasurements.cpp`，方案增删与切换放在 `FlowsheetDocumentScenarios.cpp`。
+- 设备几何与交互留在 `FlotationUnitItem.cpp`；`FlotationUnitItemPainting.cpp` 只处理绘制上下文和选中态，设备符号委托 `graphics/symbols`。新增设备形状按贮池/磨矿/浓密或分选职责放入对应符号文件，由 `UnitSymbolPainter.cpp` 分派；符号绘制只能读取设备值，不能访问场景或修改拓扑、文档。
+- 结果卡同步、锚点与生命周期留在 `AnnotationManager.cpp`；药剂/自由文字同步放在 `AnnotationManagerContent.cpp`，显示设置及本机偏好放在 `AnnotationManagerDisplay.cpp`，事件分派、删除和微调放在 `AnnotationManagerInteraction.cpp`。右键菜单放在 `AnnotationManagerContextMenu.cpp`，位置目标解析放在 `AnnotationContextTarget.cpp`，单条药剂追加摆放放在 `AnnotationManagerReagentPlacement.cpp`。
+- 产品合流的状态与绘制留在 `MergeJunctionItem.cpp`，路线与手动汇合高度放在 `MergeJunctionItemRouting.cpp`，交互事件放在 `MergeJunctionItemInteraction.cpp`，唯一物流命中查询放在 `MergeJunctionItemHitTest.cpp`。
+- 入料汇流的来源集合与绘制留在 `FeedJunctionItem.cpp`，路径与锚点放在 `FeedJunctionItemRouting.cpp`，事件处理放在 `FeedJunctionItemInteraction.cpp`，唯一物流命中查询放在 `FeedJunctionItemHitTest.cpp`；产品线的几何与显示留在 `ProductLineItem.cpp`，拖拽、路线编辑及键盘事件放在 `ProductLineItemInteraction.cpp`。
+- `TerminalProductDock.cpp` 保留对象初始化、信号连接、键盘事件和主题刷新；布局放在 `TerminalProductDockLayout.cpp`，组分编辑放在 `TerminalProductDockComponents.cpp`，列与委托及宽度保护放在 `TerminalProductDockColumns.cpp`，选择联动放在 `TerminalProductDockSelection.cpp`，进度与状态放在 `TerminalProductDockResults.cpp`。计算说明弹窗位于 `CalculationExplanationDialog`，只接收结果值，不能访问文档或重新计算。
+- `TerminalProductTableModel.cpp` 管理列、编辑与模型通知，`TerminalProductTableModelData.cpp` 管理显示角色和工具提示。
+- `ExcelDataExporter` 管理命名筛选与导出条件，`ExcelWorksheetBuilder` 生成工作表 XML，`XlsxWorkbookWriter` 负责标准部件及 ZIP 写入；按需链接的 `excel_export_test` 必须同时包含三个实现文件。
+- `FlowsheetDocument.cpp` 保留项目共享元数据及替换/清理；标注归属和显示设置放在 `FlowsheetDocumentAnnotations.cpp`；当前方案测量、组分及计算结果放在 `FlowsheetDocumentMeasurements.cpp`，方案增删与切换放在 `FlowsheetDocumentScenarios.cpp`。
 - `OpenCircuitCalculator.cpp` 负责计算校验与结果编排，内部 `BalanceEquationSolver.h/.cpp` 只组装并求解干质量或组分质量的标量方程；拆分时不得调整守恒关系、权重或诊断条件。
-- 拆分实现文件后，必须同步 xmake 中按需链接源码的测试目标；画布测试通过 `FlowsheetScene*.cpp`、`FlotationUnitItem*.cpp`、`ProductLineItem*.cpp`、`FeedJunctionItem*.cpp` 与 `MergeJunctionItem*.cpp` 收集相关实现，文档与面板分别使用 `FlowsheetDocument*.cpp`、`TerminalProductDock*.cpp`。项目读取器和方程组装器的内部辅助文件不能代替原有服务成为应用入口。
+- 拆分实现文件后，必须同步 xmake 中按需链接源码的测试目标。`add_canvas_sources()` 集中收集场景、线路和 `graphics/symbols/*.cpp`，`add_application_sources()` 集中收集全部应用源码及 MOC 清单；文档、面板、表格模型分别使用 `FlowsheetDocument*.cpp`、`TerminalProductDock*.cpp`、`TerminalProductTableModel*.cpp`。项目读取器和方程组装器的内部辅助文件不能代替原有服务成为应用入口。
 
-`project_io_test` 的主函数仅初始化 Qt 应用、临时目录并调用检查函数。`ProjectIoChecks.h` 声明检查入口；`ProjectIoRoundTripChecks.cpp` 检查元数据、方案、标注和损坏文件保护，`ProjectIoFormatChecks.cpp` 检查版本与字段拒绝，`ProjectIoConnectionChecks.cpp` 检查合流及回流，`ProjectIoEquipmentChecks.cpp` 检查设备类型，`ProjectIoHistoryChecks.cpp` 检查撤销与复制路线，`ProjectIoExampleChecks.cpp` 检查仓库样例和可选外部项目。xmake 用 `tests/cpp/ProjectIo*.cpp` 收集全部检查，保持原有失败码和调用顺序。
+`project_io_test` 的主函数仅初始化 Qt 应用、临时目录并调用检查函数。`ProjectIoChecks.h` 声明检查入口；`ProjectIoRoundTripChecks.cpp` 检查元数据、方案、标注和损坏文件保护，`ProjectIoFormatChecks.cpp` 检查版本与字段拒绝，`ProjectIoConnectionChecks.cpp` 检查合流及回流，`ProjectIoEquipmentChecks.cpp` 检查设备类型，`ProjectIoHistoryChecks.cpp` 检查撤销与复制路线，`ProjectIoScenarioNoteChecks.cpp` 检查文字的方案隔离、读写、撤销及字段拒绝，`ProjectIoVersion23Checks.cpp` 检查真实 v23 样例、共享文字迁移及另存重开，`ProjectIoExampleChecks.cpp` 检查仓库样例和可选外部项目。xmake 用 `tests/cpp/ProjectIo*.cpp` 收集全部检查，保持原有失败码和调用顺序。
 
 样式窗口重构的确认/取消、颜色模式、撤销/重做检查位于 `AnnotationTextStyleDialogChecks.cpp`，随 `result_source_interaction_test` 执行；排序窗口继续由 `stream_filter_interaction_test` 中的 `ExcelExportInteractionChecks.cpp` 验证。`project_io_test` 必须显式链接 `ProjectUnitKindCodec.cpp` 和 `FlowGroup*.cpp`，不能依赖主程序的对象文件。
+
+## 属性、计算问题与流程模板回归
+
+运行 `workspace_tools_interaction_test`，其中 `WorkspaceSidebarChecks.cpp` 检查默认表格、显示设置菜单的鼠标切换、右侧无切换按钮和顶部占位、上方仅一个页面可见且日志始终显示、日志在窗口缩放和页面切换后保持八分之一高度、500 条日志容量、画布占满左侧、页面状态保留、后台更新不抢占页面及切换不修改项目。`ObjectPropertyChecks.cpp` 专门覆盖属性编辑与撤销，`CalculationDiagnosticsChecks.cpp` 专门覆盖问题条目、自动跳转策略和定位编辑；两者共用 `WorkspaceToolsTestSupport.h`，只初始化一次测试应用和临时环境。`WorkspacePanelSelectorChecks.cpp` 检查下拉框紧邻“显示设置”、实际列表鼠标选择、菜单及程序跳转同步、无焦点悬停滚轮、方向与首尾边界、半格累积及反向重置，并断言项目数据、结果和撤销历史不变。该目标还覆盖数值实时输入、小数和输入焦点保持、增减按钮与方向键步长、本机步长偏好、精确属性输入、未修改值不提交、对象切换与撤销重做、各回流支路独立编辑和恢复、圈形尺寸、错误定位及双击输入、组分列跳转、全局矛盾、模板保存和跨窗口重载、重复插入的新 ID 与偏移、文字/药剂/路线保留、旧格式拒绝、重命名和删除不修改当前项目。
+
+`TerminalTableLayoutChecks.cpp` 验证结果小表格已移除、主表占满剩余高度、计算说明使用独立只读弹窗且不修改项目，以及初始列宽铺满、窗口缩放、真实鼠标拖动列宽及面板切换保留、多组分/协调模式列重建和窄视口滚动；布局操作不得修改项目或计算结果。列宽自动适配通过视口 Resize/表格 Show 后的合并延时任务执行，所有列保持 Interactive，内部配置与分配宽度时必须屏蔽手动调整标记。
+
+UI 的属性编辑请求同时校验对象标识与控件代次，不能把旧面板值提交到新选择；同一数值不固化自动布线参数。同一对象的同类表单应原位更新并屏蔽回填信号，保留正在输入的小数点、光标和连续增减状态；切换对象或字段结构才重建。步长属于 UI 本机偏好，不应放入画布属性描述或项目格式。问题列表在结果失效时清除，全局矛盾不能伪装成某一测量的唯一错误。计算按钮仅在 `IssueCode::InconsistentBalance` 且 `IssueSeverity::Error` 时自动打开问题面板，不能用“存在问题”或“计算未完成”作为跳转条件；同码的协调大残差警告不触发跳转。显式检查流程菜单仍打开问题面板。模板测试将 `XDG_DATA_HOME` 指向临时目录，本机模板不写入项目 JSON；模板容器内嵌当前格式项目，不创建另一套设备或路线序列化代码。新增 `Q_OBJECT` 面板头（包括 `WorkspaceSidebar.h`）必须登记到 `add_application_sources()` 的公共 MOC 清单，主程序与全部完整应用测试共同复用。修改面板所有权或主窗口销毁顺序后，执行主程序干净构建和带项目打开的启动冒烟检查。
+
+`TemplatePreviewChecks.cpp` 随 `workspace_tools_interaction_test` 执行，覆盖单击预览、回流及文字/药剂/名称保留、只读拖动和双击、窗口编辑快捷键隔离、撤销与剪贴板及设备 ID 不受影响、大范围模板的连续缩放、中键平移、分隔条调整、适应窗口、明暗主题、搜索无结果、损坏模板、删除清理及列表双击插入。只为当前选中模板创建预览场景；场景、文档和标注管理器的生命周期属于预览会话，视图必须在销毁会话前脱离旧场景。
+
+`terminal_input_test` 通过 `TerminalInputTest.cpp` 初始化 Qt 并顺序调用检查组。`TerminalInputModelChecks.cpp` 验证输入、列与主题；`TerminalInputCalculationChecks.cpp` 验证平衡、传播与闭路；`TerminalInputFilterChecks.cpp` 验证物流筛选及清空输入；`TerminalInputAnnotationChecks.cpp` 验证药剂公式和标注。`TerminalInputContext` 只共享跨组使用的场景和值快照，视图与模型由各组局部持有；数值失败码沿用原检查。xmake 通过 `TerminalInput*.cpp` 收集全部检查。
+
+## 药剂复制回归
+
+`ReagentMenuInteractionChecks.cpp`、`ReagentMenuTargetChecks.cpp` 和 `ReagentShortcutChecks.cpp` 随 `clipboard_interaction_test` 执行：
+
+| 检查文件 | 验证范围 |
+|---|---|
+| `ReagentMenuInteractionChecks.cpp` | 真实上下文菜单及鼠标点击、未复制时禁用、复制不修改项目或系统剪贴板、不可变值快照、已有标签避让、逐次撤销、保存读取、删除源标注后粘贴、跨方案和流程组排列顺序 |
+| `ReagentMenuTargetChecks.cpp` | 普通、合流、回流、主入料、外部入料及公共输出目标，旧选中支路不干扰、共用交点禁用、折线空白不命中及菜单打开后目标删除 |
+| `ReagentShortcutChecks.cpp` | 真实鼠标选择和画布快捷键、药剂与流程组类型切换、两种入口互通、各类支路、连续粘贴、独立撤销、无目标和交点拒绝、值快照及输入框剪贴板隔离 |
+
+复用画布已有快捷键，不重复注册导致歧义。药剂快捷键粘贴要求单选有效线路，也允许选中药剂后向其所属物流追加；无目标、多选、无法唯一识别时只提示，不回退到旧选中线路。汇流图元的选中标注物流、窗口粘贴类型及复制快照仅为会话状态，不新增项目字段或版本。
+
+`ProjectUndoManager::commitPending()` 用于离散命令的前后边界，保证每次粘贴独立撤销；数值输入和拖动仍由已有定时检查点合并连续编辑。

@@ -15,6 +15,11 @@ CanvasView::CanvasView(QGraphicsScene* scene, QWidget* parent)
     setResizeAnchor(QGraphicsView::AnchorViewCenter);
 }
 
+void CanvasView::setZoomRange(qreal minimum, qreal maximum) {
+    if (!std::isfinite(minimum) || !std::isfinite(maximum) || minimum <= 0 || maximum < minimum) return;
+    m_minimumScale = minimum; m_maximumScale = maximum;
+}
+
 void CanvasView::wheelEvent(QWheelEvent* event) {
     const int delta = event->angleDelta().y();
     if (delta == 0) {
@@ -26,7 +31,7 @@ void CanvasView::wheelEvent(QWheelEvent* event) {
     const qreal requestedFactor = std::pow(1.0015, delta);
     const qreal currentScale = transform().m11();
     const qreal targetScale = std::clamp(
-        currentScale * requestedFactor, MinimumScale, MaximumScale);
+        currentScale * requestedFactor, m_minimumScale, m_maximumScale);
     scale(targetScale / currentScale, targetScale / currentScale);
     event->accept();
 }

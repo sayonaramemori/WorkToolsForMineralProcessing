@@ -25,6 +25,10 @@ using namespace afs;
 
 void runReagentClipboardChecks(const QString& directory);
 void runCopyMoveInteractionChecks();
+void runReagentMenuInteractionChecks(const QString& directory);
+void runReagentMenuTargetChecks();
+void runReagentShortcutChecks();
+void runScenarioNoteInteractionChecks();
 
 namespace {
 void require(bool condition, const QString& message) {
@@ -249,6 +253,10 @@ int main(int argc, char** argv) {
     try {
         testClipboard(directory.path());
         runReagentClipboardChecks(directory.path());
+        runReagentMenuInteractionChecks(directory.path());
+        runReagentMenuTargetChecks();
+        runReagentShortcutChecks();
+        runScenarioNoteInteractionChecks();
         runCopyMoveInteractionChecks();
         qInfo() << "All clipboard interaction checks passed";
     } catch (const std::exception& error) {

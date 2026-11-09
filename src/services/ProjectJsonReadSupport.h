@@ -14,6 +14,8 @@ bool finiteNumber(const QJsonValue& value, double& result);
 bool readRequiredString(const QJsonObject& object, const char* key, QString& result);
 std::optional<double> readOptionalNumber(const QJsonObject& object, const char* key, bool& valid);
 
+bool readAnnotationRecord(const QJsonObject& object, AnnotationRecord& item, QString* error);
+
 bool readSettings(const QJsonObject& root, ProjectData& data, QString* error);
 bool readGeometry(const QJsonObject& root, ProjectData& data, QString* error);
 bool readSharedAnnotations(const QJsonObject& root, ProjectData& data, QString* error);

@@ -2,10 +2,8 @@
 #include "editor/FlowsheetScene.h"
 #include "graphics/items/InputLineItem.h"
 #include <QGraphicsSceneMouseEvent>
-#include <QGraphicsSceneContextMenuEvent>
 #include <QKeyEvent>
 #include <QLineF>
-#include <QMenu>
 #include <cmath>
 
 namespace afs {
@@ -22,6 +20,7 @@ void MergeJunctionItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
         if (!(event->modifiers() & Qt::ControlModifier)) scene()->clearSelection();
         setSelected(true);
         setFocus();
+        selectAnnotationStreamAt(event->scenePos());
         m_routeEditing = true;
         if (!m_manualMergeY) m_manualMergeY = m_mergeY;
         event->accept();
@@ -31,6 +30,7 @@ void MergeJunctionItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
         && QLineF(event->scenePos(), m_outputEnd).length() <= 30.0) {
         if (!(event->modifiers() & Qt::ControlModifier)) scene()->clearSelection();
         setSelected(true);
+        selectAnnotationStreamAt(event->scenePos());
         m_dragging = true;
         m_dragEnd = event->scenePos();
         updatePath();
@@ -38,6 +38,7 @@ void MergeJunctionItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
         return;
     }
     QGraphicsPathItem::mousePressEvent(event);
+    if (event->button() == Qt::LeftButton && isSelected()) selectAnnotationStreamAt(event->scenePos());
 }
 
 void MergeJunctionItem::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
@@ -97,17 +98,6 @@ void MergeJunctionItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) {
     m_manualMergeY = std::round(event->scenePos().y() / 10.0) * 10.0;
     updatePath();
     if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
-    event->accept();
-}
-
-void MergeJunctionItem::contextMenuEvent(QGraphicsSceneContextMenuEvent* event) {
-    QMenu menu;
-    auto* reset = menu.addAction(QStringLiteral("恢复自动布线"));
-    reset->setEnabled(m_manualMergeY.has_value());
-    if (menu.exec(event->screenPos()) == reset) {
-        setManualMergeY(std::nullopt);
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
-    }
     event->accept();
 }
 

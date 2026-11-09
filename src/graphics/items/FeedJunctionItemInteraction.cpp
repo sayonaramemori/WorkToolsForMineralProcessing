@@ -1,11 +1,9 @@
 #include "graphics/items/FeedJunctionItem.h"
 #include "graphics/FlotationGeometry.h"
 #include "editor/FlowsheetScene.h"
-#include <QGraphicsSceneContextMenuEvent>
 #include <QGraphicsSceneMouseEvent>
 #include <QKeyEvent>
 #include <QLineF>
-#include <QMenu>
 #include <QPainterPathStroker>
 #include <cmath>
 
@@ -44,6 +42,7 @@ void FeedJunctionItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
         setSelected(true);
         setFocus();
         selectSourceStream(closest);
+        selectAnnotationStreamAt(event->scenePos());
         m_editingStreamId = axis == EditingAxis::None ? QString{} : closest;
         m_editingAxis = axis;
         if (axis == EditingAxis::Horizontal && !m_manualRouteXs.contains(closest))
@@ -55,6 +54,7 @@ void FeedJunctionItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
         return;
     }
     QGraphicsPathItem::mousePressEvent(event);
+    if (isSelected()) selectAnnotationStreamAt(event->scenePos());
 }
 
 void FeedJunctionItem::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
@@ -80,17 +80,6 @@ void FeedJunctionItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
     m_editingStreamId.clear();
     m_editingAxis = EditingAxis::None;
     if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
-    event->accept();
-}
-
-void FeedJunctionItem::contextMenuEvent(QGraphicsSceneContextMenuEvent* event) {
-    QMenu menu;
-    auto* reset = menu.addAction(QStringLiteral("恢复全部支路自动布线"));
-    reset->setEnabled(!m_manualRouteXs.isEmpty() || !m_manualRouteYs.isEmpty());
-    if (menu.exec(event->screenPos()) == reset) {
-        resetManualRoutes();
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
-    }
     event->accept();
 }
 

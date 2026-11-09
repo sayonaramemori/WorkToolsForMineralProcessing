@@ -1,6 +1,7 @@
 #include "annotations/AnnotationManager.h"
 #include "annotations/AnnotationItem.h"
 #include "annotations/ReagentAnnotationItem.h"
+#include "annotations/ReagentOrder.h"
 #include "document/FlowsheetDocument.h"
 #include "editor/FlowsheetScene.h"
 #include <QSet>
@@ -47,11 +48,7 @@ void AnnotationManager::synchronizeReagents() {
             && (!record.text.isEmpty() || !record.dosage.isEmpty() || !record.note.isEmpty()))
             reagentRecords.append(record);
     }
-    std::sort(reagentRecords.begin(), reagentRecords.end(),
-              [](const auto& a, const auto& b) {
-                  if (a.ownerId != b.ownerId) return a.ownerId < b.ownerId;
-                  return a.id < b.id;
-              });
+    std::sort(reagentRecords.begin(), reagentRecords.end(), reagentDisplayLess);
     QHash<QString, qreal> ownerStackOffsets;
     for (const auto& record : reagentRecords) {
         QPointF anchor, offset;

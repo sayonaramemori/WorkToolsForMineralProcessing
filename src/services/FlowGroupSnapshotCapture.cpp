@@ -1,6 +1,7 @@
 #include "services/FlowGroupSnapshotOperations.h"
 
 #include "annotations/AnnotationItem.h"
+#include "annotations/ReagentOrder.h"
 #include "document/FlowsheetDocument.h"
 #include "editor/FlowsheetScene.h"
 #include "graphics/items/FeedJunctionItem.h"
@@ -89,7 +90,7 @@ CopyResult capture(const FlowsheetScene& scene, const FlowsheetDocument& documen
     for (const auto& record : records)
         if (record.kind == AnnotationKind::Reagent && streams.contains(record.ownerId))
             snapshot.reagents.append(record);
-    std::sort(snapshot.reagents.begin(), snapshot.reagents.end(), [](const auto& a, const auto& b) { return a.id < b.id; });
+    std::sort(snapshot.reagents.begin(), snapshot.reagents.end(), reagentDisplayLess);
     result.reagents = snapshot.reagents.size();
     return result;
 }

@@ -1,7 +1,7 @@
 #include "ui/TerminalProductDock.h"
+#include "ui/CalculationExplanationDialog.h"
 #include "document/FlowsheetDocument.h"
 #include "services/FlowsheetCalculationService.h"
-#include "ui/ResultDetailsView.h"
 #include "ui/TerminalProductTableModel.h"
 #include "ui/TerminalProductViewSupport.h"
 #include <QLabel>
@@ -9,16 +9,6 @@
 #include <algorithm>
 
 namespace afs {
-
-void TerminalProductDock::showStreamResult(const QString& streamId) {
-    m_resultDetails->showStream(streamId);
-}
-
-void TerminalProductDock::showUnitResult(const QString& unitId, const topology::TopologyGraph& graph) {
-    m_resultDetails->showUnit(unitId, graph);
-}
-
-void TerminalProductDock::clearResultDetails() { m_resultDetails->showPlaceholder(); }
 
 void TerminalProductDock::setScenarioName(const QString& name) {
     setWindowTitle(QString("物流实测参数 · %1").arg(name));
@@ -42,7 +32,7 @@ void TerminalProductDock::updateCalculationState() {
                 .arg(result->maximumAbsoluteStandardizedResidual > 3.0
                     ? " · 存在可疑测量" : ""));
         } else m_calculationStatus->setText(result->fullySolved
-            ? "平衡计算成功 · 选择画布对象查看详细结果"
+            ? "平衡计算成功"
             : "全流程平衡已完成 · 部分中间物流未唯一求解");
         m_calculateButton->setText("重新计算");
     } else if (result) {
@@ -84,7 +74,7 @@ void TerminalProductDock::showCalculationExplanation() {
     const auto preview = stored ? topology::CalculationResult{}
                                 : FlowsheetCalculationService::calculate(m_snapshot, m_document);
     const auto& result = stored ? *stored : preview;
-    m_resultDetails->showCalculationExplanation(result, m_document.calculationMode());
+    showCalculationExplanationDialog(this, result, m_document.calculationMode());
 }
 
 } // namespace afs

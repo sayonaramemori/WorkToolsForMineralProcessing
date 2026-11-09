@@ -19,8 +19,6 @@ class MergeJunctionItem final : public QGraphicsPathItem {
 public:
     MergeJunctionItem(QString id, ProductLineItem* first, ProductLineItem* second);
 
-    [[nodiscard]] ProductLineItem* firstProduct() const { return m_products.value(0); }
-    [[nodiscard]] ProductLineItem* secondProduct() const { return m_products.value(1); }
     [[nodiscard]] const QVector<ProductLineItem*>& products() const { return m_products; }
     bool addProduct(ProductLineItem* product);
     [[nodiscard]] double mergeX() const { return m_mergeX; }
@@ -35,6 +33,9 @@ public:
     [[nodiscard]] bool isAvailable() const { return !m_feedJunction && !m_targetUnit; }
 
     [[nodiscard]] QPainterPath shape() const override;
+    [[nodiscard]] QString streamAtScenePosition(const QPointF& position) const;
+    void selectAnnotationStreamAt(const QPointF& position) { m_selectedAnnotationStreamId = streamAtScenePosition(position); }
+    [[nodiscard]] QString selectedAnnotationStreamId() const { return m_selectedAnnotationStreamId; }
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
     void updatePath();
     void refreshAppearance();
@@ -52,11 +53,11 @@ protected:
     void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) override;
-    void contextMenuEvent(QGraphicsSceneContextMenuEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
 
 private:
     QString m_id;
+    QString m_selectedAnnotationStreamId;
     QVector<ProductLineItem*> m_products;
     double m_mergeX{0.0};
     double m_mergeY{0.0};

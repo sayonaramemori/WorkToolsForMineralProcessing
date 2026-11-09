@@ -97,7 +97,6 @@ void FeedJunctionItem::updatePath() {
     const QPointF freshFeedStart = m_targetUnit->inputLine()->startScenePosition();
     m_junctionPosition = (targetTop + freshFeedStart) / 2.0;
 
-    m_recycleAnchor = m_junctionPosition;
     m_externalFeedAnchor = hasExternalFeed()
         ? (freshFeedStart + m_junctionPosition) / 2.0 : QPointF();
     m_outputAnchor = (m_junctionPosition + targetTop) / 2.0;

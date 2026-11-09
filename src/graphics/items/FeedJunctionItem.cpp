@@ -35,12 +35,6 @@ FeedJunctionItem::FeedJunctionItem(QString id, MergeJunctionItem* recycleMerge,
     updatePath();
 }
 
-QString FeedJunctionItem::recycleStreamId() const {
-    if (auto* product = recycleProduct()) return product->streamId();
-    if (auto* merge = recycleMerge()) return merge->outputStreamId();
-    return {};
-}
-
 bool FeedJunctionItem::addRecycleProduct(ProductLineItem* product) {
     if (!product || m_recycleProducts.contains(product)) return false;
     m_recycleProducts.append(product);
@@ -84,6 +78,7 @@ bool FeedJunctionItem::removeRecycleMerge(MergeJunctionItem* merge) {
 }
 
 bool FeedJunctionItem::selectSourceStream(const QString& streamId) {
+    if (streamId.isEmpty()) { m_selectedStreamId.clear(); update(); return true; }
     if (!m_sourcePaths.contains(streamId)) return false;
     m_selectedStreamId = streamId;
     setSelected(true);
@@ -162,7 +157,7 @@ void FeedJunctionItem::refreshAppearance() {
 QVariant FeedJunctionItem::itemChange(GraphicsItemChange change, const QVariant& value) {
     const QVariant result = QGraphicsPathItem::itemChange(change, value);
     if (change == ItemSelectedHasChanged) {
-        if (!value.toBool()) m_selectedStreamId.clear();
+        if (!value.toBool()) { m_selectedStreamId.clear(); m_selectedAnnotationStreamId.clear(); }
         refreshAppearance();
         if (scene())
             for (auto* item : scene()->items())

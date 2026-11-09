@@ -12,6 +12,7 @@
 #include "topology/TopologyAlgorithms.h"
 #include "topology/TopologyValidator.h"
 #include <QTemporaryDir>
+#include <algorithm>
 
 namespace afs::tests {
 
@@ -46,9 +47,8 @@ int checkProjectConnections(const QTemporaryDir& directory) {
     if (downstreamSnapshot.terminalProducts.size() != 3
         || downstreamSnapshot.productStreams.size() != 7
         || downstreamSnapshot.reportStreams.size() != 8
-        || downstreamSnapshot.requiredMeasurements.size() != 4
-        || downstreamSnapshot.requiredMeasurements.back().streamId != "A:right"
-        || !downstreamSnapshot.requiredMeasurements.back().displayName.contains("合流支路"))
+        || std::none_of(downstreamSnapshot.reportStreams.cbegin(), downstreamSnapshot.reportStreams.cend(),
+                        [](const auto& stream) { return stream.streamId == "A:right" && stream.mergeBranch; }))
         return 19;
     QHash<topology::StreamId, topology::StreamValue> known;
     known.insert("A:right", *topology::StreamValue::fromMassAndGrade(30, 2));

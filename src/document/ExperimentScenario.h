@@ -19,6 +19,7 @@ struct ExperimentScenario {
     QHash<QString, AnnotationRecord> reagentAnnotations;
     std::optional<topology::CalculationResult> calculationResult;
     CalculationMode calculationMode{CalculationMode::Strict};
+    QHash<QString, AnnotationRecord> noteAnnotations;
 };
 
 } // namespace afs

@@ -3,10 +3,8 @@
 #include "graphics/items/FlotationUnitItem.h"
 #include "graphics/items/InputLineItem.h"
 #include "graphics/items/MergeJunctionItem.h"
-#include <QGraphicsSceneContextMenuEvent>
 #include <QGraphicsSceneMouseEvent>
 #include <QKeyEvent>
-#include <QMenu>
 #include <cmath>
 
 namespace afs {
@@ -133,17 +131,6 @@ void ProductLineItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) {
         return;
     }
     QGraphicsPathItem::mouseDoubleClickEvent(event);
-}
-
-void ProductLineItem::contextMenuEvent(QGraphicsSceneContextMenuEvent* event) {
-    QMenu menu;
-    auto* reset = menu.addAction(QStringLiteral("恢复自动布线"));
-    reset->setEnabled(m_manualRouteY.has_value());
-    if (menu.exec(event->screenPos()) == reset) {
-        setManualRouteY(std::nullopt);
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
-    }
-    event->accept();
 }
 
 void ProductLineItem::keyPressEvent(QKeyEvent* event) {

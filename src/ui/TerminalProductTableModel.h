@@ -42,6 +42,7 @@ private:
     FlowsheetDocument& m_document;
     QVector<CanvasStreamDescriptor> m_streams;
     QSet<QString> m_editableStreamIds;
+    int m_notifiedColumnCount{0};
 };
 
 } // namespace afs

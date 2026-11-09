@@ -16,9 +16,9 @@ constexpr double kOutputLength = 50.0;
 QPainterPath MergeJunctionItem::shape() const {
     QPainterPathStroker stroker;
     stroker.setWidth(FlotationGeometry::RouteHitWidth);
-    QPainterPath hit = stroker.createStroke(path());
-    hit.addPath(path());
-    return hit;
+    // Open routing paths must not contribute an implicitly closed fill: it
+    // can cancel the stroked hit area or make empty space selectable.
+    return stroker.createStroke(m_linePath).united(m_arrowPath);
 }
 
 void MergeJunctionItem::updatePath() {

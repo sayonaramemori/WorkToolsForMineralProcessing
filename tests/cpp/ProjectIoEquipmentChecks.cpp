@@ -31,8 +31,10 @@ int checkProjectEquipment(const QTemporaryDir& directory) {
     if (!loadedSplitter || loadedSplitter->unit().kind != UnitKind::BinarySplitter
         || std::abs(loadedSplitter->unit().leftSplitPercent - 37.5) > 0.001) return 41;
     const auto splitterSnapshot = CanvasTopologyBuilder::build(splitterLoaded);
-    if (splitterSnapshot.requiredMeasurements.size() != 1
-        || splitterSnapshot.requiredMeasurements.front().streamId != "splitter:left") return 42;
+    if (splitterSnapshot.terminalProducts.size() != 2
+        || splitterSnapshot.reportStreams.size() != 3
+        || !splitterSnapshot.graph.flotationNode("splitter")
+        || splitterSnapshot.graph.flotationNode("splitter")->leftSplitPercent != 37.5) return 42;
 
     FlowsheetScene magneticSource;
     FlotationUnit magneticUnit{"magnetic", {180, 120}};
@@ -51,8 +53,10 @@ int checkProjectEquipment(const QTemporaryDir& directory) {
     const auto magneticSnapshot = CanvasTopologyBuilder::build(magneticLoaded);
     if (!loadedMagnetic || loadedMagnetic->unit().kind != UnitKind::MagneticSeparation
         || loadedMagnetic->products().size() != 2
-        || magneticSnapshot.interestObjects.isEmpty()
-        || !magneticSnapshot.interestObjects.front().displayName.contains("磁选机")) return 52;
+        || !magneticSnapshot.graph.flotationNode("magnetic")
+        || magneticSnapshot.productStreams.size() != 2
+        || !magneticSnapshot.productStreams[0].displayName.contains("磁性")
+        || !magneticSnapshot.productStreams[1].displayName.contains("非磁性")) return 52;
 
     FlowsheetScene strongMagneticSource;
     FlotationUnit strongMagneticUnit{"strong-magnetic", {220, 150}};
@@ -72,8 +76,9 @@ int checkProjectEquipment(const QTemporaryDir& directory) {
             unit && unit->unit().id == "strong-magnetic") loadedStrongMagnetic = unit;
     if (!loadedStrongMagnetic
         || loadedStrongMagnetic->unit().kind != UnitKind::StrongMagneticSeparation
-        || strongMagneticSnapshot.interestObjects.isEmpty()
-        || !strongMagneticSnapshot.interestObjects.front().displayName.contains("强磁选机")) return 55;
+        || loadedStrongMagnetic->products().size() != 2
+        || !strongMagneticSnapshot.graph.flotationNode("strong-magnetic")
+        || strongMagneticSnapshot.productStreams.size() != 2) return 55;
 
     FlowsheetScene poolSource;
     FlotationUnit tailingsPool{"tailings-pool", {0, 0}};
@@ -192,7 +197,7 @@ int checkProjectEquipment(const QTemporaryDir& directory) {
     const auto threeProductSnapshot = CanvasTopologyBuilder::build(threeProductLoaded);
     if (threeProductSnapshot.graph.streamsFrom(
             "three", topology::PortKind::MiddleProduct).size() != 1
-        || threeProductSnapshot.requiredMeasurements.size() != 3) return 46;
+        || threeProductSnapshot.terminalProducts.size() != 3) return 46;
 
     FlowsheetScene threeScreenSource;
     FlotationUnit threeScreenUnit{"three-screen", {240, 160}};
@@ -215,7 +220,7 @@ int checkProjectEquipment(const QTemporaryDir& directory) {
         || loadedThreeScreen->products().size() != 3
         || threeScreenSnapshot.graph.streamsFrom(
                "three-screen", topology::PortKind::MiddleProduct).size() != 1
-        || threeScreenSnapshot.requiredMeasurements.size() != 3) return 64;
+        || threeScreenSnapshot.terminalProducts.size() != 3) return 64;
 
     FlowsheetScene threeDemediumSource;
     FlotationUnit threeDemediumUnit{"three-demedium", {240, 160}};
@@ -238,7 +243,7 @@ int checkProjectEquipment(const QTemporaryDir& directory) {
         || loadedThreeDemedium->products().size() != 3
         || threeDemediumSnapshot.graph.streamsFrom(
                "three-demedium", topology::PortKind::MiddleProduct).size() != 1
-        || threeDemediumSnapshot.requiredMeasurements.size() != 3) return 67;
+        || threeDemediumSnapshot.terminalProducts.size() != 3) return 67;
     return 0;
 }
 

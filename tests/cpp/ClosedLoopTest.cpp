@@ -13,6 +13,7 @@
 
 #include <QApplication>
 #include <cmath>
+#include <algorithm>
 
 using namespace afs;
 
@@ -42,7 +43,8 @@ int main(int argc, char** argv) {
     const auto issues = topology::TopologyValidator::validate(snapshot.graph);
     if (topology::TopologyValidator::hasErrors(issues)) return 8;
 
-    if (snapshot.requiredMeasurements.size() != 3) return 9;
+    if (std::none_of(snapshot.reportStreams.cbegin(), snapshot.reportStreams.cend(),
+        [&](const auto& stream) { return stream.streamId == recycle->streamId() && stream.recycle; })) return 9;
     QHash<topology::StreamId, topology::StreamValue> closedValues;
     closedValues.insert("first:left", *topology::StreamValue::fromMassAndGrade(10, 5));
     closedValues.insert("second:right", *topology::StreamValue::fromMassAndGrade(40, 1));
@@ -68,7 +70,7 @@ int main(int argc, char** argv) {
     if (!productMerge) return 15;
     auto* mergedFeed = mergedScene.connectMergedProduct(productMerge, upper->inputLine());
     if (!mergedFeed || productMerge->feedJunction() != mergedFeed
-        || mergedFeed->recycleMerge() != productMerge) return 16;
+        || !mergedFeed->recycleMerges().contains(productMerge)) return 16;
 
     const auto mergedSnapshot = CanvasTopologyBuilder::build(mergedScene);
     const auto* mergedOutput = mergedSnapshot.graph.stream(productMerge->outputStreamId());
@@ -80,7 +82,8 @@ int main(int argc, char** argv) {
         || topology::TopologyValidator::hasErrors(
             topology::TopologyValidator::validate(mergedSnapshot.graph))) return 19;
 
-    if (mergedSnapshot.requiredMeasurements.size() != 3) return 20;
+    if (std::none_of(mergedSnapshot.reportStreams.cbegin(), mergedSnapshot.reportStreams.cend(),
+        [&](const auto& stream) { return stream.streamId == productMerge->outputStreamId() && stream.recycle; })) return 20;
     QHash<topology::StreamId, topology::StreamValue> mergedValues;
     mergedValues.insert("upper:left", *topology::StreamValue::fromMassAndGrade(10, 5));
     mergedValues.insert("lower:right", *topology::StreamValue::fromMassAndGrade(40, 2));
@@ -96,8 +99,8 @@ int main(int argc, char** argv) {
     const auto restoredSnapshot = CanvasTopologyBuilder::build(mergedScene);
     if (!restoredSnapshot.graph.terminalProductStreams().contains(productMerge->outputStreamId()))
         return 23;
-    auto* firstMergedProduct = productMerge->firstProduct();
-    auto* secondMergedProduct = productMerge->secondProduct();
+    auto* firstMergedProduct = productMerge->products().at(0);
+    auto* secondMergedProduct = productMerge->products().at(1);
     auto* secondFeed = mergedScene.connectMergedProduct(productMerge, upper->inputLine());
     if (!secondFeed) return 24;
     productMerge->setSelected(true);
@@ -179,7 +182,8 @@ int main(int argc, char** argv) {
         || secondLoop->processProduct() != loopA->products().at(1)) return 35;
     const auto multiLoopSnapshot = CanvasTopologyBuilder::build(multiLoopScene);
     if (multiLoopSnapshot.graph.externalFeedStreams().size() != 1
-        || multiLoopSnapshot.requiredMeasurements.size() != 4
+        || std::count_if(multiLoopSnapshot.reportStreams.cbegin(), multiLoopSnapshot.reportStreams.cend(),
+                         [](const auto& stream) { return stream.recycle; }) != 2
         || !topology::TopologyAlgorithms::sort(multiLoopSnapshot.graph).hasCycle
         || topology::TopologyValidator::hasErrors(
             topology::TopologyValidator::validate(multiLoopSnapshot.graph))) return 36;

@@ -6,6 +6,7 @@
 #include "annotations/AnnotationTypes.h"
 
 class QGraphicsItem;
+class QGraphicsSceneContextMenuEvent;
 
 namespace afs {
 
@@ -35,11 +36,15 @@ public:
     void clearGraphicsItems();
     void refreshTextSettings();
     bool nudgeSelectedReagents(qreal verticalDelta);
+    void setReagentPasteAvailable(bool enabled) { m_reagentPasteAvailable = enabled; }
+    void revealPastedReagent(const QString& annotationId);
     [[nodiscard]] bool isMetricVisible(ResultMetric metric) const { return m_settings.visible(metric); }
     [[nodiscard]] int annotationCount() const { return m_items.size(); }
 
 signals:
     void valueSourcesVisibilityChanged(bool enabled);
+    void reagentCopyRequested(const QString& annotationId);
+    void reagentPasteRequested(const QString& streamId);
 
 private:
     FlowsheetScene& m_scene;
@@ -51,6 +56,7 @@ private:
     // This is intentionally not persisted in FlowsheetDocument.
     QSet<QString> m_temporarilyHiddenResults;
     bool m_visible{true};
+    bool m_reagentPasteAvailable{false};
     ResultAnnotationSettings m_settings;
     qreal m_calculatedResultBorderWidth{ResultBorderStyle::DefaultWidth};
 
@@ -61,7 +67,7 @@ private:
     void loadDisplayPreferences();
     void synchronizeDisplaySettings();
     bool eventFilter(QObject* watched, QEvent* event) override;
-    [[nodiscard]] QString selectedLineStreamId(QGraphicsItem** owner = nullptr) const;
+    bool showContextMenu(QGraphicsSceneContextMenuEvent* event);
 };
 
 } // namespace afs

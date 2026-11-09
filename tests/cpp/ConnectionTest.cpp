@@ -6,6 +6,8 @@
 #include "graphics/items/ProductLineItem.h"
 
 #include <QApplication>
+#include <QDebug>
+#include <algorithm>
 #include <cmath>
 
 using namespace afs;
@@ -14,10 +16,76 @@ namespace {
 bool closePoint(const QPointF& a, const QPointF& b) {
     return std::abs(a.x() - b.x()) < 0.001 && std::abs(a.y() - b.y()) < 0.001;
 }
+
+bool shortProductConnectionsStayOutsideTarget() {
+    for (double length : {30.0, 50.0, 70.0, 150.0}) {
+        for (double inputLength : {30.0, 72.0}) {
+            FlowsheetScene scene;
+            auto* source = new FlotationUnitItem({"source", {0, 0}});
+            auto* target = new FlotationUnitItem({"target", {500, 400}});
+            scene.addItem(source);
+            scene.addItem(target);
+            auto* product = source->products().at(1);
+            if (!product->setTerminalLength(length)) return false;
+            target->adjustInputLength(inputLength - target->inputLine()->length());
+            const QPointF expectedInputStart = product->unconnectedEndScenePosition();
+            if (!scene.connectProduct(product, target->inputLine(), true)
+                || !closePoint(target->inputLine()->startScenePosition(), expectedInputStart)
+                || target->inputLine()->isVisible()) return false;
+
+            // Check aligned and offset units, compressed spacing and upward
+            // connections. An automatic elbow must never pass the inlet and
+            // turn back through the downstream symbol to reach it.
+            const QPointF alignedPosition = target->pos();
+            for (QPointF offset : {QPointF(0, 0), QPointF(80, 0),
+                                   QPointF(80, -alignedPosition.y() + 20),
+                                   QPointF(80, -alignedPosition.y()),
+                                   QPointF(80, -alignedPosition.y() - 40)}) {
+                if (!scene.disconnectProduct(product)) return false;
+                target->setPos(alignedPosition + offset);
+                if (!scene.connectProductDirect(product, target->inputLine())
+                    || !closePoint(target->pos(), alignedPosition + offset)) return false;
+                const auto path = product->path();
+                const QPointF start = product->mapFromScene(product->sourceAnchorScenePosition());
+                const QPointF end = product->mapFromScene(target->inputAnchorScenePosition());
+                if (!closePoint(path.currentPosition(), end)) return false;
+                const double direction = end.y() >= start.y() ? 1.0 : -1.0;
+                double previousY = start.y();
+                for (int i = 1; i < path.elementCount(); ++i) {
+                    const auto point = path.elementAt(i);
+                    if ((point.y - previousY) * direction < -0.001
+                        || point.y < std::min(start.y(), end.y()) - 0.001
+                        || point.y > std::max(start.y(), end.y()) + 0.001) return false;
+                    previousY = point.y;
+                }
+            }
+        }
+    }
+    return true;
+}
 }
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    if (!shortProductConnectionsStayOutsideTarget()) {
+        qCritical() << "Automatic product connection extends past the downstream inlet";
+        return 26;
+    }
+    {
+        FlowsheetScene hitScene;
+        auto* source = new FlotationUnitItem({"source", {0, 0}});
+        auto* target = new FlotationUnitItem({"target", {500, 400}});
+        hitScene.addItem(source); hitScene.addItem(target);
+        auto* line = source->products().back();
+        const auto arrowInterior = line->mapFromScene(line->unconnectedEndScenePosition()) + QPointF(0, 4);
+        if (!line->shape().contains(arrowInterior)
+            || !hitScene.connectProductDirect(line, target->inputLine())) return 27;
+        const auto route = line->path();
+        const auto point = [&](int i) { const auto e = route.elementAt(i); return QPointF(e.x, e.y); };
+        for (int i = 1; i < route.elementCount(); ++i)
+            if (!line->shape().contains((point(i - 1) + point(i)) / 2)) return 28;
+        if (line->shape().contains((point(0) + point(1) + point(2)) / 3)) return 29;
+    }
     FlowsheetScene scene;
     auto* upper = new FlotationUnitItem({"upper", {0, 0}});
     auto* lower = new FlotationUnitItem({"lower", {500, 400}});

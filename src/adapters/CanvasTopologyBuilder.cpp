@@ -11,34 +11,6 @@
 namespace afs {
 namespace {
 
-QString unitDisplayName(UnitKind kind) {
-    switch (kind) {
-    case UnitKind::Flotation: return QStringLiteral("浮选单元");
-    case UnitKind::MagneticSeparation: return QStringLiteral("磁选机");
-    case UnitKind::WeakMagneticSeparation: return QStringLiteral("弱磁选机");
-    case UnitKind::StrongMagneticSeparation: return QStringLiteral("强磁选机");
-    case UnitKind::SpiralChute: return QStringLiteral("螺旋溜槽");
-    case UnitKind::ShakingTable: return QStringLiteral("摇床");
-    case UnitKind::DenseMediumCyclone: return QStringLiteral("重介质旋流器");
-    case UnitKind::SedimentationTank: return QStringLiteral("沉降箱");
-    case UnitKind::DemediumScreen: return QStringLiteral("脱介筛");
-    case UnitKind::Screening: return QStringLiteral("筛分机");
-    case UnitKind::Classification: return QStringLiteral("分级机");
-    case UnitKind::TailingsPool: return QStringLiteral("尾矿池");
-    case UnitKind::ConcentratePool: return QStringLiteral("精矿池");
-    case UnitKind::WaterPool: return QStringLiteral("回水池");
-    case UnitKind::MediaTank: return QStringLiteral("介质桶");
-    case UnitKind::MixingTank: return QStringLiteral("混料桶");
-    case UnitKind::BallMill: return QStringLiteral("球磨机");
-    case UnitKind::Thickener: return QStringLiteral("浓密池");
-    case UnitKind::BinarySplitter: return QStringLiteral("二分流器");
-    case UnitKind::ThreeProductFlotation: return QStringLiteral("三产品浮选单元");
-    case UnitKind::ThreeProductScreening: return QStringLiteral("三产品筛分器");
-    case UnitKind::ThreeProductDemediumScreen: return QStringLiteral("三产品脱介筛");
-    }
-    return QStringLiteral("流程单元");
-}
-
 QString productDisplayLabel(const FlotationUnitItem& unit, ProductSide side) {
     if (unit.unit().kind == UnitKind::BallMill) return QStringLiteral("磨矿");
     if (unit.unit().kind == UnitKind::Thickener) return QStringLiteral("浓密出料");
@@ -96,9 +68,6 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
               [](auto* a, auto* b) { return a->id() < b->id(); });
 
     for (auto* unit : units) {
-        result.interestObjects.append({unit->unit().id,
-                                       QString("%1 · %2")
-                                           .arg(unitDisplayName(unit->unit().kind), unit->unit().id)});
         if (isNonSeparatingUnit(unit->unit().kind)) {
             result.graph.addStoragePoolNode({unit->unit().id,
                                               isTerminalStoragePool(unit->unit().kind)});
@@ -113,11 +82,9 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
     }
     for (auto* merge : merges) {
         result.graph.addMergeNode({merge->id(), topology::MergeRole::ProductMerge});
-        result.interestObjects.append({merge->id(), QString("产品汇流 · %1").arg(merge->id())});
     }
     for (auto* junction : feedJunctions) {
         result.graph.addMergeNode({junction->id(), topology::MergeRole::FeedJunction});
-        result.interestObjects.append({junction->id(), QString("入料汇流 · %1").arg(junction->id())});
     }
 
     for (auto* unit : units) {
@@ -236,44 +203,6 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
             {junction->id(), junction->targetUnit()->unit().id}});
     }
     result.reportStreams += result.productStreams;
-    for (const auto& terminal : result.terminalProducts) {
-        auto* product = dynamic_cast<ProductLineItem*>(terminal.graphicsItem);
-        if (product && product->sourceUnit()->unit().kind == UnitKind::BinarySplitter
-            && product->side() == ProductSide::Right) continue;
-        result.requiredMeasurements.append(terminal);
-    }
-    // A downstream merge provides only the sum of its two input branches.
-    // One measured branch is therefore required to identify the other one.
-    for (auto* merge : merges) {
-        if (!merge->targetUnit()) continue;
-        // A downstream merge with N inputs has N-1 allocation degrees of freedom.
-        for (int index = 0; index + 1 < merge->products().size(); ++index) {
-            auto* product = merge->products()[index];
-            result.requiredMeasurements.append({
-                product->streamId(),
-                QString("合流支路：单元 %1 - %2产品")
-                    .arg(product->sourceUnit()->unit().id, productSideLabel(product->side())),
-                merge});
-        }
-    }
-    for (auto* junction : feedJunctions) {
-        for (auto* product : junction->recycleProducts()) {
-            result.requiredMeasurements.append({
-                product->streamId(),
-                QString("回流：单元 %1 - %2产品")
-                    .arg(product->sourceUnit()->unit().id, productSideLabel(product->side())),
-                junction});
-        }
-        for (auto* merge : junction->recycleMerges()) {
-            for (auto* product : merge->products()) {
-                result.requiredMeasurements.append({
-                    product->streamId(),
-                    QString("回流支路：单元 %1 - %2产品")
-                        .arg(product->sourceUnit()->unit().id, productSideLabel(product->side())),
-                    junction});
-            }
-        }
-    }
     return result;
 }
 

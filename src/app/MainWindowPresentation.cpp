@@ -1,4 +1,5 @@
 #include "app/MainWindow.h"
+#include "app/FlowTemplatePreviewSession.h"
 #include "annotations/AnnotationManager.h"
 #include "core/FlotationUnit.h"
 #include "document/FlowsheetDocument.h"
@@ -83,6 +84,7 @@ void MainWindow::applyTheme(bool dark, bool saveSetting) {
     static_cast<FlowsheetScene*>(m_scene)->refreshAppearance();
     if (m_terminalDock) m_terminalDock->refreshAppearance();
     if (m_annotationManager) m_annotationManager->refreshAppearance();
+    if (m_templatePreview) m_templatePreview->refreshAppearance(m_document->annotationTextSettings());
     if (saveSetting) ThemeService::saveDarkPreference(dark);
 }
 

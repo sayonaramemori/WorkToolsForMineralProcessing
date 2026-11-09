@@ -42,7 +42,7 @@ public:
     void moveConnectedPeers(FlotationUnitItem* movedUnit, const QPointF& delta);
     void refreshConnections();
     void sourceWidthChanged(FlotationUnitItem* source, double oldWidth);
-    bool adjustConnectionLength(ProductLineItem* product, double delta);
+    bool adjustConnectionLength(ProductLineItem* product, double delta, bool allowReverse = false);
     [[nodiscard]] InputLineItem* inputAtDropPosition(const QPointF& scenePosition) const;
     void refreshAppearance();
     void resetGeneratedIds();

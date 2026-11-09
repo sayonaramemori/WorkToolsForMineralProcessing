@@ -16,6 +16,21 @@
 
 namespace afs {
 namespace {
+QJsonObject annotationObject(const AnnotationRecord& value) {
+    return QJsonObject{{"id", value.id},
+            {"kind", static_cast<int>(value.kind)}, {"style", static_cast<int>(value.style)},
+            {"ownerKind", static_cast<int>(value.ownerKind)}, {"ownerId", value.ownerId},
+            {"offsetX", value.manualOffset.x()}, {"offsetY", value.manualOffset.y()},
+            {"manuallyPlaced", value.manuallyPlaced}, {"visible", value.visible},
+            {"text", value.text}, {"dosage", value.dosage},
+            {"dosageUnit", value.dosageUnit}, {"note", value.note},
+            {"noteFontFamily", value.noteFontFamily},
+            {"notePointSize", value.notePointSize}, {"noteBold", value.noteBold},
+            {"noteBorderVisible", value.noteBorderVisible},
+            {"noteColor", value.noteColor.isValid()
+                ? value.noteColor.name(QColor::HexArgb) : QString{}}};
+}
+
 QJsonObject measurementObject(const QString& streamId, const StreamMeasurement& value) {
     QJsonObject object{{"streamId", streamId}};
     object.insert("dryMass", value.dryMass ? QJsonValue(*value.dryMass) : QJsonValue::Null);
@@ -126,19 +141,8 @@ QByteArray ProjectJsonWriter::serialize(const FlowsheetScene& scene,
     std::sort(annotationIds.begin(), annotationIds.end());
     for (const auto& id : annotationIds) {
         const auto value = document.annotationRecords().value(id);
-        if (value.kind == AnnotationKind::Reagent) continue;
-        annotationArray.append(QJsonObject{{"id", value.id},
-            {"kind", static_cast<int>(value.kind)}, {"style", static_cast<int>(value.style)},
-            {"ownerKind", static_cast<int>(value.ownerKind)}, {"ownerId", value.ownerId},
-            {"offsetX", value.manualOffset.x()}, {"offsetY", value.manualOffset.y()},
-            {"manuallyPlaced", value.manuallyPlaced}, {"visible", value.visible},
-            {"text", value.text}, {"dosage", value.dosage},
-            {"dosageUnit", value.dosageUnit}, {"note", value.note},
-            {"noteFontFamily", value.noteFontFamily},
-            {"notePointSize", value.notePointSize}, {"noteBold", value.noteBold},
-            {"noteBorderVisible", value.noteBorderVisible},
-            {"noteColor", value.noteColor.isValid()
-                ? value.noteColor.name(QColor::HexArgb) : QString{}}});
+        if (value.kind == AnnotationKind::Reagent || value.kind == AnnotationKind::UserNote) continue;
+        annotationArray.append(annotationObject(value));
     }
     QJsonArray scenarioArray;
     for (const auto& scenario : document.scenarios()) {
@@ -146,6 +150,11 @@ QByteArray ProjectJsonWriter::serialize(const FlowsheetScene& scene,
         QStringList ids = scenario.measurements.keys(); std::sort(ids.begin(), ids.end());
         for (const auto& id : ids)
             scenarioMeasurements.append(measurementObject(id, scenario.measurements.value(id)));
+        QJsonArray notes;
+        QStringList noteIds = scenario.noteAnnotations.keys();
+        std::sort(noteIds.begin(), noteIds.end());
+        for (const auto& id : noteIds)
+            notes.append(annotationObject(scenario.noteAnnotations.value(id)));
         QJsonArray reagents;
         QStringList reagentIds = scenario.reagentAnnotations.keys();
         std::sort(reagentIds.begin(), reagentIds.end());
@@ -161,7 +170,7 @@ QByteArray ProjectJsonWriter::serialize(const FlowsheetScene& scene,
             {"calculationMode", scenario.calculationMode == CalculationMode::DataReconciliation
                 ? "reconciliation" : "strict"},
             {"calculated", scenario.calculationResult.has_value()},
-            {"measurements", scenarioMeasurements}, {"reagents", reagents}});
+            {"measurements", scenarioMeasurements}, {"reagents", reagents}, {"notes", notes}});
     }
     QJsonArray productNameArray;
     QStringList namedStreamIds = document.productNames().keys();

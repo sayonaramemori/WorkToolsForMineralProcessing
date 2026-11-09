@@ -2,18 +2,17 @@
 
 #include "annotations/AnnotationTypes.h"
 
-#include <QToolButton>
+#include <QMenu>
 
 class QActionGroup;
 class QAction;
 
 namespace afs {
 
-class ResultMetricMenu final : public QToolButton {
+class ResultMetricMenu final : public QMenu {
     Q_OBJECT
 public:
     explicit ResultMetricMenu(QWidget* parent = nullptr);
-    [[nodiscard]] QMenu* metricMenu() const { return menu(); }
     void setMassUnit(MassUnit unit, const QString& customUnit = {});
     void setSettings(const AnnotationTextSettings& settings);
 

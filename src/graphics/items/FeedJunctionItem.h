@@ -26,9 +26,6 @@ public:
     [[nodiscard]] const QString& id() const { return m_id; }
     [[nodiscard]] QString externalFeedStreamId() const { return m_id + ":external-feed"; }
     [[nodiscard]] QString outputStreamId() const { return m_id + ":output"; }
-    // The singular accessors are retained for old callers and project files.
-    [[nodiscard]] ProductLineItem* recycleProduct() const { return m_recycleProducts.value(0); }
-    [[nodiscard]] MergeJunctionItem* recycleMerge() const { return m_recycleMerges.value(0); }
     [[nodiscard]] const QVector<ProductLineItem*>& recycleProducts() const {
         return m_recycleProducts;
     }
@@ -49,7 +46,6 @@ public:
     void setExternalFeed(bool enabled);
     [[nodiscard]] FlotationUnitItem* targetUnit() const { return m_targetUnit; }
     [[nodiscard]] QPointF junctionPosition() const { return m_junctionPosition; }
-    [[nodiscard]] QString recycleStreamId() const;
     [[nodiscard]] QPointF sourceAnnotationAnchor(const QString& streamId) const {
         return m_sourceAnnotationAnchors.value(streamId, m_junctionPosition);
     }
@@ -61,7 +57,6 @@ public:
     void translateManualRoutes(const QPointF& delta);
     [[nodiscard]] QString selectedSourceStreamId() const { return m_selectedStreamId; }
     bool selectSourceStream(const QString& streamId);
-    [[nodiscard]] QPointF recycleAnchor() const { return m_recycleAnchor; }
     [[nodiscard]] QPointF externalFeedAnchor() const { return m_externalFeedAnchor; }
     [[nodiscard]] QPointF outputAnchor() const { return m_outputAnchor; }
     [[nodiscard]] QPointF processAnnotationAnchor() const {
@@ -69,6 +64,9 @@ public:
     }
 
     [[nodiscard]] QPainterPath shape() const override;
+    [[nodiscard]] QString streamAtScenePosition(const QPointF& position) const;
+    void selectAnnotationStreamAt(const QPointF& position) { m_selectedAnnotationStreamId = streamAtScenePosition(position); }
+    [[nodiscard]] QString selectedAnnotationStreamId() const { return m_selectedAnnotationStreamId; }
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option,
                QWidget* widget) override;
     void updatePath();
@@ -79,7 +77,6 @@ protected:
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override;
-    void contextMenuEvent(QGraphicsSceneContextMenuEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
 
 private:
@@ -93,7 +90,6 @@ private:
     bool m_hasExternalFeed{false};
     FlotationUnitItem* m_targetUnit;
     QPointF m_junctionPosition;
-    QPointF m_recycleAnchor;
     QPointF m_externalFeedAnchor;
     QPointF m_outputAnchor;
     QPointF m_processAnnotationAnchor;
@@ -108,6 +104,7 @@ private:
     QHash<QString, double> m_manualRouteXs;
     QHash<QString, double> m_manualRouteYs;
     QString m_selectedStreamId;
+    QString m_selectedAnnotationStreamId;
     QString m_editingStreamId;
     enum class EditingAxis { None, Horizontal, Vertical };
     EditingAxis m_editingAxis{EditingAxis::None};

@@ -1,4 +1,5 @@
 #include "app/MainWindow.h"
+#include "app/FlowTemplatePreviewSession.h"
 #include "adapters/CanvasTopologyBuilder.h"
 #include "annotations/AnnotationManager.h"
 #include "document/FlowsheetDocument.h"
@@ -9,6 +10,10 @@
 #include "services/ThemeService.h"
 #include "ui/TerminalProductDock.h"
 #include "ui/OperationLogDock.h"
+#include "ui/ObjectPropertiesDock.h"
+#include "ui/CalculationIssuesDock.h"
+#include "ui/FlowTemplateDock.h"
+#include "ui/WorkspaceSidebar.h"
 
 #include <QAction>
 #include <QLabel>
@@ -42,12 +47,9 @@ MainWindow::MainWindow() {
     });
     m_view->setDeleteHandler([this] { return deleteSelectedUnits(); });
     m_terminalDock = new TerminalProductDock(*m_document, this);
-    addDockWidget(Qt::RightDockWidgetArea, m_terminalDock);
-
     m_operationLog = new OperationLogDock(this);
-    addDockWidget(Qt::BottomDockWidgetArea, m_operationLog);
-    setCorner(Qt::BottomRightCorner, Qt::RightDockWidgetArea);
-    resizeDocks({m_operationLog}, {130}, Qt::Vertical);
+    setupWorkspaceTools();
+    setupReagentClipboard();
     connect(statusBar(), &QStatusBar::messageChanged, this,
             [this](const QString& message) {
                 if (!message.isEmpty()) appendOperationLog(message);
@@ -74,8 +76,6 @@ MainWindow::MainWindow() {
             });
     connect(m_terminalDock, &TerminalProductDock::calculationRequested,
             this, [this] { calculateFlowsheet(); });
-    connect(m_document, &FlowsheetDocument::calculationChanged,
-            this, [this] { refreshSelectedResult(); });
     connect(m_document, &FlowsheetDocument::productNameChanged,
             this, [this](const QString&) { refreshProductNames(); });
     connect(m_document, &FlowsheetDocument::annotationTextSettingsChanged,
@@ -98,7 +98,7 @@ MainWindow::MainWindow() {
     applyTheme(ThemeService::loadDarkPreference(), false);
     setWindowTitle(tr("浮选单元编辑器"));
     setProjectDirty(true);
-    resize(1200, 760);
+    resize(1440, 900);
     m_undoManager = new ProjectUndoManager(
         *static_cast<FlowsheetScene*>(m_scene), *m_document,
         [this] {
@@ -138,6 +138,18 @@ MainWindow::~MainWindow() {
     // Removing selected annotations emits selectionChanged. Stop scene
     // callbacks before any of the panels they access are destroyed.
     if (m_scene) m_scene->blockSignals(true);
+    // Property editors can emit editingFinished while losing focus. Tear down
+    // value-only tool panels before their scene/document dependencies.
+    for (auto* dock : {static_cast<QDockWidget*>(m_propertiesDock),
+                       static_cast<QDockWidget*>(m_issuesDock),
+                       static_cast<QDockWidget*>(m_templatesDock)}) {
+        if (!dock) continue;
+        disconnect(dock, nullptr, this, nullptr);
+        delete dock;
+    }
+    m_propertiesDock = nullptr; m_issuesDock = nullptr; m_templatesDock = nullptr;
+    // The preview view has been destroyed; its independent scene can now go.
+    m_templatePreview.reset();
     // Do not leave QObject to choose the destruction order here. The dock
     // models, annotation manager and undo stack all retain non-owning
     // references to the document and/or scene. In an imported project those
@@ -151,14 +163,16 @@ MainWindow::~MainWindow() {
     }
 
     if (m_terminalDock) {
-        removeDockWidget(m_terminalDock);
         delete m_terminalDock;
         m_terminalDock = nullptr;
     }
     if (m_operationLog) {
-        removeDockWidget(m_operationLog);
         delete m_operationLog;
         m_operationLog = nullptr;
+    }
+    if (m_workspaceSidebar) {
+        removeDockWidget(m_workspaceSidebar);
+        delete m_workspaceSidebar; m_workspaceSidebar = nullptr;
     }
 
     if (m_annotationManager) {

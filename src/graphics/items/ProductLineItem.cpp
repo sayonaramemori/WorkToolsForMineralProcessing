@@ -10,6 +10,7 @@
 #include <QPainterPathStroker>
 #include <QPalette>
 #include <QPen>
+#include <algorithm>
 
 namespace afs {
 
@@ -42,7 +43,14 @@ QPointF ProductLineItem::sourceAnchorPosition() const {
 }
 
 double ProductLineItem::defaultRouteY(const QPointF& end) const {
-    return (end.y() + sourceAnchorPosition().y() + m_sourceUnit->unit().bodyHeight) / 2.0;
+    const double startY = sourceAnchorPosition().y();
+    const double outletEndY = startY + terminalLength();
+    // Honor a shortened outlet when choosing the bend. If even that outlet
+    // would pass the target inlet (including upward connections), use the
+    // midpoint of the endpoints rather than doubling back through the unit.
+    const bool outletFits = outletEndY > std::min(startY, end.y())
+        && outletEndY < std::max(startY, end.y());
+    return ((outletFits ? outletEndY : startY) + end.y()) / 2.0;
 }
 
 QPointF ProductLineItem::unconnectedEndScenePosition() const {
@@ -56,9 +64,10 @@ QPointF ProductLineItem::sourceAnchorScenePosition() const {
 QPainterPath ProductLineItem::shape() const {
     QPainterPathStroker stroker;
     stroker.setWidth(FlotationGeometry::RouteHitWidth);
-    QPainterPath hit = stroker.createStroke(path());
-    hit.addPath(path());
-    return hit;
+    const auto hit = stroker.createStroke(path());
+    // Only unconnected straight routes have a filled arrow. Filling an open
+    // connected elbow would create a selectable polygon beside the line.
+    return (!m_targetUnit || m_dragging) ? hit.united(path()) : hit;
 }
 
 QVariant ProductLineItem::itemChange(GraphicsItemChange change, const QVariant& value) {

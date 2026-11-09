@@ -16,6 +16,7 @@ public:
         m_verticalNudgeHandler = std::move(handler);
     }
     void setDeleteHandler(DeleteHandler handler) { m_deleteHandler = std::move(handler); }
+    void setZoomRange(qreal minimum, qreal maximum);
     void fitAllContents();
 
 protected:
@@ -27,8 +28,8 @@ protected:
     void mouseReleaseEvent(QMouseEvent* event) override;
 
 private:
-    static constexpr qreal MinimumScale = 0.2;
-    static constexpr qreal MaximumScale = 4.0;
+    qreal m_minimumScale{0.2};
+    qreal m_maximumScale{4.0};
 
     void expandSceneForPan(const QPoint& viewportDelta);
     void panViewportBy(const QPoint& viewportDelta);

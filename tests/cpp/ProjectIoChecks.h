@@ -12,6 +12,8 @@ int checkProjectRoundTrip(const QTemporaryDir& directory);
 int checkProjectConnections(const QTemporaryDir& directory);
 int checkProjectEquipment(const QTemporaryDir& directory);
 int checkProjectHistory();
+int checkScenarioNotes();
+int checkVersion23Compatibility();
 int checkProjectExample();
 int checkExternalProject(const QTemporaryDir& directory);
 int checkProjectFormat(const FlowsheetScene& source, const FlowsheetDocument& sourceDocument,

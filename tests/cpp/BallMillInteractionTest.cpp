@@ -19,7 +19,6 @@
 #include <QApplication>
 #include <QDebug>
 #include <QFile>
-#include <QLabel>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QTest>
@@ -145,8 +144,8 @@ void testBallMill(const QString& directory) {
     measure(*document, "downstream:right", 30, 1);
     checkBalance(*scene, *document, upper->products().back()->streamId(), mill->products().front()->streamId());
     scene->clearSelection(); mill->setSelected(true);
-    require(window.findChild<QLabel*>("resultDetailTitle")->text().contains(millId + ":right"),
-            "Selecting ball mill did not show its calculated output");
+    require(mill->isSelected() && !window.findChild<QWidget*>("resultDetails"),
+            "Selecting equipment restored the removed result panel");
 
     qInfo() << "Recycle, project round trip and clipboard retain the new unit";
     auto* junction = scene->connectRecycle(lower->products().back(), mill->inputLine(), "mill-recycle");

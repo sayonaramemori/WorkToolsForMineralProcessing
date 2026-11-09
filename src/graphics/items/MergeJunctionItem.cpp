@@ -86,7 +86,10 @@ void MergeJunctionItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*
 
 QVariant MergeJunctionItem::itemChange(GraphicsItemChange change, const QVariant& value) {
     const QVariant result = QGraphicsPathItem::itemChange(change, value);
-    if (change == ItemSelectedHasChanged) refreshAppearance();
+    if (change == ItemSelectedHasChanged) {
+        if (!value.toBool()) m_selectedAnnotationStreamId.clear();
+        refreshAppearance();
+    }
     return result;
 }
 

@@ -52,7 +52,7 @@ void MainWindow::deleteScenario() {
         return;
     }
     if (QMessageBox::question(this, tr("删除试验方案"),
-            tr("确定删除“%1”及其药剂和实验数据吗？").arg(
+            tr("确定删除“%1”及其文字标注、药剂和实验数据吗？").arg(
                 m_document->currentScenarioName())) != QMessageBox::Yes) return;
     m_document->removeScenario(m_document->currentScenarioIndex());
 }

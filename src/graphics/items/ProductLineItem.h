@@ -79,7 +79,6 @@ protected:
     void mouseMoveEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override;
     void mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) override;
-    void contextMenuEvent(QGraphicsSceneContextMenuEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     void paint(QPainter* painter, const QStyleOptionGraphicsItem* option,
                QWidget* widget) override;

@@ -112,6 +112,7 @@ void MainWindow::addBinarySplitter() {
 
 void MainWindow::copySelectedFlowGroup() {
     const auto result = m_flowClipboard.copy(*static_cast<FlowsheetScene*>(m_scene), *m_document);
+    if (result.units > 0 || result.notes > 0) m_canvasClipboardKind = CanvasClipboardKind::FlowGroup;
     statusBar()->showMessage(result.units > 0 || result.notes > 0
         ? tr("已复制 %1 个单元、%2 条连接、%3 个文字标注、%4 个药剂标注")
               .arg(result.units).arg(result.connections).arg(result.notes).arg(result.reagents)
@@ -125,6 +126,12 @@ void MainWindow::pasteFlowGroup() {
     }
     const auto result = m_flowClipboard.paste(*static_cast<FlowsheetScene*>(m_scene), *m_document,
                                                [this] { return takeNextUnitId(); });
+    synchronizePastedAnnotations(result);
+    statusBar()->showMessage(tr("已粘贴 %1 个单元、%2 条连接、%3 个文字标注、%4 个药剂标注")
+        .arg(result.units).arg(result.connections).arg(result.noteIds.size()).arg(result.reagents), 3000);
+}
+
+void MainWindow::synchronizePastedAnnotations(const FlowGroupClipboard::PasteResult& result) {
     if (!result.noteIds.isEmpty() || result.reagents > 0) {
         m_annotationManager->synchronize();
         const QSet<QString> noteIds(result.noteIds.cbegin(), result.noteIds.cend());
@@ -133,8 +140,6 @@ void MainWindow::pasteFlowGroup() {
                 note && noteIds.contains(note->record().id)) note->setSelected(true);
         }
     }
-    statusBar()->showMessage(tr("已粘贴 %1 个单元、%2 条连接、%3 个文字标注、%4 个药剂标注")
-        .arg(result.units).arg(result.connections).arg(result.noteIds.size()).arg(result.reagents), 3000);
 }
 
 void MainWindow::updateNextUnitId() {

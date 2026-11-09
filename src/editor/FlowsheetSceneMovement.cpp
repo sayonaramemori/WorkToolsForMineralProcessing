@@ -204,9 +204,9 @@ void FlowsheetScene::sourceWidthChanged(FlotationUnitItem* source, double oldWid
     refreshConnections();
 }
 
-bool FlowsheetScene::adjustConnectionLength(ProductLineItem* product, double delta) {
+bool FlowsheetScene::adjustConnectionLength(ProductLineItem* product, double delta, bool allowReverse) {
     if (!product || !product->isConnected()) return false;
-    constexpr double minimumLength = 50.0;
+    const double minimumLength = allowReverse ? -5000.0 : 50.0;
     constexpr double maximumLength = 5000.0;
     auto* source = product->sourceUnit();
     auto* target = product->targetUnit();

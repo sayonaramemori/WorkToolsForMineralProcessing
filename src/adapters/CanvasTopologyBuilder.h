@@ -22,18 +22,11 @@ struct CanvasStreamDescriptor {
     QStringList ownerIds;
 };
 
-struct CanvasInterestObject {
-    QString id;
-    QString displayName;
-};
-
 struct CanvasTopologySnapshot {
     topology::TopologyGraph graph;
     QVector<CanvasStreamDescriptor> reportStreams;
     QVector<CanvasStreamDescriptor> productStreams;
     QVector<CanvasStreamDescriptor> terminalProducts;
-    QVector<CanvasStreamDescriptor> requiredMeasurements;
-    QVector<CanvasInterestObject> interestObjects;
 };
 
 class CanvasTopologyBuilder final {

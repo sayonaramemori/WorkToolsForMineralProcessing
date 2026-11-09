@@ -7,11 +7,13 @@
 ## 组成
 
 - `AnnotationRecord`：稳定 ID、类型、样式、所有者、手动偏移和可见性；
-- `AnnotationItem`：结果卡片和自定义文字的绘制、选择与拖动；
+- `AnnotationItem.cpp`：结果卡片和自定义文字的绘制、选择与拖动；`AnnotationItemEditor.cpp`：文字内容与样式编辑窗口，保留原有调用接口且不访问文档；
+- `FlowsheetDocumentAnnotations.cpp`：统一标注读写和项目级显示设置；文字与药剂写入当前方案，结果标注位置由项目共享；
 - `ReagentAnnotationItem`：药剂内容、化学式排版及锚点偏移；
 - `AnnotationContentFormatter`：把结构化数据格式化为文字；
-- `AnnotationManager.cpp`：结果卡同步、锚点查找和生命周期；`AnnotationManagerContent.cpp` 管理药剂与自由文字；`AnnotationManagerDisplay.cpp` 管理显示设置与本机边框偏好；`AnnotationManagerInteraction.cpp` 管理场景事件；
+- `AnnotationManager.cpp`：结果卡同步、锚点查找和生命周期；`AnnotationManagerContent.cpp` 管理药剂与自由文字；`AnnotationManagerDisplay.cpp` 管理显示设置与本机边框偏好；`AnnotationManagerInteraction.cpp` 分派场景事件，`AnnotationManagerContextMenu.cpp` 管理右键菜单，`AnnotationContextTarget` 解析光标位置的唯一目标，`AnnotationManagerReagentPlacement.cpp` 负责粘贴后的追加摆放；
 - `FlowGroupClipboard`：复制自由文字及所属流程组的药剂记录，粘贴时分配新 ID 并重映射物流归属；
+- `ReagentClipboard`：保存单条药剂的值快照；`MainWindowClipboard` 分派画布复制粘贴，`MainWindowReagents` 共用右键与快捷键的药剂命令；
 - `CanvasView`：在画布滚动前识别 `↑`/`↓`，通过已注入的处理器请求药剂微调。
 
 ## 位置模型
@@ -22,7 +24,7 @@ scenePosition = automaticAnchor + manualOffset
 
 首次创建使用类型相关的默认偏移。结果标注和自定义文字可鼠标拖动；药剂标注选中后使用 `↑`/`↓` 调整。发生人工调整后设置 `manuallyPlaced=true`。以后流程移动只更新自动锚点，重算只更新文字。
 
-药剂标注只保存垂直偏移，横坐标始终跟随所属物流的自动锚点。同一物流上的多个药剂先按稳定 ID 自动堆叠，再叠加各自的人工垂直偏移。
+药剂标注只保存垂直偏移，横坐标始终跟随所属物流的自动锚点。同一物流上的多个药剂按 `ReagentOrder` 的统一顺序自动堆叠，再叠加各自的人工垂直偏移；单条粘贴的记录按新 ID 的等宽序号追加到普通药剂之后。该规则同时适用于右键和快捷键入口。
 
 ## 当前结果标注
 
@@ -53,6 +55,8 @@ scenePosition = automaticAnchor + manualOffset
 
 选中文字后可用 `Ctrl+C` / `Ctrl+V` 复制粘贴，也可与流程单元一起复制。副本使用新 ID，保留完整文字样式，并与流程组使用相同的平移偏移。计算结果卡不会作为自由文字复制。
 
+自定义文字按试验方案独立保存，包含内容、字体、字号、颜色、边框、位置和可见性。打开 v23 项目时，原来的共享文字会完整复制到每个已有方案，再次保存使用 v24。复制方案会完整复制当前文字；之后编辑、移动或删除只影响当前方案。新增空白方案不含自定义文字。切换方案时画布同步展示对应文字，复制粘贴的文字写入粘贴时的当前方案，支持撤销重做和项目保存读取。全局标注显示设置仍由项目共享。
+
 ## 生命周期
 
 - 产生计算结果：创建缺失标注并更新已有内容，包含部分可解时已确定的物流；
@@ -70,6 +74,7 @@ scenePosition = automaticAnchor + manualOffset
 
 - 在物流线上右键添加；
 - 双击编辑内容；
+- 单选后用 `Ctrl+C` 复制，再单击目标物流线并用 `Ctrl+V` 粘贴；也支持右键复制、粘贴；
 - 选中后按 `↑`/`↓` 微调 2 个画布单位，按住 `Shift` 时微调 10 个单位；
 - 选中后按 `Delete` 删除；
 - 不支持鼠标拖动，避免与画布、物流连接和图元移动产生手势冲突；
@@ -81,11 +86,27 @@ scenePosition = automaticAnchor + manualOffset
 
 选择流程单元后复制，会自动快照当前方案中属于这些单元产品、主入料及完整复制的汇流/回流物流的药剂，无需单独选中药剂图元。粘贴时生成新的标注 ID、把 `ownerId` 映射为副本物流 ID，并保留名称、用量、单位、备注和人工偏移。
 
-药剂偏移相对于物流锚点，不能再次叠加组粘贴位移。同一物流上按 ID 堆叠的多个药剂必须保持相对顺序；当前实现使用新批次前缀和等宽序号，避免 ID 跨位数后顺序颠倒。记录写入粘贴时的当前方案，其他方案不受影响；未复制的外部物流或不完整汇流节点的药剂不会带入副本。
+药剂偏移相对于物流锚点，不能再次叠加组粘贴位移。采集与绘制共用 `ReagentOrder`，把同一物流上的普通记录及单条粘贴副本按实际显示顺序采集，再通过新批次前缀和等宽序号保留顺序，避免 ID 跨位数后颠倒。记录写入粘贴时的当前方案，其他方案不受影响；未复制的外部物流或不完整汇流节点的药剂不会带入副本。
+
+## 单条药剂的复制与粘贴
+
+右键药剂图元发出复制请求，右键唯一的物流线段发出粘贴请求。菜单只使用当前鼠标命中结果；不回退到旧选中线路。`FeedJunctionItemHitTest` 区分回流支路、主入料、外部新鲜入料及公共输出，`MergeJunctionItemHitTest` 区分合流前支路和合流输出；交点或共用线段命中多个物流时不允许粘贴。
+
+`MainWindowClipboard` 统一分派画布原有的 `Ctrl+C` / `Ctrl+V` 和流程菜单：选择中包含设备或自定义文字时优先复制流程组，仅单选一条药剂时复制药剂。`CanvasClipboardKind` 以 `Empty`、`FlowGroup`、`Reagent` 记录当前快捷键类型；复制不支持的选择后进入 `Empty`，提示重新复制有效对象。
+
+药剂快捷键目标由当前单选线路或药剂的归属物流确定。普通产品线和入料线直接提供物流 ID；合流和入料汇流读取 `selectedAnnotationStreamId()`，该值在单击具体线段时通过命中查询设置、取消选择时清除。它与回流路线高亮使用的 `selectedSourceStreamId()` 分开，避免把主入料或公共输出误认成上一次选择的回流来源。无目标、多选或无法明确识别时只提示，不向旧目标粘贴。
+
+`ReagentClipboard` 保存值快照；粘贴生成 `reagent-paste-` 前缀及等宽递增序号的新 ID，重新绑定目标并清除源位置偏移。`MainWindowReagents` 再次检查当前拓扑中目标仍然存在，通过文档写入当前方案，并在操作前后提交撤销检查点。图元管理器按目标线已有标签的实际边界避让，选中新标注，支持继续按 `Ctrl+V` 追加。复制不改变文档、撤销历史或系统剪贴板，粘贴不触发拓扑变化或计算失效。
+
+右键菜单与快捷键共用药剂复制、粘贴命令。流程组与药剂各自保留复制内容，当前快捷键类型只决定 `Ctrl+V` 的分派；右键“粘贴药剂标注”仍读取药剂缓存。缓存属于当前窗口，跨方案或项目切换仍可使用，关闭窗口后清空；缓存、当前粘贴类型和支路选择不写入项目，实际副本按当前方案保存，继续使用 v24 的现有药剂字段。
+
+`ReagentOrder` 同时用于药剂绘制和流程组快照采集，保证单条粘贴的药剂随后参与流程组复制或模板保存时保持排列顺序。
 
 ## 相关检查
 
 - `terminal_input_test`：标注同步、位置和药剂键盘微调；
 - `result_source_interaction_test`：边框区分、可见指标、线宽编辑与取消、本机偏好、实际绘制和 SVG 线宽；
-- `clipboard_interaction_test`：文字及流程组药剂的复制、位置和堆叠、方案切换、撤销重做及项目往返；
+- `clipboard_interaction_test`：文字及流程组药剂、单条药剂的右键与快捷键、目标支路识别、复制类型切换、连续粘贴、避让和堆叠、方案切换、独立撤销及项目往返；
 - `project_io_test`：当前格式下标注与方案数据的保存读取。
+
+具体交互检查文件及执行方式见[开发指南](DEVELOPMENT.md#药剂复制回归)。

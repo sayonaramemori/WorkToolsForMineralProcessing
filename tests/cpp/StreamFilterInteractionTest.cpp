@@ -108,7 +108,6 @@ struct WindowUi {
     TerminalProductDock* dock{window.findChild<TerminalProductDock*>()};
     QTableView* table{dock->findChild<QTableView*>("terminalProductTable")};
     QComboBox* filter{dock->findChild<QComboBox*>("streamFilterCombo")};
-    QPushButton* interest{dock->findChild<QPushButton*>("interestObjectButton")};
 
     WindowUi() {
         window.resize(1600, 1100);
@@ -208,17 +207,7 @@ struct WindowUi {
         require(product->isSelected(), "Canvas product click was not delivered");
     }
 
-    void toggleInterest(const QString& id) {
-        auto* menu = interest->menu();
-        QAction* action = nullptr;
-        for (auto* candidate : menu->actions())
-            if (candidate->data().toString() == id) action = candidate;
-        require(action, "Missing interest action: " + id);
-        menu->popup(interest->mapToGlobal(QPoint(0, interest->height())));
-        flushEvents();
-        QTest::mouseClick(menu, Qt::LeftButton, Qt::NoModifier, menu->actionGeometry(action).center());
-        flushEvents();
-    }
+
 };
 
 void testSelectionAndNavigation(WindowUi& ui) {
@@ -237,8 +226,8 @@ void testSelectionAndNavigation(WindowUi& ui) {
     ui.expectStreams({"A:right", "B:left", "B:right"});
     require(ui.scene->selectedItems().size() == 1
         && dynamic_cast<ProductLineItem*>(ui.scene->selectedItems().first()), "Table did not select product");
-    require(ui.dock->findChild<QLabel*>("resultDetailTitle")->text() == "物流结果 · A:right",
-            "Table navigation did not update result details");
+    require(ui.dock->selectedStreamIdForGraphicsItem(ui.scene->selectedItems().first()) == "A:right",
+            "Table navigation did not retain the selected stream");
     ui.clickStream("B:left", ui.dock->model()->gradeColumn(DefaultComponentId));
     ui.expectStreams({"A:right", "B:left", "B:right"});
     require(ui.table->currentIndex().column() == ui.dock->model()->gradeColumn(DefaultComponentId),
@@ -264,7 +253,7 @@ void testSelectionAndNavigation(WindowUi& ui) {
 }
 
 void testCategoriesAndEditing(WindowUi& ui) {
-    qInfo() << "Category filters, interest intersection and edits through the proxy";
+    qInfo() << "Category filters, selected-unit scope and edits through the proxy";
     selectCombo(ui.filter, "浮选入料");
     ui.expectStreams({"A:feed", "A:right", "B:right", "D:feed"});
     selectCombo(ui.filter, "回流"); ui.expectStreams({});
@@ -272,12 +261,9 @@ void testCategoriesAndEditing(WindowUi& ui) {
     ui.expectStreams({"A:left", "B:left", "C:left", "C:middle", "C:right", "D:left", "D:right"});
     selectCombo(ui.filter, "待补充"); ui.expectStreams({});
     selectCombo(ui.filter, "终端产品");
-    ui.toggleInterest("B"); ui.expectStreams({"B:left"});
-    ui.toggleInterest("C"); ui.expectStreams({"B:left", "C:left", "C:middle", "C:right"});
+    ui.expectStreams({"A:left", "B:left", "C:left", "C:middle", "C:right", "D:left", "D:right"});
     selectCombo(ui.filter, "选中流程关联");
-    ui.clickUnit("A"); ui.expectStreams({"A:right"});
-    ui.toggleInterest("B"); ui.expectStreams({});
-    ui.toggleInterest("C"); ui.expectStreams({"A:feed", "A:left", "A:right"});
+    ui.clickUnit("A"); ui.expectStreams({"A:feed", "A:left", "A:right"});
     selectCombo(ui.filter, "全部物流");
     ui.clickStream("A:feed");
     QTest::keyClick(ui.table, Qt::Key_F2); flushEvents();
@@ -295,13 +281,13 @@ void testCategoriesAndEditing(WindowUi& ui) {
     QTest::keyClick(ui.table, Qt::Key_Delete); flushEvents();
     require(!ui.document->measurement("A:feed").dryMass, "Delete did not clear proxy cell");
     ui.expectStreams({"A:left", "B:left", "C:left", "C:middle", "C:right", "D:left", "D:right"});
-    ui.toggleInterest("B"); ui.expectStreams({"B:left"});
+    selectCombo(ui.filter, "选中流程关联");
+    ui.clickUnit("B"); ui.expectStreams({"A:right", "B:left", "B:right"});
     auto* calculate = ui.dock->findChild<QPushButton*>("calculateButton");
     QTest::mouseClick(calculate, Qt::LeftButton); flushEvents();
     require(ui.document->calculationResult() && ui.document->calculationResult()->fullySolved,
             "Calculation used the display-filtered graph");
     require(ui.document->calculationResult()->values.contains("D:feed"), "Hidden circuit was not calculated");
-    ui.toggleInterest("B");
     selectCombo(ui.filter, "待补充"); ui.expectStreams({});
 }
 
@@ -313,25 +299,22 @@ void testLoopAndProjectSwitch(WindowUi& ui, const QString& loopPath, const QStri
     ui.expectStreams({"loop:external-feed", "loop:output", "loop-a:left", "loop-a:right"});
     ui.clickStream("loop:output");
     ui.expectStreams({"loop:external-feed", "loop:output", "loop-a:left", "loop-a:right"});
-    require(ui.dock->findChild<QLabel*>("resultDetailTitle")->text() == "物流结果 · loop:output",
-            "Shared junction item selected the wrong stream details");
+    require(ui.dock->selectedStreamIdForGraphicsItem(ui.scene->selectedItems().first()) == "loop:output",
+            "Shared junction item selected the wrong stream row");
     ui.clickStream("loop:external-feed");
-    require(ui.dock->findChild<QLabel*>("resultDetailTitle")->text() == "物流结果 · loop:external-feed",
-            "Fresh feed row displayed total-feed details");
+    require(ui.dock->selectedStreamIdForGraphicsItem(ui.scene->selectedItems().first()) == "loop:external-feed",
+            "Fresh feed row lost its selected stream");
     selectCombo(ui.filter, "回流"); ui.expectStreams({"loop-b:right"});
     selectCombo(ui.filter, "浮选入料");
     ui.expectStreams({"loop:external-feed", "loop:output", "loop-a:right"});
-    ui.toggleInterest("loop"); ui.expectStreams({"loop:external-feed", "loop:output"});
     selectCombo(ui.filter, "回流"); ui.expectStreams({"loop-b:right"});
-    ui.toggleInterest("loop");
     selectCombo(ui.filter, "全部物流");
-    ui.toggleInterest("pool"); ui.expectStreams({"loop-a:left", "loop-b:left", "pool:output"});
+    ui.expectStreams({"loop:external-feed", "loop:output", "loop-a:left", "loop-a:right", "loop-b:left", "loop-b:right", "pool:output"});
     selectCombo(ui.filter, "终端产品"); ui.expectStreams({"pool:output"});
     selectCombo(ui.filter, "选中流程关联"); ui.clickUnit("loop-a");
-    ui.expectStreams({"loop-a:left"});
+    ui.expectStreams({"loop:external-feed", "loop:output", "loop-a:left", "loop-a:right"});
     ui.load(chainPath);
     ui.expectStreams({});
-    require(ui.interest->text() == "关注对象：全部", "Project switch retained removed interest objects");
     ui.clickUnit("C"); ui.expectStreams({"B:right", "C:left", "C:middle", "C:right"});
 }
 
@@ -340,13 +323,11 @@ void testScenarioSwitch(WindowUi& ui) {
     require(ui.document->addScenario("空白方案", false) == 1, "Could not add empty scenario");
     auto* scenarios = ui.window.findChild<QComboBox*>("scenarioCombo");
     require(scenarios, "Missing scenario selector");
-    ui.toggleInterest("B"); ui.expectStreams({"B:right"});
+    ui.expectStreams({"B:right", "C:left", "C:middle", "C:right"});
     selectCombo(scenarios, "空白方案");
     ui.expectStreams({});
     selectCombo(ui.filter, "已填写"); ui.expectStreams({});
     selectCombo(ui.filter, "待补充");
-    ui.expectStreams({"A:right", "B:left", "B:right"});
-    ui.toggleInterest("B");
     ui.expectStreams({"A:feed", "D:feed", "A:left", "A:right", "B:left", "B:right",
                       "C:left", "C:middle", "C:right", "D:left", "D:right"});
     selectCombo(scenarios, "基准方案");
@@ -358,7 +339,7 @@ void testScenarioSwitch(WindowUi& ui) {
 void testTopologyChange(WindowUi& ui) {
     qInfo() << "Deleting and undoing a focused unit rebuilds filter state";
     selectCombo(ui.filter, "选中流程关联");
-    ui.clickUnit("D"); ui.toggleInterest("D");
+    ui.clickUnit("D");
     ui.expectStreams({"D:feed", "D:left", "D:right"});
     QTimer::singleShot(0, [] {
         if (auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget()))
@@ -366,7 +347,6 @@ void testTopologyChange(WindowUi& ui) {
     });
     QTest::keyClick(ui.canvas->viewport(), Qt::Key_Delete); flushEvents();
     ui.expectStreams({});
-    require(ui.interest->text() == "关注对象：全部", "Deleted focus remained in interest menu");
     selectCombo(ui.filter, "全部物流");
     ui.expectStreams({"A:feed", "A:left", "A:right", "B:left", "B:right", "C:left", "C:middle", "C:right"});
     QAction* undo = nullptr;

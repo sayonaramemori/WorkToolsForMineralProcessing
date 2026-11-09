@@ -73,7 +73,8 @@ bool readScenarios(const QJsonObject& root, ProjectData& data, QString* error) {
             || !readRequiredString(object, "name", scenario.name)
             || scenario.name.size() > 80 || scenarioIds.contains(scenario.id)
             || !object.value("measurements").isArray()
-            || !object.value("reagents").isArray()) {
+            || !object.value("reagents").isArray()
+            || !object.value("notes").isArray()) {
             setError(error, "试验方案名称、ID或数据数组无效"); return false;
         }
         const auto calculated = object.value("calculated");
@@ -102,6 +103,17 @@ bool readScenarios(const QJsonObject& root, ProjectData& data, QString* error) {
             }
             scenario.measurements.insert(streamId, measurement);
         }
+        for (const auto& noteValue : object.value("notes").toArray()) {
+            if (!noteValue.isObject()) { setError(error, "方案文字标注无效"); return false; }
+            AnnotationRecord record;
+            if (!readAnnotationRecord(noteValue.toObject(), record, error)) return false;
+            if (record.kind != AnnotationKind::UserNote
+                || scenario.noteAnnotations.contains(record.id)
+                || data.annotations.contains(record.id)) {
+                setError(error, "方案文字标注类型无效或 ID 重复"); return false;
+            }
+            scenario.noteAnnotations.insert(record.id, record);
+        }
         for (const auto& reagentValue : object.value("reagents").toArray()) {
             if (!reagentValue.isObject()) { setError(error, "方案药剂标注无效"); return false; }
             const auto reagentObject = reagentValue.toObject();
@@ -113,7 +125,9 @@ bool readScenarios(const QJsonObject& root, ProjectData& data, QString* error) {
                 || !reagentObject.value("dosage").isString()
                 || !reagentObject.value("unit").isString()
                 || !reagentObject.value("note").isString()
-                || scenario.reagentAnnotations.contains(record.id)) {
+                || scenario.reagentAnnotations.contains(record.id)
+                || scenario.noteAnnotations.contains(record.id)
+                || data.annotations.contains(record.id)) {
                 setError(error, "方案药剂标注字段无效"); return false;
             }
             record.text = reagentObject.value("text").toString();

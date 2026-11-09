@@ -2,7 +2,6 @@
 #include "adapters/CanvasTopologyBuilder.h"
 #include "document/FlowsheetDocument.h"
 #include "editor/FlowsheetScene.h"
-#include "graphics/items/FeedJunctionItem.h"
 #include "graphics/items/FlotationUnitItem.h"
 #include "graphics/items/MergeJunctionItem.h"
 #include "graphics/items/ProductLineItem.h"
@@ -10,6 +9,7 @@
 #include "ui/TerminalProductDock.h"
 #include <QSet>
 #include <QStatusBar>
+#include <algorithm>
 
 namespace afs {
 
@@ -35,6 +35,7 @@ void MainWindow::refreshProductNames() {
 }
 
 void MainWindow::syncCanvasSelectionToTable() {
+    schedulePropertyRefresh();
     const auto selected = m_scene->selectedItems();
     if (!m_selectingGraphicsFromTable) {
         QSet<QString> selectedUnitIds;
@@ -45,7 +46,6 @@ void MainWindow::syncCanvasSelectionToTable() {
         m_terminalDock->setSelectedUnitIds(std::move(selectedUnitIds));
         m_terminalDock->selectGraphicsItem(selected.isEmpty() ? nullptr : selected.first());
     }
-    refreshSelectedResult();
     refreshSelectionStatus();
 }
 
@@ -54,6 +54,11 @@ void MainWindow::calculateFlowsheet() {
         *static_cast<FlowsheetScene*>(m_scene), *m_document);
     const bool complete = result.complete;
     const int issueCount = result.issues.size();
+    const bool hasBalanceConflict = std::any_of(result.issues.cbegin(), result.issues.cend(),
+        [](const topology::TopologyIssue& issue) {
+            return issue.code == topology::IssueCode::InconsistentBalance
+                && issue.severity == topology::IssueSeverity::Error;
+        });
     m_document->setCalculationResult(std::move(result));
     if (!complete) {
         const auto* storedResult = m_document->calculationResult();
@@ -65,32 +70,7 @@ void MainWindow::calculateFlowsheet() {
     }
     statusBar()->showMessage(complete ? tr("平衡计算成功")
         : tr("计算未完成，共发现 %1 个问题").arg(issueCount), 5000);
-}
-
-void MainWindow::refreshSelectedResult() {
-    const auto selected = m_scene->selectedItems();
-    if (selected.isEmpty()) {
-        m_terminalDock->clearResultDetails();
-        return;
-    }
-    auto* item = selected.first();
-    if (auto* product = dynamic_cast<ProductLineItem*>(item)) {
-        m_terminalDock->showStreamResult(product->streamId());
-    } else if (auto* merge = dynamic_cast<MergeJunctionItem*>(item)) {
-        m_terminalDock->showStreamResult(merge->outputStreamId());
-    } else if (auto* feedJunction = dynamic_cast<FeedJunctionItem*>(item)) {
-        const auto streamId = m_terminalDock->selectedStreamIdForGraphicsItem(feedJunction);
-        m_terminalDock->showStreamResult(streamId.isEmpty() ? feedJunction->outputStreamId() : streamId);
-    } else if (auto* unit = dynamic_cast<FlotationUnitItem*>(item)) {
-        if (hasCenteredVerticalPorts(unit->unit().kind)) {
-            m_terminalDock->showStreamResult(unit->products().front()->streamId());
-            return;
-        }
-        const auto snapshot = CanvasTopologyBuilder::build(*static_cast<FlowsheetScene*>(m_scene));
-        m_terminalDock->showUnitResult(unit->unit().id, snapshot.graph);
-    } else {
-        m_terminalDock->clearResultDetails();
-    }
+    refreshCalculationIssues(hasBalanceConflict);
 }
 
 } // namespace afs
