@@ -1,13 +1,11 @@
 #pragma once
 
-#include "adapters/CanvasTopologyBuilder.h"
+#include "contracts/TerminalTableSession.h"
 
 #include <QAbstractTableModel>
 #include <QSet>
 
 namespace afs {
-
-class FlowsheetDocument;
 
 class TerminalProductTableModel final : public QAbstractTableModel {
     Q_OBJECT
@@ -16,7 +14,7 @@ public:
                        MassStdDevColumn, GradeColumn = MassStdDevColumn };
     enum CustomRole { CompletionRole = Qt::UserRole + 1 };
 
-    explicit TerminalProductTableModel(FlowsheetDocument& document, QObject* parent = nullptr);
+    explicit TerminalProductTableModel(TerminalTableSession& session, QObject* parent = nullptr);
     int rowCount(const QModelIndex& parent = {}) const override;
     int columnCount(const QModelIndex& parent = {}) const override;
     QVariant data(const QModelIndex& index, int role) const override;
@@ -24,13 +22,10 @@ public:
     Qt::ItemFlags flags(const QModelIndex& index) const override;
     bool setData(const QModelIndex& index, const QVariant& value, int role) override;
 
-    void setStreams(QVector<CanvasStreamDescriptor> streams);
-    void setStreams(QVector<CanvasStreamDescriptor> streams,
-                    QSet<QString> editableStreamIds);
-    [[nodiscard]] const CanvasStreamDescriptor* streamAt(int row) const;
-    [[nodiscard]] int rowForGraphicsItem(const QGraphicsItem* item) const;
+    [[nodiscard]] const StreamDescriptor* streamAt(int row) const;
+    [[nodiscard]] int rowForStreamId(const QString& streamId) const;
     [[nodiscard]] int completedCount() const;
-    [[nodiscard]] int editableCount() const { return m_editableStreamIds.size(); }
+    [[nodiscard]] int editableCount() const { return m_state.editableStreamIds.size(); }
     [[nodiscard]] int gradeColumn(const QString& componentId) const;
     [[nodiscard]] int gradeStdDevColumn(const QString& componentId) const;
     [[nodiscard]] int statusColumn() const;
@@ -38,11 +33,13 @@ public:
     [[nodiscard]] bool isUncertaintyColumn(int column) const;
     [[nodiscard]] QString componentIdForColumn(int column) const;
 
+    const TerminalTableState& tableState() const { return m_state; }
+signals:
+    void schemaChanged();
 private:
-    FlowsheetDocument& m_document;
-    QVector<CanvasStreamDescriptor> m_streams;
-    QSet<QString> m_editableStreamIds;
-    int m_notifiedColumnCount{0};
+    TerminalTableSession& m_session;
+    TerminalTableState m_state;
+    void applySnapshot(const TerminalTableState& state, const QString& streamId, TableChange change);
 };
 
 } // namespace afs

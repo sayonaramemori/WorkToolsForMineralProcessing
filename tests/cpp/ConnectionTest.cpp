@@ -11,6 +11,7 @@
 #include <cmath>
 
 using namespace afs;
+bool runCanvasHostChecks();
 
 namespace {
 bool closePoint(const QPointF& a, const QPointF& b) {
@@ -67,6 +68,7 @@ bool shortProductConnectionsStayOutsideTarget() {
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    if (!runCanvasHostChecks()) return 90;
     if (!shortProductConnectionsStayOutsideTarget()) {
         qCritical() << "Automatic product connection extends past the downstream inlet";
         return 26;

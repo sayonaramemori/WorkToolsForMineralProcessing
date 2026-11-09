@@ -10,7 +10,7 @@
 python3 scripts/validate.py --clean
 ```
 
-该命令执行全目标干净构建、从 `xmake.lua` 发现的全部 15 个检查，以及 v23、v24 项目启动/退出验证。日志和退出码位于 `build/validation/latest/`，任一检查失败时脚本以非零状态退出。已经构建且源码未变化时可使用 `--skip-build`；xmake 未加入 PATH 时传入 `--xmake /path/to/xmake`。默认使用 Qt offscreen 平台，可用 `--platform` 指定其他已安装插件。验证脚本只依赖 Python 3 标准库。
+该命令执行全目标干净构建、从 `xmake.lua` 发现的全部 17 个检查，以及 v23、v24 项目启动/退出验证。日志和退出码位于 `build/validation/latest/`，任一检查失败时脚本以非零状态退出。已经构建且源码未变化时可使用 `--skip-build`；xmake 未加入 PATH 时传入 `--xmake /path/to/xmake`。默认使用 Qt offscreen 平台，可用 `--platform` 指定其他已安装插件。验证脚本只依赖 Python 3 标准库。
 
 修改 UI 布局时先保持交互和数据流不变；按需复用现有工作区预览检查。拆分同一 Qt 类时保留统一头文件及唯一 MOC 输入；`terminal_input_test`、`project_io_test` 等按需链接目标必须显式包含新实现依赖，完整应用目标则通过共用源码集收集。
 
@@ -83,7 +83,7 @@ python3 scripts/validate.py --clean
 
 结果指标框的 `Delete` 是会话级隐藏操作，状态只保存在 `AnnotationManager`，不能写回项目文档；`calculationChanged` 必须清除临时隐藏集合。药剂和自定义文字的 `Delete` 仍删除对应的 `AnnotationRecord`，新增键盘行为时要明确区分这两类生命周期。
 
-质量单位和“显示产品名称”均是项目级显示元数据：预设单位保存在 `AnnotationTextSettings::massUnit`，自定义文本保存在 `customMassUnit` 并限制为 16 个字符，产品名称开关保存在 `showProductName`。它们只能改变指标卡文本，不能在格式化器、表格模型或求解器中换算或改变数值；编辑其他标注样式时必须保留这些显示设置。格式化器仅在产品名称非空时写入名称行，避免未命名的中间物流产生无意义标题。
+质量单位和“显示产品名称”均是项目级显示元数据：预设单位保存在 `AnnotationTextSettings::massUnit`，自定义文本保存在 `customMassUnit` 并限制为 17 个字符，产品名称开关保存在 `showProductName`。它们只能改变指标卡文本，不能在格式化器、表格模型或求解器中换算或改变数值；编辑其他标注样式时必须保留这些显示设置。格式化器仅在产品名称非空时写入名称行，避免未命名的中间物流产生无意义标题。
 
 `AnnotationManager::setDistinguishValueSources` 控制结果卡的边框区分，默认开启，通过 `QSettings` 的 `appearance/distinguishValueSources` 保存本机偏好；该开关不属于文档或项目格式，也不进入撤销历史。`AnnotationManager` 根据当前方案中求解器实际可用的完整质量/品位观测判断来源：当前可见质量或任一组分品位属于计算值时，调用 `AnnotationItem::setCalculatedResultEmphasis` 加粗边框。产率、回收率和产品名称不参与判断，协调后的观测仍按实测来源处理。格式化器只输出原有指标文本，不添加来源文字。切换显示开关不得改变测量、计算结果、标注位置或布局，不得触发项目变更。
 
@@ -273,7 +273,7 @@ Windows：
 C:\Users\13427\xmake\xmake.exe build -a
 ```
 
-`build -a` 同时构建主程序和全部 15 个测试目标。逐项执行命令及职责见 [README 测试说明](../README.md#测试)；Qt Test 用于主窗口交互测试。全部检查通过后再执行 `xmake deploy` 生成部署目录或刷新平台运行时。
+`build -a` 同时构建主程序和全部 17 个测试目标。逐项执行命令及职责见 [README 测试说明](../README.md#测试)；Qt Test 用于主窗口交互测试。全部检查通过后再执行 `xmake deploy` 生成部署目录或刷新平台运行时。
 
 ## 筛选联动回归测试
 
@@ -319,7 +319,7 @@ QT_QPA_PLATFORM=offscreen xmake run stream_filter_interaction_test
 - 结果卡同步、锚点与生命周期留在 `AnnotationManager.cpp`；药剂/自由文字同步放在 `AnnotationManagerContent.cpp`，显示设置及本机偏好放在 `AnnotationManagerDisplay.cpp`，事件分派、删除和微调放在 `AnnotationManagerInteraction.cpp`。右键菜单放在 `AnnotationManagerContextMenu.cpp`，位置目标解析放在 `AnnotationContextTarget.cpp`，单条药剂追加摆放放在 `AnnotationManagerReagentPlacement.cpp`。
 - 产品合流的状态与绘制留在 `MergeJunctionItem.cpp`，路线与手动汇合高度放在 `MergeJunctionItemRouting.cpp`，交互事件放在 `MergeJunctionItemInteraction.cpp`，唯一物流命中查询放在 `MergeJunctionItemHitTest.cpp`。
 - 入料汇流的来源集合与绘制留在 `FeedJunctionItem.cpp`，路径与锚点放在 `FeedJunctionItemRouting.cpp`，事件处理放在 `FeedJunctionItemInteraction.cpp`，唯一物流命中查询放在 `FeedJunctionItemHitTest.cpp`；产品线的几何与显示留在 `ProductLineItem.cpp`，拖拽、路线编辑及键盘事件放在 `ProductLineItemInteraction.cpp`。
-- `TerminalProductDock.cpp` 保留对象初始化、信号连接、键盘事件和主题刷新；布局放在 `TerminalProductDockLayout.cpp`，组分编辑放在 `TerminalProductDockComponents.cpp`，列与委托及宽度保护放在 `TerminalProductDockColumns.cpp`，选择联动放在 `TerminalProductDockSelection.cpp`，进度与状态放在 `TerminalProductDockResults.cpp`。计算说明弹窗位于 `CalculationExplanationDialog`，只接收结果值，不能访问文档或重新计算。
+- `TerminalProductDock.cpp` 保留对象初始化、信号连接、键盘事件和主题刷新；布局放在 `TerminalProductDockLayout.cpp`，组分编辑放在 `TerminalProductDockComponents.cpp` 只采集名称并提交会话命令，列与委托及宽度保护放在 `TerminalProductDockColumns.cpp`，选择联动放在 `TerminalProductDockSelection.cpp`，进度与状态呈现放在 `TerminalProductDockResults.cpp`，预览求解与缓存由 `app/CalculationController` 统一管理。计算说明弹窗位于 `CalculationExplanationDialog`，只接收结果值，不能访问文档或重新计算。
 - `TerminalProductTableModel.cpp` 管理列、编辑与模型通知，`TerminalProductTableModelData.cpp` 管理显示角色和工具提示。
 - `ExcelDataExporter` 管理命名筛选与导出条件，`ExcelWorksheetBuilder` 生成工作表 XML，`XlsxWorkbookWriter` 负责标准部件及 ZIP 写入；按需链接的 `excel_export_test` 必须同时包含三个实现文件。
 - `FlowsheetDocument.cpp` 保留项目共享元数据及替换/清理；标注归属和显示设置放在 `FlowsheetDocumentAnnotations.cpp`；当前方案测量、组分及计算结果放在 `FlowsheetDocumentMeasurements.cpp`，方案增删与切换放在 `FlowsheetDocumentScenarios.cpp`。
@@ -355,3 +355,23 @@ UI 的属性编辑请求同时校验对象标识与控件代次，不能把旧�
 复用画布已有快捷键，不重复注册导致歧义。药剂快捷键粘贴要求单选有效线路，也允许选中药剂后向其所属物流追加；无目标、多选、无法唯一识别时只提示，不回退到旧选中线路。汇流图元的选中标注物流、窗口粘贴类型及复制快照仅为会话状态，不新增项目字段或版本。
 
 `ProjectUndoManager::commitPending()` 用于离散命令的前后边界，保证每次粘贴独立撤销；数值输入和拖动仍由已有定时检查点合并连续编辑。
+
+## 计算边界回归
+
+`calculation_service_test` 的链接集合只包含 QtCore/QtGui、文档和求解服务，不包含 QtWidgets、adapters、editor 或 graphics。它从纯值构建流程，覆盖部分可解、严格平衡、多组分、矛盾、协调及支路占比输入，用构建依赖保证求解服务能脱离画布。
+
+`CalculationControllerChecks.cpp` 随工作区测试运行，验证画布销毁后的快照计算、按 ID 定位、预览合并与只读性、选择/筛选不刷新预览、显式计算提交、修改测量后的缓存失效、方案切换、组分和计算模式变化。原有筛选交互测试继续覆盖共享汇流图元的外部入料/总入料行保留、画布双向定位、删除、导入和撤销。
+
+新增求解入口必须使用 `FlowsheetSnapshot`；新增表格导航必须使用物流 ID。禁止将 `CanvasItemIndex` 放回表格或保存进计算缓存。预览不写入 `FlowsheetDocument`，也不作为新项目格式字段；保存仍使用 v24，v23 读取行为不变。
+
+## 会话与图元契约回归
+
+- `table_session_test` 只使用 QtCore/QtGui，检查应用层数值/组分/模式校验、不可编辑或失效物流拒绝、独立状态副本、结果失效和方案切换。
+- `TerminalInputSessionChecks.cpp` 用契约替身运行真实表格模型，不创建文档或应用控制器；验证编辑请求、拒绝传播、状态发布后更新、名称列通知范围及列结构切换。
+- `CanvasHostChecks.cpp` 使用只实现几何/连接契约的普通 Qt 场景，不使用 `FlowsheetScene`；检查同步移动和尺寸请求、连接释放、路线通知及图元转移后的回调隔离。原有复制组移动和真实连线交互继续回归，确保时序不变。
+
+会话的 MOC 输入仅登记 `contracts/TerminalTableSession.h`，具体控制器复用会话信号。按需链接的表格测试需显式加入控制器实现与契约 MOC；完整应用复用公共清单。表格模型通过快照比较决定结构重置，不能为普通测量、名称或结果变化重建模型或覆盖用户列宽。
+
+`FlowGroupSnapshotCapture` 仅从实际复制的物流集合采集非空用户名称；`FlowGroupSnapshotPaste` 在单元、合流和入料汇流均完成重建后，统一使用物流 ID 映射恢复名称，不能仅遍历普通产品线。`GroupProductNameChecks.cpp` 覆盖实际表格命名、快捷键复制、源名称后改、画布与表格显示、撤销重做、项目往返及模板归一化；拓扑映射检查同时覆盖部分选区和各类汇流名称。
+
+`MergeExtensionInteractionChecks.cpp` 随 `merge_test` 运行，验证从可用合流出料端拖到普通产品线，通过既有 `addProductToMerge` 将产品加入原合流；不增加嵌套合流或项目字段。交互层只识别并高亮候选产品，场景继续统一校验可用性和来源。检查还覆盖反向拖拽、名称/物流 ID/手动高度保留、空白及无效投放、占用线路保护和合流接入下游。三支路合流的复制、撤销重做、项目读写与模板归一化由 `GroupProductNameChecks.cpp` 覆盖。

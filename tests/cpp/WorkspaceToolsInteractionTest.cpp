@@ -5,6 +5,7 @@
 #include <stdexcept>
 void runObjectPropertyChecks();
 void runCalculationDiagnosticsChecks();
+void runCalculationControllerChecks();
 void runWorkspaceSidebarChecks();
 void runWorkspacePanelSelectorChecks();
 void runTerminalTableLayoutChecks();
@@ -21,7 +22,7 @@ int main(int argc, char** argv) {
     try {
         runWorkspaceSidebarChecks(); runWorkspacePanelSelectorChecks();
         runTerminalTableLayoutChecks();
-        runObjectPropertyChecks(); runCalculationDiagnosticsChecks(); runFlowTemplateChecks(directory.path());
+        runObjectPropertyChecks(); runCalculationDiagnosticsChecks(); runCalculationControllerChecks(); runFlowTemplateChecks(directory.path());
         runTemplatePreviewChecks();
         qInfo() << "All workspace tools interaction checks passed";
     } catch (const std::exception& error) { qCritical().noquote() << error.what(); return 1; }

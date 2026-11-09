@@ -63,7 +63,7 @@ void MainWindow::compareScenarios() {
         QMessageBox::information(this, tr("方案对比"), tr("当前流程没有可对比的终端产品。"));
         return;
     }
-    ScenarioComparisonDialog(*m_document, snapshot, this).exec();
+    ScenarioComparisonDialog(*m_document, snapshot.reportStreams, this).exec();
 }
 
 } // namespace afs

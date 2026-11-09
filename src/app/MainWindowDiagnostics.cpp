@@ -25,9 +25,8 @@ void MainWindow::refreshCalculationIssues(bool reveal) {
 }
 void MainWindow::locateCalculationIssue(const QString& object, const QString& streamId,
                                       const QString& component, bool grade, bool edit) {
-    const auto snapshot = CanvasTopologyBuilder::build(*static_cast<FlowsheetScene*>(m_scene));
     QGraphicsItem* item = nullptr; FeedJunctionItem* branchOwner = nullptr; QPointF anchor;
-    for (const auto& stream : snapshot.reportStreams) if (stream.streamId == streamId) { item = stream.graphicsItem; break; }
+    item = CanvasTopologyBuilder::buildItemIndex(*static_cast<FlowsheetScene*>(m_scene)).itemForStream(streamId);
     for (auto* candidate : m_scene->items()) if (auto* unit = dynamic_cast<FlotationUnitItem*>(candidate); unit && unit->unit().id == object) item = unit;
     if (!item) { statusBar()->showMessage("这是全局约束问题，可检查列表中相关实测值或流程连接。", 5000); return; }
     anchor = item->sceneBoundingRect().center();

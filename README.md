@@ -19,7 +19,7 @@
 - “项目管理”菜单支持保存、项目另存为、导入和最近项目快速切换，另存成功后自动切换当前项目路径；
 - 支持 `Ctrl+N` 新建空白项目，以及删除一个或多个选中单元并用 `Ctrl+Z` 恢复；
 - 任意数量的普通产品或产品合并输出汇入同一条入料线，并以多输入汇合点形成开路合流或闭路回流；
-- 两条或多条产品线合流、接入下一道浮选单元及拆分；
+- 两条或多条产品线合流、接入下一道浮选单元及拆分；支持从合流出料端拖向其它可用产品线继续合并；
 - 右侧数据表显示最顶层总入料（合计）以及全部最终和中间产品；任意物流均可录入绝对干质量以及各组分品位，支持物流类别和选中流程的一跳关联筛选；是否足够由方程秩动态判断，例如二产品流程可用“入料 + 任一产品”或“两产品”反算其余物流；
 - 产品名称默认留空，可在右侧表格填写并显示在画布产品箭头下方；仅已命名产品参与 Excel 导出；
 - 右键产品线、合流线或入料线可添加药剂标注，归属以本次右键位置为准；支持双击编辑、`Delete` 删除，以及选中后用 `↑`/`↓` 调整垂直位置；
@@ -49,6 +49,66 @@
 - 同一拓扑支持多套试验方案，方案间独立保存自定义文字、药剂制度、实测数据和计算结果，并支持复制、切换、重命名、删除及结果对比。
 
 Python/PySide6 验证原型保存在 `python-prototype/`，当前产品代码位于 `src/`。
+
+## 项目架构
+
+### 三层总览
+
+主干按表现、应用、模型三层组织。总览展示请求处理方向；下方详细图展示具体模块与契约依赖，返回值和事件通知不表示反向依赖具体实现。
+
+```mermaid
+flowchart TD
+    Presentation["表现层<br/>界面、画布图元、标注绘制"]
+    Application["应用层<br/>会话控制器、编辑协调、计算与项目用例"]
+    Model["模型层<br/>项目和方案状态、流程快照、拓扑与守恒求解"]
+    Presentation -->|查询与编辑请求| Application
+    Application -->|校验与业务操作| Model
+```
+
+表格通过 `TerminalTableSession` 查询只读状态、提交类型化命令，`TerminalTableController` 负责校验和文档写入；`CalculationController` 统一计算预览与缓存。图元通过几何、连接两个窄接口请求场景执行操作，不引用具体编辑器场景。
+
+### 模块依赖详情
+
+<details>
+<summary>展开主要实现模块与共享契约</summary>
+
+```mermaid
+flowchart TD
+    Main["app / MainWindow<br/>装配与跨模块协调"]
+    Main --> Table["app / TerminalTableController<br/>表格查询、编辑校验与状态发布"]
+    Main --> Calculation["app / CalculationController<br/>计算用例、预览缓存"]
+    Main --> Views["ui / 表格与面板"]
+    Main --> OtherViews["其它只读界面 / 标注管理"]
+    Main --> Scene["editor / FlowsheetScene<br/>连接、移动与布线协调"]
+    Main --> IO["services / 项目读写、复制与导出适配"]
+    Main --> Adapter["adapters / CanvasTopologyBuilder<br/>纯快照与临时定位索引"]
+
+    Views --> Session["contracts / TerminalTableSession<br/>只读状态、类型化命令与变更通知"]
+    Table --> Session
+    Table --> Document["document / FlowsheetDocument<br/>项目、方案与测量状态"]
+    Calculation --> Solver["services / FlowsheetCalculationService"]
+    Calculation --> Document
+    OtherViews -->|当前保留的只读或标注接口| Document
+    IO --> Document
+    IO --> Scene
+    Adapter --> Scene
+    Adapter --> Snapshot["document / FlowsheetSnapshot<br/>纯计算图与物流值描述"]
+    Solver --> Snapshot
+    Solver --> Document
+    Solver --> Topology["topology / 守恒与数值求解"]
+    Document -->|结果值类型| Topology
+
+    Scene --> Graphics["graphics / 设备、线路与符号"]
+    Scene --> Hosts["graphics / CanvasGeometryHost、CanvasConnectionHost<br/>同步几何与连接请求契约"]
+    Graphics --> Hosts
+    Graphics --> Core["core / 设备定义"]
+```
+
+详细图省略通用 Qt 和共享值类型依赖。`CanvasItemIndex` 仅在应用层临时定位，图元指针不进入表格模型或计算快照。`topology` 仅依赖 QtCore。
+
+</details>
+
+当前场景仍承载图元连接结构，其它部分只读界面仍读取文档；三层总览不表示已经完成独立流程模型改造。详细实现入口见 [架构说明](docs/ARCHITECTURE.md)，代码归属与依赖约束见 [模块职责与依赖边界](docs/MODULE_BOUNDARIES.md)。
 
 ## 环境
 
@@ -107,7 +167,7 @@ C:\Users\13427\xmake\xmake.exe deploy
 
 ## 测试
 
-当前有 15 个测试目标。`xmake build -a` 可一次构建主程序及全部测试；涉及主窗口交互的目标额外依赖 Qt Test。可使用统一入口完成构建、全部检查及 v23/v24 项目启动验证：
+当前有 17 个测试目标。`xmake build -a` 可一次构建主程序及全部测试；涉及主窗口交互的目标额外依赖 Qt Test。可使用统一入口完成构建、全部检查及 v23/v24 项目启动验证：
 
 ```bash
 python3 scripts/validate.py
@@ -121,6 +181,8 @@ Linux：
 
 ```bash
 xmake build topology_test
+xmake build calculation_service_test
+xmake build table_session_test
 xmake build connection_test
 xmake build merge_test
 xmake build terminal_input_test
@@ -136,6 +198,8 @@ xmake build excel_export_test
 xmake build closed_loop_test
 xmake build project_io_test
 xmake run topology_test
+xmake run calculation_service_test
+xmake run table_session_test
 QT_QPA_PLATFORM=offscreen xmake run connection_test
 QT_QPA_PLATFORM=offscreen xmake run merge_test
 QT_QPA_PLATFORM=offscreen xmake run terminal_input_test
@@ -156,6 +220,8 @@ Windows：
 
 ```powershell
 C:\Users\13427\xmake\xmake.exe build topology_test
+C:\Users\13427\xmake\xmake.exe build calculation_service_test
+C:\Users\13427\xmake\xmake.exe build table_session_test
 C:\Users\13427\xmake\xmake.exe build connection_test
 C:\Users\13427\xmake\xmake.exe build merge_test
 C:\Users\13427\xmake\xmake.exe build terminal_input_test
@@ -183,7 +249,7 @@ $env:QT_QPA_PLATFORM="offscreen"
 
 - `topology_test`：纯拓扑校验、排序和三级开路反算；
 - `connection_test`：产品连接、组件移动、长度调整、缩短产品线后的下游折线、线段/箭头命中及断开；
-- `merge_test`：产品合流几何、下游正交连接、人工汇合高度及拆分；
+- `merge_test`：产品合流几何、下游正交连接、人工汇合高度及拆分；真实鼠标拖拽覆盖合流出料继续合并、反向拖入、名称/ID/手动高度保留、空白及无效投放和已有连接保护，额外链接 Qt Test；
 - `terminal_input_test`：终端输入、主题、计算服务、详情表和标注交互。
 - `stream_filter_interaction_test`：通过真实主窗口的鼠标和键盘交互，覆盖单选/多选、一跳物流筛选、表格双向定位与编辑、回流和产品汇流、方案/项目切换、删除和撤销后的筛选刷新，以及产品命名和 Excel 排序/导出提示；该目标额外链接 Qt Test。
 - `clipboard_interaction_test`：文字按方案独立编辑/移动/删除与跨方案粘贴、文字单独/多选/混合复制、流程组药剂归属和堆叠、单条药剂的右键及快捷键复制粘贴、最近复制类型切换与目标选择、合流/回流支路目标、方案切换、快捷键与菜单、样式和位置、重复粘贴、撤销重做、保存读取及普通输入框的剪贴板行为；该目标额外链接 Qt Test。
@@ -195,6 +261,8 @@ $env:QT_QPA_PLATFORM="offscreen"
 - `export_test`：SVG、PNG 和 JPEG 文件生成及格式校验。
 - `excel_export_test`：多方案 XLSX 数据、仅命名产品导出、命名/清空名称后的筛选、排序与合并单元格、空导出保护及文件结构校验。
 - `closed_loop_test`：回流汇合、闭路拓扑识别、断开及计算保护。
+- `table_session_test`：无需 Qt Widgets 的表格会话命令校验、只读状态、方案切换与失效目标保护；表格 UI 的契约替身检查归入 `terminal_input_test`，几何/连接接口替身检查归入 `connection_test`。
+- `calculation_service_test`：只链接 QtCore/QtGui、文档和求解服务，验证无需画布的部分可解、严格平衡、多组分矛盾、数据协调及支路约束输入。
 - `project_io_test`：项目数据与方案/标注往返、v23 迁移与格式拒绝检查、开闭路连接、设备类型、撤销/复制及样例读取；入口位于 `ProjectIoTest.cpp`，具体检查按职责放在 `ProjectIo*Checks.cpp`。
 
 ## 常用操作

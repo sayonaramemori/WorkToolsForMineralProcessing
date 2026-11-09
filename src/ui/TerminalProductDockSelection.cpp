@@ -8,15 +8,6 @@
 
 namespace afs {
 
-void TerminalProductDock::setSnapshot(CanvasTopologySnapshot snapshot) {
-    m_snapshot = std::move(snapshot);
-    QSet<QString> editableIds;
-    for (const auto& stream : m_snapshot.reportStreams) editableIds.insert(stream.streamId);
-    m_model->setStreams(m_snapshot.reportStreams, std::move(editableIds));
-    m_filterModel->setSelectedUnitIds(m_selectedUnitIds);
-    updateSummary();
-}
-
 void TerminalProductDock::setSelectedUnitIds(QSet<QString> unitIds) {
     if (m_selectedUnitIds == unitIds) return;
     m_selectedUnitIds = std::move(unitIds);
@@ -24,9 +15,9 @@ void TerminalProductDock::setSelectedUnitIds(QSet<QString> unitIds) {
     updateSummary();
 }
 
-void TerminalProductDock::selectGraphicsItem(const QGraphicsItem* item) {
-    const bool keepCurrentRow = !selectedStreamIdForGraphicsItem(item).isEmpty();
-    const int row = keepCurrentRow ? -1 : m_model->rowForGraphicsItem(item);
+void TerminalProductDock::selectStreams(const QStringList& streamIds) {
+    const bool keepCurrentRow = streamIds.contains(selectedStreamId());
+    const int row = keepCurrentRow ? -1 : m_model->rowForStreamId(streamIds.value(0));
     if (!keepCurrentRow && row < 0) { m_table->clearSelection(); return; }
     const QModelIndex target = keepCurrentRow ? m_table->currentIndex()
         : m_filterModel->mapFromSource(m_model->index(row, TerminalProductTableModel::MassColumn));
@@ -36,12 +27,12 @@ void TerminalProductDock::selectGraphicsItem(const QGraphicsItem* item) {
     m_table->scrollTo(target);
 }
 
-QString TerminalProductDock::selectedStreamIdForGraphicsItem(const QGraphicsItem* item) const {
+QString TerminalProductDock::selectedStreamId() const {
     const QModelIndex current = m_filterModel->mapToSource(m_table->currentIndex());
     const auto* currentStream = current.isValid() ? m_model->streamAt(current.row()) : nullptr;
     // Fresh feed and total feed can share a junction item. Retain the exact
     // row and editor column the user clicked rather than selecting its first row.
-    return currentStream && currentStream->graphicsItem == item ? currentStream->streamId : QString{};
+    return currentStream ? currentStream->streamId : QString{};
 }
 
 bool TerminalProductDock::focusMeasurement(const QString& streamId, const QString& componentId, bool grade, bool edit) {

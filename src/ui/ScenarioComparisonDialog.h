@@ -1,16 +1,17 @@
 #pragma once
 
 #include <QDialog>
+#include <QVector>
 
 namespace afs {
 
 class FlowsheetDocument;
-struct CanvasTopologySnapshot;
+struct StreamDescriptor;
 
 class ScenarioComparisonDialog final : public QDialog {
 public:
     ScenarioComparisonDialog(const FlowsheetDocument& document,
-                             const CanvasTopologySnapshot& snapshot,
+                             const QVector<StreamDescriptor>& streams,
                              QWidget* parent = nullptr);
 };
 

@@ -1,7 +1,7 @@
 #include "graphics/items/FlotationUnitItem.h"
 #include "graphics/FlotationGeometry.h"
 #include "graphics/ThickenerGeometry.h"
-#include "editor/FlowsheetScene.h"
+#include "graphics/CanvasInteraction.h"
 #include "graphics/items/InputLineItem.h"
 #include "graphics/items/ProductLineItem.h"
 
@@ -59,8 +59,8 @@ bool FlotationUnitItem::adjustWidth(double delta) {
     m_inputLine->updateGeometry();
     update();
     for (auto* product : products()) product->updatePath();
-    if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene()))
-        flowsheet->sourceWidthChanged(this, oldWidth);
+    if (auto* host = canvasGeometryHost(scene()))
+        host->sourceWidthChanged(this, oldWidth);
     return true;
 }
 
@@ -70,7 +70,7 @@ bool FlotationUnitItem::adjustInputLength(double delta) {
     if (qFuzzyCompare(current, requested)) return false;
     m_unit.inputLength = requested;
     m_inputLine->updateGeometry();
-    if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->refreshConnections();
+    if (auto* host = canvasGeometryHost(scene())) host->refreshConnections();
     return true;
 }
 
@@ -80,8 +80,8 @@ bool FlotationUnitItem::setLeftSplitPercent(double percent) {
         return false;
     m_unit.leftSplitPercent = percent;
     update();
-    if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene()))
-        flowsheet->notifyTopologyChanged();
+    if (auto* host = canvasGeometryHost(scene()))
+        host->notifyTopologyChanged();
     return true;
 }
 
@@ -180,8 +180,8 @@ void FlotationUnitItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) {
         if (accepted && label != currentLabel) {
             m_unit.poolLabel = label;
             update();
-            if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene()))
-                flowsheet->notifyRouteChanged();
+            if (auto* host = canvasGeometryHost(scene()))
+                host->notifyRouteChanged();
         }
         event->accept();
         return;
@@ -200,8 +200,8 @@ void FlotationUnitItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) {
 
 QVariant FlotationUnitItem::itemChange(GraphicsItemChange change, const QVariant& value) {
     if (change == ItemPositionChange && scene()) {
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene()))
-            flowsheet->moveConnectedPeers(this, value.toPointF() - pos());
+        if (auto* host = canvasGeometryHost(scene()))
+            host->moveConnectedPeers(this, value.toPointF() - pos());
     }
     if (change == ItemPositionHasChanged)
         m_unit.position = value.toPointF();
@@ -209,8 +209,8 @@ QVariant FlotationUnitItem::itemChange(GraphicsItemChange change, const QVariant
         setCursor(value.toBool() ? Qt::ClosedHandCursor : Qt::OpenHandCursor);
     const QVariant result = QGraphicsItem::itemChange(change, value);
     if (change == ItemPositionHasChanged) {
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene()))
-            flowsheet->refreshConnections();
+        if (auto* host = canvasGeometryHost(scene()))
+            host->refreshConnections();
     }
     return result;
 }

@@ -1,3 +1,4 @@
+#include "adapters/CanvasTopologyBuilder.h"
 #include "app/MainWindow.h"
 #include "annotations/AnnotationItem.h"
 #include "annotations/AnnotationManager.h"
@@ -24,6 +25,7 @@
 using namespace afs;
 
 void runReagentClipboardChecks(const QString& directory);
+void runGroupProductNameChecks(const QString& directory);
 void runCopyMoveInteractionChecks();
 void runReagentMenuInteractionChecks(const QString& directory);
 void runReagentMenuTargetChecks();
@@ -118,7 +120,7 @@ void testClipboard(const QString& directory) {
     document->setGradePercent(unitId + ":left", 2);
     document->setDryMass(unitId + ":right", 70);
     document->setGradePercent(unitId + ":right", 1);
-    document->setCalculationResult(FlowsheetCalculationService::calculate(*scene, *document));
+    document->setCalculationResult(FlowsheetCalculationService::calculate(CanvasTopologyBuilder::build(*scene), *document));
     require(document->calculationResult()->fullySolved, "Fixture calculation failed");
 
     AnnotationRecord original{"note-1", AnnotationKind::UserNote, AnnotationStyle::Note,
@@ -253,6 +255,7 @@ int main(int argc, char** argv) {
     try {
         testClipboard(directory.path());
         runReagentClipboardChecks(directory.path());
+        runGroupProductNameChecks(directory.path());
         runReagentMenuInteractionChecks(directory.path());
         runReagentMenuTargetChecks();
         runReagentShortcutChecks();

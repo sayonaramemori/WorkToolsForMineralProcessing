@@ -1,3 +1,4 @@
+#include "app/TerminalTableController.h"
 #include "TerminalInputChecks.h"
 #include "annotations/AnnotationManager.h"
 #include "graphics/items/FlotationUnitItem.h"
@@ -25,7 +26,7 @@ int runTerminalCalculationChecks(TerminalInputContext& context) {
     calculationDocument.setGradePercent("calculation:left", "component-2", 2.0);
     calculationDocument.setGradePercent("calculation:right", "component-2", 0.5);
     auto& result = context.result;
-    result = FlowsheetCalculationService::calculate(calculationScene, calculationDocument);
+    result = FlowsheetCalculationService::calculate(CanvasTopologyBuilder::build(calculationScene), calculationDocument);
     if (!result.complete || !result.values.contains("calculation:feed")) return 16;
     if (result.components.size() != 2
         || !result.components["component-1"].values.contains("calculation:feed")
@@ -40,8 +41,7 @@ int runTerminalCalculationChecks(TerminalInputContext& context) {
     flexibleDocument.setGradePercent("calculation:feed", 2.0);
     flexibleDocument.setDryMass("calculation:left", 30.0);
     flexibleDocument.setGradePercent("calculation:left", 5.0);
-    const auto flexibleResult = FlowsheetCalculationService::calculate(
-        calculationScene, flexibleDocument);
+    const auto flexibleResult = FlowsheetCalculationService::calculate(CanvasTopologyBuilder::build(calculationScene), flexibleDocument);
     if (!flexibleResult.complete || !flexibleResult.fullySolved
         || flexibleResult.dryMassDegreesOfFreedom != 0
         || flexibleResult.componentMassDegreesOfFreedom != 0
@@ -61,8 +61,7 @@ int runTerminalCalculationChecks(TerminalInputContext& context) {
     propagationDocument.setGradePercent("scavenger:left", 4.0);
     propagationDocument.setDryMass("scavenger:right", 65.0);
     propagationDocument.setGradePercent("scavenger:right", 1.0);
-    const auto propagationResult = FlowsheetCalculationService::calculate(
-        propagationScene, propagationDocument);
+    const auto propagationResult = FlowsheetCalculationService::calculate(CanvasTopologyBuilder::build(propagationScene), propagationDocument);
     if (!propagationResult.values.contains("cleaner:right")
         || std::abs(propagationResult.values["cleaner:right"].dryMass - 100.0) > 0.001
         || std::abs(propagationResult.values["cleaner:right"].gradePercent() - 2.05) > 0.001)
@@ -92,8 +91,7 @@ int runTerminalCalculationChecks(TerminalInputContext& context) {
     boundaryDocument.setGradePercent("boundary-c:right", 0.6);
     boundaryDocument.setDryMass("boundary-c:left", 700.0);
     boundaryDocument.setGradePercent("boundary-c:left", 0.8);
-    const auto boundaryResult = FlowsheetCalculationService::calculate(
-        boundaryScene, boundaryDocument);
+    const auto boundaryResult = FlowsheetCalculationService::calculate(CanvasTopologyBuilder::build(boundaryScene), boundaryDocument);
     const auto boundaryJunction = boundaryA->inputLine()->feedJunction();
     if (!boundaryJunction
         || !boundaryResult.values.contains(boundaryJunction->externalFeedStreamId())
@@ -117,8 +115,9 @@ int runTerminalClosedLoopChecks() {
     const auto closedSnapshot = CanvasTopologyBuilder::build(closedScene);
     if (closedSnapshot.terminalProducts.size() != 2) return 26;
     FlowsheetDocument closedDocument;
-    TerminalProductDock closedDock(closedDocument);
-    closedDock.setSnapshot(closedSnapshot);
+    TerminalTableController closedSession(closedDocument);
+    TerminalProductDock closedDock(closedSession);
+    closedSession.setStreams(closedSnapshot.reportStreams);
     if (closedDock.model()->rowCount() != closedSnapshot.reportStreams.size()
         || closedDock.model()->editableCount() != closedSnapshot.reportStreams.size()) return 27;
     closedDocument.setDryMass("closed-upper:left", 10.0);
@@ -127,7 +126,7 @@ int runTerminalClosedLoopChecks() {
     closedDocument.setGradePercent("closed-lower:right", 1.0);
     closedDocument.setDryMass("closed-lower:left", 50.0);
     closedDocument.setGradePercent("closed-lower:left", 2.0);
-    const auto closedResult = FlowsheetCalculationService::calculate(closedScene, closedDocument);
+    const auto closedResult = FlowsheetCalculationService::calculate(CanvasTopologyBuilder::build(closedScene), closedDocument);
     if (!closedResult.complete || closedResult.values.size() != closedSnapshot.graph.streamIds().size())
         return 28;
     closedDocument.setCalculationResult(closedResult);

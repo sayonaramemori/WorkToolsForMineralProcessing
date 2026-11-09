@@ -151,8 +151,8 @@ int main(int argc, char** argv) {
         || occupiedJunction->recycleProducts().size() != 1
         || occupiedJunction->processProduct() != normalFeed
         || stageB->inputLine()->feedJunction() != occupiedJunction) return 41;
-    const CanvasStreamDescriptor* processDescriptor = nullptr;
-    const CanvasStreamDescriptor* recycleDescriptor = nullptr;
+    const StreamDescriptor* processDescriptor = nullptr;
+    const StreamDescriptor* recycleDescriptor = nullptr;
     for (const auto& descriptor : occupiedSnapshot.reportStreams) {
         if (descriptor.streamId == normalFeed->streamId()) processDescriptor = &descriptor;
         if (descriptor.streamId == downstreamRecycle->streamId()) recycleDescriptor = &descriptor;

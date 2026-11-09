@@ -89,7 +89,7 @@ void testThickener(const QString& directory) {
             "Incoming line did not stop at vessel top");
     document->setDryMass(upstreamId + ":feed", 100); document->setGradePercent(upstreamId + ":feed", 2);
     document->setDryMass(upstreamId + ":left", 30); document->setGradePercent(upstreamId + ":left", 3);
-    auto result = FlowsheetCalculationService::calculate(*scene, *document);
+    auto result = FlowsheetCalculationService::calculate(CanvasTopologyBuilder::build(*scene), *document);
     const auto input = result.values.value(incoming->streamId()), output = result.values.value(id + ":right");
     require(result.complete && result.fullySolved && std::abs(output.dryMass - 70) < 1e-6
         && std::abs(output.dryMass - input.dryMass) < 1e-6

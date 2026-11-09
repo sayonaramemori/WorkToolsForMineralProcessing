@@ -1,3 +1,4 @@
+#include "app/TerminalTableController.h"
 #include "TerminalInputChecks.h"
 #include "graphics/items/FlotationUnitItem.h"
 #include "graphics/items/InputLineItem.h"
@@ -40,8 +41,9 @@ int runTerminalModelChecks(TerminalInputContext& context) {
     if (!graphStream || !graphStream->target || graphStream->target->nodeId != "second") return 6;
 
     auto& document = context.inputDocument;
-    TerminalProductTableModel model(document);
-    model.setStreams(connected.terminalProducts);
+    TerminalTableController session(document);
+    TerminalProductTableModel model(session);
+    session.setStreams(connected.terminalProducts);
     if (!model.data(model.index(0, TerminalProductTableModel::ProductNameColumn), Qt::DisplayRole).toString().isEmpty()
         || !model.data(model.index(0, TerminalProductTableModel::ProductNameColumn), Qt::EditRole).toString().isEmpty()
         || model.data(model.index(0, TerminalProductTableModel::NameColumn), Qt::DisplayRole).toString().isEmpty())
@@ -101,8 +103,9 @@ int runTerminalModelChecks(TerminalInputContext& context) {
     tooltipCalculation.residuals.insert("tooltip-stream", {5.0, 0.26, 2.5, 2.6});
     tooltipCalculation.components["component-1"].values.insert("tooltip-stream", {105.0, 1.26});
     tooltipDocument.setCalculationResult(std::move(tooltipCalculation));
-    TerminalProductTableModel tooltipModel(tooltipDocument);
-    tooltipModel.setStreams({{"tooltip-stream", "提示物流"}});
+    TerminalTableController tooltipSession(tooltipDocument);
+    TerminalProductTableModel tooltipModel(tooltipSession);
+    tooltipSession.setStreams({{"tooltip-stream", "提示物流"}});
     const QString massTooltip = tooltipModel.data(
         tooltipModel.index(0, TerminalProductTableModel::MassColumn), Qt::ToolTipRole).toString();
     const QString gradeTooltip = tooltipModel.data(
@@ -112,8 +115,8 @@ int runTerminalModelChecks(TerminalInputContext& context) {
 
     QSet<QString> editableIds;
     for (const auto& product : connected.reportStreams) editableIds.insert(product.streamId);
-    model.setStreams(connected.reportStreams, editableIds);
-    const int intermediateRow = model.rowForGraphicsItem(stream);
+    session.setStreams(connected.reportStreams, editableIds);
+    const int intermediateRow = model.rowForStreamId(stream->streamId());
     if (intermediateRow < 0
         || model.data(model.index(intermediateRow, TerminalProductTableModel::MassColumn),
                       Qt::BackgroundRole).isValid()
@@ -132,7 +135,7 @@ int runTerminalModelChecks(TerminalInputContext& context) {
     if (!document.measurement(id).complete()) return 13;
 
     ThemeService::applyApplicationPalette(true);
-    TerminalProductDock dock(document);
+    TerminalProductDock dock(session);
     dock.refreshAppearance();
     auto* panel = dock.findChild<QWidget*>("terminalProductPanel");
     if (!panel || !panel->styleSheet().contains("#ff151a21")) return 14;

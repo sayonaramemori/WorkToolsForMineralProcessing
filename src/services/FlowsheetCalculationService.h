@@ -5,15 +5,12 @@
 namespace afs {
 
 class FlowsheetDocument;
-class FlowsheetScene;
-struct CanvasTopologySnapshot;
+struct FlowsheetSnapshot;
 
 class FlowsheetCalculationService final {
 public:
     static topology::CalculationResult calculate(
-        const FlowsheetScene& scene, const FlowsheetDocument& document);
-    static topology::CalculationResult calculate(
-        const CanvasTopologySnapshot& snapshot, const FlowsheetDocument& document);
+        const FlowsheetSnapshot& snapshot, const FlowsheetDocument& document);
 };
 
 } // namespace afs

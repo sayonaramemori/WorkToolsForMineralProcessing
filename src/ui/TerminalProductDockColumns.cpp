@@ -1,5 +1,4 @@
 #include "ui/TerminalProductDock.h"
-#include "document/FlowsheetDocument.h"
 #include "ui/TerminalProductTableModel.h"
 #include "ui/TerminalProductViewSupport.h"
 #include <QHeaderView>
@@ -25,12 +24,12 @@ void TerminalProductDock::configureColumns() {
     m_table->setColumnWidth(TerminalProductTableModel::MassColumn, 82);
     m_table->setItemDelegateForColumn(TerminalProductTableModel::MassColumn,
                                       new NumberDelegate(1.0e12, m_table));
-    if (m_document.calculationMode() == CalculationMode::DataReconciliation) {
+    if (m_model->tableState().mode == CalculationMode::DataReconciliation) {
         m_table->setColumnWidth(TerminalProductTableModel::MassStdDevColumn, 72);
         m_table->setItemDelegateForColumn(TerminalProductTableModel::MassStdDevColumn,
                                           new NumberDelegate(1.0e12, m_table));
     }
-    for (const auto& component : m_document.components()) {
+    for (const auto& component : m_model->tableState().components) {
         const int grade = m_model->gradeColumn(component.id);
         m_table->setColumnWidth(grade, 88);
         m_table->setItemDelegateForColumn(grade, new NumberDelegate(100.0, m_table));

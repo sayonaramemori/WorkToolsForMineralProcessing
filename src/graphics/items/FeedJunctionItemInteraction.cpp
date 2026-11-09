@@ -1,6 +1,6 @@
 #include "graphics/items/FeedJunctionItem.h"
 #include "graphics/FlotationGeometry.h"
-#include "editor/FlowsheetScene.h"
+#include "graphics/CanvasInteraction.h"
 #include <QGraphicsSceneMouseEvent>
 #include <QKeyEvent>
 #include <QLineF>
@@ -79,7 +79,7 @@ void FeedJunctionItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
     }
     m_editingStreamId.clear();
     m_editingAxis = EditingAxis::None;
-    if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
+    if (auto* host = canvasGeometryHost(scene())) host->notifyRouteChanged();
     event->accept();
 }
 
@@ -87,7 +87,7 @@ void FeedJunctionItem::keyPressEvent(QKeyEvent* event) {
     if (event->key() == Qt::Key_Delete
         && (!m_manualRouteXs.isEmpty() || !m_manualRouteYs.isEmpty())) {
         resetManualRoutes();
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
+        if (auto* host = canvasGeometryHost(scene())) host->notifyRouteChanged();
         event->accept();
         return;
     }

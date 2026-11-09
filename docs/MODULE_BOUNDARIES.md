@@ -5,22 +5,19 @@
 ## 依赖层级
 
 ```text
-app
- ├─ ui
- ├─ annotations
- └─ services
-      └─ adapters
-           └─ editor / graphics
+表现层请求 ─► 共享契约 ◄─ 应用层实现 ─► 业务状态与求解
 
-ui ─────────► document / topology / editor（视图复用与属性值类型）
-annotations ─► document / editor / graphics
-document ────► core / topology / annotation value types
-editor ──────► graphics
-graphics ────► core / editor scene notifications
-topology ────► QtCore
+表格 UI ────► contracts/TerminalTableSession ◄── app/TerminalTableController
+图元 ───────► graphics 的几何/连接契约 ◄─────── editor/FlowsheetScene
+app ────────► services / adapters / document
+services ───► document / topology（文件及场景适配按需访问 editor）
+document ───► core / topology / annotation value types
+editor ─────► graphics
+graphics ───► core / graphics 内的交互契约
+topology ───► QtCore
 ```
 
-`topology` 是最内层的计算模型，不能依赖画布、文档或 UI。`app` 是最外层，只组合用例和显示消息。
+`topology` 是最内层的计算模型，不能依赖画布、文档或 UI。`app` 是组合根和应用用例层。表格 UI 不引用应用实现或可写文档，图元不引用具体编辑场景；通过共享契约回传结果，不增加反向实现依赖。其它只读界面和属性值类型的既有引用仍保留，不把总览误当作所有模块已完全迁移。
 
 ## 代码归属判断
 
@@ -39,8 +36,9 @@ topology ────► QtCore
 ## 关键接口
 
 - `FlowsheetDocument` 是持久业务状态的唯一来源；图元不能保存第二份测量数据。
-- `CanvasTopologyBuilder` 是画布进入计算模型的唯一入口。
-- `CalculationInputBuilder` 是文档测量转换成单组分求解输入的唯一入口。
+- `CanvasTopologyBuilder::build()` 只输出纯值 `FlowsheetSnapshot`；图元导航由独立的 `buildItemIndex()` 提供，索引仅在应用层临时使用。
+- `CalculationInputBuilder` 是文档测量转换成单组分求解输入的唯一入口，计算服务只接收纯快照，禁止添加场景或图元参数重载。
+- `CalculationController` 统一计算预览和缓存失效；表格只显示 `CalculationPanelState`，以物流 ID 请求导航，不接收图元指针，不直接调用求解服务。
 - `OpenCircuitCalculator` 负责输入、物理解校验和结果编排；内部 `BalanceEquationSolver` 组装标量守恒方程，通用消元和加权最小二乘分别委托给数值求解器。
 - `ProjectSerializer` 只编排文件 I/O、安全验证和恢复，JSON 读写与场景恢复分别由独立类负责；设备类型键只在 `ProjectUnitKindCodec` 中定义，不与显示名称或设备绘制混用。
 - `MainWindowActions.cpp` 负责工具栏编排，`MainWindowFlowActions.cpp` 负责流程命令和快捷键，`MainWindowEquipmentActions.cpp` 负责设备菜单，`MainWindowDisplayActions.cpp` 负责显示设置；`MainWindow` 的其他实现按装配、画布命令、呈现命令、结果同步/计算命令、项目生命周期、方案和导出命令拆分，不承载数值公式。
@@ -63,7 +61,9 @@ topology ────► QtCore
 | 右键目标、菜单与药剂摆放 | `AnnotationContextTarget.*`、`AnnotationManagerContextMenu.cpp`、`AnnotationManagerReagentPlacement.cpp` | 按本次右键位置识别唯一物流；只管理显示和交互，不创建另一套拓扑或剪贴板 |
 | 合流状态、路线、交互与命中 | `MergeJunctionItem.cpp`、`MergeJunctionItemRouting.cpp`、`MergeJunctionItemInteraction.cpp`、`MergeJunctionItemHitTest.cpp` | 保留同一图元与头文件，事件委托场景修改拓扑；位置查询只返回唯一物流 ID |
 | 入料汇流命中 | `FeedJunctionItemHitTest.cpp` | 区分回流、主入料、外部入料和输出；共用位置不猜测目标 |
-| 表格装配与组分编辑 | `TerminalProductDockLayout.cpp`、`TerminalProductDockComponents.cpp` | 布局不求解、不持久化；组分编辑由文档统一提交 |
+| 表格查询与写入 | `contracts/TerminalTableSession.h`、`app/TerminalTableController.*` | UI 只读状态快照并发送类型化命令；应用层校验物流/组分、范围与可编辑性后统一提交文档 |
+| 图元请求与场景实现 | `graphics/CanvasInteraction.h`、`editor/FlowsheetScene.*` | 几何和连接契约分开；同步调用保留组移动时序，不缓存指向场景的回调 |
+| 表格装配与组分编辑 | `TerminalProductDockLayout.cpp`、`TerminalProductDockComponents.cpp` | 布局不求解、不持久化；组分编辑由表格会话统一校验和提交 |
 | 计算说明 | `CalculationExplanationDialog.*` | 只接收结果值与计算模式，不能访问文档、场景或计算服务 |
 | 标注文档状态 | `FlowsheetDocumentAnnotations.cpp` | 统一分派当前方案文字/药剂及共享结果标注，不复制 UI 状态 |
 | 自由文字编辑器 | `AnnotationItemEditor.cpp` | 只编辑传入记录，调用方决定提交；绘制和图元事件留在原文件 |
@@ -71,7 +71,7 @@ topology ────► QtCore
 
 表格列布局由 `TerminalProductDockColumns.cpp` 管理：只读视口尺寸，调整列宽；初始分配与用户拖动区分处理，不写入文档或项目文件。筛选仅保留物流类别及选中流程的一跳关联，移除的关注对象按钮不保留隐藏筛选状态。
 
-图元的绘制上下文与选中态留在 `FlotationUnitItemPainting.cpp`，设备符号实现位于 `graphics/symbols`，只接收设备值与画笔，不持有场景或文档。表格角色呈现位于 `TerminalProductTableModelData.cpp`，文档编辑和模型通知留在 `TerminalProductTableModel.cpp`，两者共享同一模型及 MOC 头。`core` 与 `topology` 不依赖 UI、场景或文件服务。
+图元的绘制上下文与选中态留在 `FlotationUnitItemPainting.cpp`，设备符号实现位于 `graphics/symbols`，只接收设备值与画笔，不持有场景或文档。表格角色呈现位于 `TerminalProductTableModelData.cpp`，编辑命令映射和只读状态通知留在 `TerminalProductTableModel.cpp`，两者共享同一模型及 MOC 头。`core` 与 `topology` 不依赖 UI、场景或文件服务。
 
 ## 工作区工具接口
 

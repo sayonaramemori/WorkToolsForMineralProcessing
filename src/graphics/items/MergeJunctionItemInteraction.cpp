@@ -1,6 +1,7 @@
 #include "graphics/items/MergeJunctionItem.h"
-#include "editor/FlowsheetScene.h"
+#include "graphics/CanvasInteraction.h"
 #include "graphics/items/InputLineItem.h"
+#include "graphics/items/ProductLineItem.h"
 #include <QGraphicsSceneMouseEvent>
 #include <QKeyEvent>
 #include <QLineF>
@@ -13,6 +14,13 @@ void MergeJunctionItem::setHighlightedInput(InputLineItem* input) {
     if (m_highlightedInput) m_highlightedInput->setDropHighlighted(false);
     m_highlightedInput = input;
     if (m_highlightedInput) m_highlightedInput->setDropHighlighted(true);
+}
+
+void MergeJunctionItem::setHighlightedProduct(ProductLineItem* product) {
+    if (m_highlightedProduct == product) return;
+    if (m_highlightedProduct) m_highlightedProduct->setDropHighlighted(false);
+    m_highlightedProduct = product;
+    if (m_highlightedProduct) m_highlightedProduct->setDropHighlighted(true);
 }
 
 void MergeJunctionItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
@@ -54,18 +62,22 @@ void MergeJunctionItem::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
     }
     m_dragEnd = event->scenePos();
     InputLineItem* candidate = nullptr;
+    ProductLineItem* productCandidate = nullptr;
     for (auto* item : scene()->items(event->scenePos())) {
         auto* input = dynamic_cast<InputLineItem*>(item);
         if (input && input->isVisible()) {
             candidate = input;
             break;
         }
+        if (auto* product = dynamic_cast<ProductLineItem*>(item); product && product->isAvailable())
+            productCandidate = product;
     }
     if (!candidate) {
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene()))
-            candidate = flowsheet->inputAtDropPosition(event->scenePos());
+        if (auto* host = canvasConnectionHost(scene()))
+            candidate = host->inputAtDropPosition(event->scenePos());
     }
     setHighlightedInput(candidate);
+    setHighlightedProduct(candidate ? nullptr : productCandidate);
     updatePath();
     event->accept();
 }
@@ -73,7 +85,7 @@ void MergeJunctionItem::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
 void MergeJunctionItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
     if (m_routeEditing) {
         m_routeEditing = false;
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
+        if (auto* host = canvasGeometryHost(scene())) host->notifyRouteChanged();
         updatePath();
         event->accept();
         return;
@@ -83,12 +95,17 @@ void MergeJunctionItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
         return;
     }
     auto* targetInput = m_highlightedInput;
+    auto* targetProduct = m_highlightedProduct;
     setHighlightedInput(nullptr);
+    setHighlightedProduct(nullptr);
     m_dragging = false;
     if (targetInput) {
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene()))
-            flowsheet->connectMerge(this, targetInput,
+        if (auto* host = canvasConnectionHost(scene()))
+            host->connectMerge(this, targetInput,
                                     event->modifiers() & Qt::ControlModifier);
+    } else if (targetProduct) {
+        if (auto* host = canvasConnectionHost(scene()))
+            host->addProductToMerge(targetProduct, this);
     }
     updatePath();
     event->accept();
@@ -97,14 +114,14 @@ void MergeJunctionItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
 void MergeJunctionItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) {
     m_manualMergeY = std::round(event->scenePos().y() / 10.0) * 10.0;
     updatePath();
-    if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
+    if (auto* host = canvasGeometryHost(scene())) host->notifyRouteChanged();
     event->accept();
 }
 
 void MergeJunctionItem::keyPressEvent(QKeyEvent* event) {
     if (event->key() == Qt::Key_Delete && m_manualMergeY) {
         setManualMergeY(std::nullopt);
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
+        if (auto* host = canvasGeometryHost(scene())) host->notifyRouteChanged();
         event->accept();
         return;
     }

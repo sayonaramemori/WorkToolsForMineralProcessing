@@ -49,7 +49,7 @@ void measure(FlowsheetDocument& document, const QString& id, double mass, double
 
 void checkBalance(FlowsheetScene& scene, FlowsheetDocument& document,
                   const QString& inlet, const QString& outlet) {
-    auto result = FlowsheetCalculationService::calculate(scene, document);
+    auto result = FlowsheetCalculationService::calculate(CanvasTopologyBuilder::build(scene), document);
     require(result.complete && result.fullySolved, "Ball-mill flowsheet must be fully solved");
     const auto input = result.values.value(inlet), output = result.values.value(outlet);
     require(result.values.contains(inlet) && result.values.contains(outlet)

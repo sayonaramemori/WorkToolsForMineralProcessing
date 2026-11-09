@@ -17,6 +17,8 @@ class QMenu;
 namespace afs {
 
 class CanvasView;
+class CalculationController;
+class TerminalTableController;
 class FlowsheetDocument;
 class TerminalProductDock;
 class AnnotationManager;
@@ -55,6 +57,8 @@ private:
     QAction* m_annotationsAction{nullptr};
     FlowsheetDocument* m_document{nullptr};
     TerminalProductDock* m_terminalDock{nullptr};
+    CalculationController* m_calculationController{nullptr};
+    TerminalTableController* m_tableController{nullptr};
     AnnotationManager* m_annotationManager{nullptr};
     bool m_darkTheme{false};
     bool m_projectDirty{false};

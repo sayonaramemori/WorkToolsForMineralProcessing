@@ -1,5 +1,5 @@
 #include "graphics/items/ProductLineItem.h"
-#include "editor/FlowsheetScene.h"
+#include "graphics/CanvasInteraction.h"
 #include "graphics/items/FlotationUnitItem.h"
 #include "graphics/items/InputLineItem.h"
 #include "graphics/items/MergeJunctionItem.h"
@@ -74,8 +74,8 @@ void ProductLineItem::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
         if (merge && merge->isAvailable()) mergeCandidate = merge;
     }
     if (!candidate) {
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) {
-            auto* hiddenInput = flowsheet->inputAtDropPosition(event->scenePos());
+        if (auto* host = canvasConnectionHost(scene())) {
+            auto* hiddenInput = host->inputAtDropPosition(event->scenePos());
             if (hiddenInput && hiddenInput->unit() != m_sourceUnit) candidate = hiddenInput;
         }
     }
@@ -89,7 +89,7 @@ void ProductLineItem::mouseMoveEvent(QGraphicsSceneMouseEvent* event) {
 void ProductLineItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
     if (m_routeEditing) {
         m_routeEditing = false;
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
+        if (auto* host = canvasGeometryHost(scene())) host->notifyRouteChanged();
         updatePath();
         event->accept();
         return;
@@ -106,15 +106,15 @@ void ProductLineItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event) {
     m_highlightedMerge = nullptr;
     m_dragging = false;
     if (targetInput) {
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene()))
-            flowsheet->connectProduct(this, targetInput,
+        if (auto* host = canvasConnectionHost(scene()))
+            host->connectProduct(this, targetInput,
                                       event->modifiers() & Qt::ControlModifier);
     } else if (targetProduct) {
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene()))
-            flowsheet->mergeProducts(this, targetProduct);
+        if (auto* host = canvasConnectionHost(scene()))
+            host->mergeProducts(this, targetProduct);
     } else if (targetMerge) {
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene()))
-            flowsheet->addProductToMerge(this, targetMerge);
+        if (auto* host = canvasConnectionHost(scene()))
+            host->addProductToMerge(this, targetMerge);
     }
     // Always restore the canonical path. A drop target can become invalid
     // between hover and release, in which case no scene operation updates it.
@@ -126,7 +126,7 @@ void ProductLineItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) {
     if (isConnected()) {
         m_manualRouteY = std::round(event->pos().y() / 10.0) * 10.0;
         updatePath();
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
+        if (auto* host = canvasGeometryHost(scene())) host->notifyRouteChanged();
         event->accept();
         return;
     }
@@ -136,7 +136,7 @@ void ProductLineItem::mouseDoubleClickEvent(QGraphicsSceneMouseEvent* event) {
 void ProductLineItem::keyPressEvent(QKeyEvent* event) {
     if (event->key() == Qt::Key_Delete && m_manualRouteY) {
         setManualRouteY(std::nullopt);
-        if (auto* flowsheet = dynamic_cast<FlowsheetScene*>(scene())) flowsheet->notifyRouteChanged();
+        if (auto* host = canvasGeometryHost(scene())) host->notifyRouteChanged();
         event->accept();
         return;
     }

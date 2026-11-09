@@ -1,5 +1,5 @@
 #include "services/ExcelWorksheetBuilder.h"
-#include "adapters/CanvasTopologyBuilder.h"
+#include "document/FlowsheetSnapshot.h"
 #include "document/FlowsheetDocument.h"
 
 namespace afs {
@@ -30,7 +30,7 @@ QString columnName(int zeroBased) {
 } // namespace
 
 QByteArray ExcelWorksheetBuilder::build(const FlowsheetDocument& document,
-                        const QVector<CanvasStreamDescriptor>& orderedStreams) {
+                        const QVector<StreamDescriptor>& orderedStreams) {
     QByteArray rows;
     rows += "<row r=\"1\" ht=\"24\" customHeight=\"1\">";
     QStringList headers{"方案名称", "产物名称", "重量", "产率 / %"};

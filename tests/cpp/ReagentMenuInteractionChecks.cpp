@@ -1,3 +1,4 @@
+#include "adapters/CanvasTopologyBuilder.h"
 #include "ReagentMenuTestSupport.h"
 #include "annotations/AnnotationItem.h"
 #include "annotations/ReagentOrder.h"
@@ -19,7 +20,7 @@ void transfers(const QString& directory) {
     ui.document->setAnnotationRecord(source); ui.document->setAnnotationRecord(target);
     ui.document->setDryMass("1:left", 20); ui.document->setGradePercent("1:left", 2);
     ui.document->setDryMass("1:right", 80); ui.document->setGradePercent("1:right", 1);
-    ui.document->setCalculationResult(FlowsheetCalculationService::calculate(*ui.scene, *ui.document));
+    ui.document->setCalculationResult(FlowsheetCalculationService::calculate(CanvasTopologyBuilder::build(*ui.scene), *ui.document));
     ui.manager->synchronize(); flush();
     const QPointF destination = root->products().back()->sourceAnchorScenePosition() + QPointF(0, 30);
     const auto emptyPaste = menu(ui, destination, "pasteReagentAnnotationAction", false);

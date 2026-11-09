@@ -1,13 +1,13 @@
 #pragma once
 
-#include "adapters/CanvasTopologyBuilder.h"
+#include "document/StreamDescriptor.h"
+#include "ui/CalculationPanelState.h"
 
 #include <QDockWidget>
 #include <QSet>
 #include <QVector>
 
 class QTableView;
-class QGraphicsItem;
 class QLabel;
 class QWidget;
 class QPushButton;
@@ -15,25 +15,26 @@ class QComboBox;
 
 namespace afs {
 
-class FlowsheetDocument;
+class TerminalTableSession;
 class TerminalProductTableModel;
 class StreamFilterProxyModel;
 
 class TerminalProductDock final : public QDockWidget {
     Q_OBJECT
 public:
-    TerminalProductDock(FlowsheetDocument& document, QWidget* parent = nullptr);
-    void setSnapshot(CanvasTopologySnapshot snapshot);
+    TerminalProductDock(TerminalTableSession& session, QWidget* parent = nullptr);
+    void setCalculationState(const CalculationPanelState& state);
     void setSelectedUnitIds(QSet<QString> unitIds);
-    void selectGraphicsItem(const QGraphicsItem* item);
-    [[nodiscard]] QString selectedStreamIdForGraphicsItem(const QGraphicsItem* item) const;
+    void selectStreams(const QStringList& streamIds);
+    [[nodiscard]] QString selectedStreamId() const;
     void refreshAppearance();
     void setScenarioName(const QString& name);
     bool focusMeasurement(const QString& streamId, const QString& componentId, bool grade, bool edit);
     [[nodiscard]] TerminalProductTableModel* model() const { return m_model; }
 
 signals:
-    void graphicsItemRequested(QGraphicsItem* item);
+    void streamRequested(const QString& streamId);
+    void calculationExplanationRequested();
     void calculationRequested();
 
 private:
@@ -44,11 +45,10 @@ private:
     QComboBox* m_modeCombo;
     QLabel* m_progressLabel;
     QWidget* m_panel;
-    FlowsheetDocument& m_document;
+    TerminalTableSession& m_session;
     QPushButton* m_calculateButton;
     QPushButton* m_explanationButton;
     QLabel* m_calculationStatus;
-    CanvasTopologySnapshot m_snapshot;
     QSet<QString> m_selectedUnitIds;
     QVector<int> m_defaultColumnWidths;
     bool m_columnsManuallyResized{false};
@@ -58,8 +58,6 @@ private:
     void setupPanel();
     void updateSummary();
     void applyPanelStyle();
-    void updateCalculationState();
-    void showCalculationExplanation();
     void configureColumns();
     void editComponents();
     void scheduleColumnFit();

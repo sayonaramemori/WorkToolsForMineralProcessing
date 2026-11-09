@@ -45,7 +45,7 @@ struct Sheet {
     int rows{0};
 };
 
-Sheet exportSheet(const FlowsheetDocument& document, const CanvasTopologySnapshot& snapshot,
+Sheet exportSheet(const FlowsheetDocument& document, const FlowsheetSnapshot& snapshot,
                   const QString& path) {
     QString error;
     require(ExcelDataExporter::exportWorkbook(document, snapshot, path, &error), error);
@@ -68,14 +68,14 @@ Sheet exportSheet(const FlowsheetDocument& document, const CanvasTopologySnapsho
 }
 
 void testExport(const QString& directory) {
-    CanvasTopologySnapshot snapshot;
+    FlowsheetSnapshot snapshot;
     snapshot.reportStreams = {
-        {"1:feed", "合计（单元 1 入料）", nullptr},
-        {"1:left", "单元 1 - 左产品", nullptr},
-        {"1:right", "单元 1 - 右产品", nullptr},
-        {"1:middle", "默认中间产品", nullptr},
-        {"1:blank", "空白名称产品", nullptr},
-        {"1:missing", "欠定物流", nullptr}
+        {"1:feed", "合计（单元 1 入料）"},
+        {"1:left", "单元 1 - 左产品"},
+        {"1:right", "单元 1 - 右产品"},
+        {"1:middle", "默认中间产品"},
+        {"1:blank", "空白名称产品"},
+        {"1:missing", "欠定物流"}
     };
     FlowsheetDocument document;
     document.setComponents({{"component-1", "Cu"}, {"component-2", "Zn"}});

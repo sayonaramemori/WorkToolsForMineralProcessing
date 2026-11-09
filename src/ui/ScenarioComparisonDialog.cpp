@@ -1,6 +1,6 @@
 #include "ui/ScenarioComparisonDialog.h"
 
-#include "adapters/CanvasTopologyBuilder.h"
+#include "document/StreamDescriptor.h"
 #include "document/FlowsheetDocument.h"
 
 #include <QAbstractItemView>
@@ -14,13 +14,13 @@
 namespace afs {
 
 ScenarioComparisonDialog::ScenarioComparisonDialog(
-    const FlowsheetDocument& document, const CanvasTopologySnapshot& snapshot, QWidget* parent)
+    const FlowsheetDocument& document, const QVector<StreamDescriptor>& streams, QWidget* parent)
     : QDialog(parent) {
     setWindowTitle(tr("试验方案对比"));
     resize(760, 430);
     auto* layout = new QVBoxLayout(this);
     auto* selector = new QComboBox(this);
-    for (const auto& product : snapshot.reportStreams) {
+    for (const auto& product : streams) {
         const QString productName = document.productName(product.streamId).simplified();
         const QString label = productName.isEmpty()
             ? product.displayName

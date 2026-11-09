@@ -1,4 +1,5 @@
 #include "WorkspaceToolsTestSupport.h"
+#include "document/FlowsheetSnapshot.h"
 #include "graphics/items/InputLineItem.h"
 #include "graphics/items/ProductLineItem.h"
 #include "graphics/items/FeedJunctionItem.h"
@@ -25,12 +26,12 @@ QTreeWidgetItem* issue(QTreeWidget& tree, const QString& stream, const QString& 
     return nullptr;
 }
 void diagnosticObjectLabels() {
-    CanvasTopologySnapshot snapshot;
+    FlowsheetSnapshot snapshot;
     snapshot.graph.addFlotationNode({"unit"});
     snapshot.graph.addStoragePoolNode({"buffer"});
     snapshot.graph.addMergeNode({"products", topology::MergeRole::ProductMerge});
     snapshot.graph.addMergeNode({"feed", topology::MergeRole::FeedJunction});
-    snapshot.reportStreams.append({"unit:feed", "单元入料", nullptr, false, false, true, false, {"unit"}});
+    snapshot.reportStreams.append({"unit:feed", "单元入料", false, false, true, false, {"unit"}});
     FlowsheetDocument document;
     topology::CalculationResult result;
     for (const auto& id : {"unit", "buffer", "products", "feed", "equation-system"})

@@ -1,4 +1,5 @@
 #pragma once
+#include "graphics/CanvasInteraction.h"
 
 #include <QGraphicsScene>
 #include <QSet>
@@ -13,7 +14,7 @@ class ProductLineItem;
 class InputLineItem;
 class MergeJunctionItem;
 
-class FlowsheetScene final : public QGraphicsScene {
+class FlowsheetScene final : public QGraphicsScene, public CanvasGeometryHost, public CanvasConnectionHost {
     Q_OBJECT
 public:
     explicit FlowsheetScene(QObject* parent = nullptr);
@@ -21,7 +22,7 @@ public:
     // Normal connections preserve the manually arranged downstream layout.
     // Ctrl-drag requests the optional legacy alignment behavior.
     bool connectProduct(ProductLineItem* product, InputLineItem* input,
-                        bool alignDownstream = false);
+                        bool alignDownstream = false) override;
     bool connectProductDirect(ProductLineItem* product, InputLineItem* input);
     bool disconnectProduct(ProductLineItem* product);
     FeedJunctionItem* connectRecycle(ProductLineItem* product, InputLineItem* input,
@@ -29,25 +30,25 @@ public:
     FeedJunctionItem* connectMergedProduct(MergeJunctionItem* merge, InputLineItem* input,
                                            const QString& id = {});
     bool connectMerge(MergeJunctionItem* merge, InputLineItem* input,
-                      bool alignDownstream = false);
+                      bool alignDownstream = false) override;
     bool connectMergeDirect(MergeJunctionItem* merge, InputLineItem* input);
     bool disconnectMerge(MergeJunctionItem* merge);
     bool disconnectFeedSource(FeedJunctionItem* junction, const QString& streamId);
     bool disconnectRecycle(FeedJunctionItem* junction);
     bool removeUnit(FlotationUnitItem* unit);
     MergeJunctionItem* mergeProducts(ProductLineItem* first, ProductLineItem* second,
-                                     const QString& id = {});
-    bool addProductToMerge(ProductLineItem* product, MergeJunctionItem* junction);
+                                     const QString& id = {}) override;
+    bool addProductToMerge(ProductLineItem* product, MergeJunctionItem* junction) override;
     bool splitMerge(MergeJunctionItem* junction);
-    void moveConnectedPeers(FlotationUnitItem* movedUnit, const QPointF& delta);
-    void refreshConnections();
-    void sourceWidthChanged(FlotationUnitItem* source, double oldWidth);
+    void moveConnectedPeers(FlotationUnitItem* movedUnit, const QPointF& delta) override;
+    void refreshConnections() override;
+    void sourceWidthChanged(FlotationUnitItem* source, double oldWidth) override;
     bool adjustConnectionLength(ProductLineItem* product, double delta, bool allowReverse = false);
-    [[nodiscard]] InputLineItem* inputAtDropPosition(const QPointF& scenePosition) const;
+    [[nodiscard]] InputLineItem* inputAtDropPosition(const QPointF& scenePosition) const override;
     void refreshAppearance();
     void resetGeneratedIds();
-    void notifyTopologyChanged() { emit topologyChanged(); }
-    void notifyRouteChanged() { emit geometryChanged(); }
+    void notifyTopologyChanged() override { emit topologyChanged(); }
+    void notifyRouteChanged() override { emit geometryChanged(); }
 
 signals:
     void topologyChanged();

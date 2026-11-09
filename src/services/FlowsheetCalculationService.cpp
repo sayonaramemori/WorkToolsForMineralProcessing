@@ -1,7 +1,6 @@
 #include "services/FlowsheetCalculationService.h"
-#include "adapters/CanvasTopologyBuilder.h"
+#include "document/FlowsheetSnapshot.h"
 #include "document/FlowsheetDocument.h"
-#include "editor/FlowsheetScene.h"
 #include "topology/OpenCircuitCalculator.h"
 #include "services/CalculationInputBuilder.h"
 
@@ -36,13 +35,7 @@ void appendComponentResult(topology::CalculationResult& combined,
 } // namespace
 
 topology::CalculationResult FlowsheetCalculationService::calculate(
-    const FlowsheetScene& scene, const FlowsheetDocument& document) {
-    const auto snapshot = CanvasTopologyBuilder::build(scene);
-    return calculate(snapshot, document);
-}
-
-topology::CalculationResult FlowsheetCalculationService::calculate(
-    const CanvasTopologySnapshot& snapshot, const FlowsheetDocument& document) {
+    const FlowsheetSnapshot& snapshot, const FlowsheetDocument& document) {
     topology::CalculationResult combined;
     for (int index = 0; index < document.components().size(); ++index) {
         const auto& component = document.components()[index];

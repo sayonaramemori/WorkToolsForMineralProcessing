@@ -58,7 +58,7 @@ void runExcelExportInteractionChecks() {
     document->setGradePercent(unitId + ":left", 2);
     document->setDryMass(unitId + ":right", 70);
     document->setGradePercent(unitId + ":right", 1);
-    document->setCalculationResult(FlowsheetCalculationService::calculate(*scene, *document));
+    document->setCalculationResult(FlowsheetCalculationService::calculate(CanvasTopologyBuilder::build(*scene), *document));
     const auto snapshot = CanvasTopologyBuilder::build(*scene);
     require(ExcelDataExporter::namedStreams(*document, snapshot).isEmpty(), "Unnamed products were eligible");
     for (int row = 0; row < dock->model()->rowCount(); ++row) {

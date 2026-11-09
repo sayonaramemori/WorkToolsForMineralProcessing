@@ -69,12 +69,14 @@ private:
     std::optional<double> m_manualMergeY;
     QPointF m_dragEnd;
     InputLineItem* m_highlightedInput{nullptr};
+    ProductLineItem* m_highlightedProduct{nullptr};
     FeedJunctionItem* m_feedJunction{nullptr};
     FlotationUnitItem* m_targetUnit{nullptr};
     QGraphicsSimpleTextItem* m_nameLabel{nullptr};
     AnnotationTextSettings m_textSettings;
 
     void setHighlightedInput(InputLineItem* input);
+    void setHighlightedProduct(ProductLineItem* product);
 };
 
 } // namespace afs

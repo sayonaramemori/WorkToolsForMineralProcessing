@@ -1,3 +1,4 @@
+#include "adapters/CanvasTopologyBuilder.h"
 #include "app/MainWindow.h"
 #include "annotations/AnnotationItem.h"
 #include "annotations/AnnotationManager.h"
@@ -77,7 +78,7 @@ QImage renderCard(AnnotationItem& card) {
 }
 
 void calculate(FlowsheetScene& scene, FlowsheetDocument& document) {
-    auto result = FlowsheetCalculationService::calculate(scene, document);
+    auto result = FlowsheetCalculationService::calculate(CanvasTopologyBuilder::build(scene), document);
     require(result.complete && result.fullySolved, "Fixture must be fully solved");
     document.setCalculationResult(std::move(result));
 }

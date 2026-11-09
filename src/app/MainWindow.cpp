@@ -1,4 +1,7 @@
 #include "app/MainWindow.h"
+#include "app/CalculationController.h"
+#include "app/TerminalTableController.h"
+#include "ui/CalculationExplanationDialog.h"
 #include "app/FlowTemplatePreviewSession.h"
 #include "adapters/CanvasTopologyBuilder.h"
 #include "annotations/AnnotationManager.h"
@@ -46,7 +49,14 @@ MainWindow::MainWindow() {
         return m_annotationManager->nudgeSelectedReagents(delta);
     });
     m_view->setDeleteHandler([this] { return deleteSelectedUnits(); });
-    m_terminalDock = new TerminalProductDock(*m_document, this);
+    m_tableController = new TerminalTableController(*m_document, this);
+    m_terminalDock = new TerminalProductDock(*m_tableController, this);
+    m_calculationController = new CalculationController(*m_document, this);
+    connect(m_calculationController, &CalculationController::stateChanged,
+            m_terminalDock, &TerminalProductDock::setCalculationState);
+    connect(m_terminalDock, &TerminalProductDock::calculationExplanationRequested, this, [this] {
+        showCalculationExplanationDialog(this, m_calculationController->displayResult(), m_document->calculationMode());
+    });
     m_operationLog = new OperationLogDock(this);
     setupWorkspaceTools();
     setupReagentClipboard();
@@ -64,8 +74,9 @@ MainWindow::MainWindow() {
             this, [this] { setProjectDirty(); });
     connect(m_scene, &QGraphicsScene::selectionChanged,
             this, [this] { syncCanvasSelectionToTable(); });
-    connect(m_terminalDock, &TerminalProductDock::graphicsItemRequested, this,
-            [this](QGraphicsItem* item) {
+    connect(m_terminalDock, &TerminalProductDock::streamRequested, this,
+            [this](const QString& streamId) {
+                auto* item = CanvasTopologyBuilder::buildItemIndex(*static_cast<FlowsheetScene*>(m_scene)).itemForStream(streamId);
                 if (!item) return;
                 // Selecting a table row navigates within its existing filter.
                 // Do not invalidate the proxy while it handles the click.
@@ -84,8 +95,6 @@ MainWindow::MainWindow() {
             this, [this] { refreshScenarioUi(); });
     connect(m_document, &FlowsheetDocument::currentScenarioChanged, this, [this] {
         refreshScenarioUi();
-        m_terminalDock->setSnapshot(CanvasTopologyBuilder::build(
-            *static_cast<FlowsheetScene*>(m_scene)));
         m_scene->clearSelection();
         statusBar()->showMessage(tr("已切换至：%1").arg(m_document->currentScenarioName()), 3000);
     });
@@ -162,10 +171,14 @@ MainWindow::~MainWindow() {
         m_undoManager = nullptr;
     }
 
+    delete m_calculationController;
+    m_calculationController = nullptr;
     if (m_terminalDock) {
         delete m_terminalDock;
         m_terminalDock = nullptr;
     }
+    delete m_tableController;
+    m_tableController = nullptr;
     if (m_operationLog) {
         delete m_operationLog;
         m_operationLog = nullptr;

@@ -1,5 +1,5 @@
 #include "services/CalculationInputBuilder.h"
-#include "adapters/CanvasTopologyBuilder.h"
+#include "document/FlowsheetSnapshot.h"
 #include "document/FlowsheetDocument.h"
 
 #include <algorithm>
@@ -8,7 +8,7 @@
 namespace afs {
 namespace {
 std::optional<topology::LinearBalanceConstraint> globalBoundaryConstraint(
-    const CanvasTopologySnapshot& snapshot) {
+    const FlowsheetSnapshot& snapshot) {
     const auto feedIds = snapshot.graph.externalFeedStreams();
     if (feedIds.isEmpty()) return std::nullopt;
     topology::LinearBalanceConstraint constraint;
@@ -25,7 +25,7 @@ std::optional<topology::LinearBalanceConstraint> globalBoundaryConstraint(
 }
 
 ComponentCalculationInput CalculationInputBuilder::build(
-    const CanvasTopologySnapshot& snapshot, const FlowsheetDocument& document,
+    const FlowsheetSnapshot& snapshot, const FlowsheetDocument& document,
     const QString& componentId) {
     ComponentCalculationInput input;
     for (const auto& stream : snapshot.productStreams) {

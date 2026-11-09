@@ -1,3 +1,4 @@
+#include "adapters/CanvasTopologyBuilder.h"
 #include "app/MainWindow.h"
 #include "document/FlowsheetDocument.h"
 #include "editor/CanvasView.h"
@@ -58,7 +59,7 @@ void measure(FlowsheetDocument& document, const QString& id, double mass, double
 }
 
 void saveFixture(FlowsheetScene& scene, FlowsheetDocument& document, const QString& path) {
-    auto result = FlowsheetCalculationService::calculate(scene, document);
+    auto result = FlowsheetCalculationService::calculate(CanvasTopologyBuilder::build(scene), document);
     require(result.complete && result.fullySolved, "Fixture must have a complete balance");
     document.setCalculationResult(std::move(result));
     QString error;
@@ -226,7 +227,7 @@ void testSelectionAndNavigation(WindowUi& ui) {
     ui.expectStreams({"A:right", "B:left", "B:right"});
     require(ui.scene->selectedItems().size() == 1
         && dynamic_cast<ProductLineItem*>(ui.scene->selectedItems().first()), "Table did not select product");
-    require(ui.dock->selectedStreamIdForGraphicsItem(ui.scene->selectedItems().first()) == "A:right",
+    require(ui.dock->selectedStreamId() == "A:right",
             "Table navigation did not retain the selected stream");
     ui.clickStream("B:left", ui.dock->model()->gradeColumn(DefaultComponentId));
     ui.expectStreams({"A:right", "B:left", "B:right"});
@@ -299,10 +300,10 @@ void testLoopAndProjectSwitch(WindowUi& ui, const QString& loopPath, const QStri
     ui.expectStreams({"loop:external-feed", "loop:output", "loop-a:left", "loop-a:right"});
     ui.clickStream("loop:output");
     ui.expectStreams({"loop:external-feed", "loop:output", "loop-a:left", "loop-a:right"});
-    require(ui.dock->selectedStreamIdForGraphicsItem(ui.scene->selectedItems().first()) == "loop:output",
+    require(ui.dock->selectedStreamId() == "loop:output",
             "Shared junction item selected the wrong stream row");
     ui.clickStream("loop:external-feed");
-    require(ui.dock->selectedStreamIdForGraphicsItem(ui.scene->selectedItems().first()) == "loop:external-feed",
+    require(ui.dock->selectedStreamId() == "loop:external-feed",
             "Fresh feed row lost its selected stream");
     selectCombo(ui.filter, "回流"); ui.expectStreams({"loop-b:right"});
     selectCombo(ui.filter, "浮选入料");

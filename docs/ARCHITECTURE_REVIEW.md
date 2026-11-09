@@ -11,8 +11,10 @@
 | 表格列、筛选与选中行 | `TerminalProductDockColumns.cpp`、`TerminalProductDockSelection.cpp`、`TerminalProductViewSupport.cpp` | 列宽、筛选和焦点属于视图状态 |
 | 表格对象及信号 | `TerminalProductDock.cpp` | 初始化对象、连接信号、分派键盘事件和刷新主题 |
 | 组分名称编辑 | `TerminalProductDockComponents.cpp` | 编辑结果统一写入文档，模型再根据组分信号重建列 |
-| 计算状态与说明 | `TerminalProductDockResults.cpp`、`CalculationExplanationDialog.*` | 面板选取已有结果或预览值；弹窗只显示传入值，不访问文档或计算服务 |
-| 单元格内容与编辑 | `TerminalProductTableModelData.cpp`、`TerminalProductTableModel.cpp` | 角色与表头呈现和文档写入分开，同一模型与 MOC 头 |
+| 计算状态与说明 | `TerminalProductDockResults.cpp`、`CalculationExplanationDialog.*` | `CalculationController` 统一选取和缓存预览；面板只显示状态，弹窗只显示传入值 |
+| 表格会话 | `TerminalTableSession`、`TerminalTableController` | 应用层查询/校验和写入；表格只读快照与提交类型化命令，不持有可写文档 |
+| 图元到场景的请求 | `CanvasGeometryHost`、`CanvasConnectionHost` | 图元依赖契约，场景实现契约；不反向引用 editor，保留同步移动和连接时序 |
+| 单元格内容与编辑 | `TerminalProductTableModelData.cpp`、`TerminalProductTableModel.cpp` | 角色与表头呈现和命令映射分开，同一模型与 MOC 头 |
 | 方案标注及显示设置 | `FlowsheetDocumentAnnotations.cpp` | 自定义文字、药剂按方案独立；结果标注位置、全局显示设置由项目共享 |
 | 文字绘制与编辑 | `AnnotationItem.cpp`、`AnnotationItemEditor.cpp` | 图元渲染/事件与编辑窗口分开，保持原调用入口；编辑记录由调用方提交 |
 | 标注右键及药剂摆放 | `AnnotationContextTarget.*`、`AnnotationManagerContextMenu.cpp`、`AnnotationManagerReagentPlacement.cpp` | 根据光标识别唯一物流，统一菜单和摆放，不创建第二份拓扑或剪贴板 |
@@ -22,6 +24,8 @@
 | Excel 导出 | `ExcelDataExporter.cpp`、`ExcelWorksheetBuilder.*`、`XlsxWorkbookWriter.*` | 已命名物流筛选/排序、工作表 XML、XLSX 打包分别处理 |
 | 模板预览 | `FlowTemplateStore.*`、`FlowTemplatePreviewSession.*`、`FlowTemplatePreview.*` | 本机存储、独立场景生命周期和只读查看分别处理 |
 | 右侧页面及日志 | `WorkspaceSidebar.*`、`WorkspacePanelSelector.*` | 页面注册和互斥可见性统一管理；顶部滚轮选择复用注册表；底部日志保持八分之一高度 |
+| 计算数据与图元定位 | `FlowsheetSnapshot`、`StreamDescriptor`、`CanvasItemIndex` | 计算/导出只读纯值；图元索引仅由应用层按需构建，不进入 UI 模型或求解缓存 |
+| 计算预览 | `app/CalculationController.*` | 合并输入通知、缓存预览；筛选及选择不触发求解，预览不修改持久状态 |
 | 测试装配与执行 | `xmake.lua`、`scripts/validate.py` | 共用源码/MOC 集合；脚本从构建文件发现测试，避免维护第二份目标清单 |
 
 ## 保持的行为
@@ -40,10 +44,12 @@
 python3 scripts/validate.py --clean
 ```
 
-脚本完成全目标干净构建、全部 15 个检查和 v23/v24 项目启动/退出检查。结果和逐项日志位于 `build/validation/latest/`，失败会返回非零退出码。脚本默认使用 Qt offscreen 平台，通过 xmake 获取配置后的 Qt 运行环境，不包含开发者机器的 SDK 路径。
+脚本完成全目标干净构建、全部 17 个检查和 v23/v24 项目启动/退出检查。结果和逐项日志位于 `build/validation/latest/`，失败会返回非零退出码。脚本默认使用 Qt offscreen 平台，通过 xmake 获取配置后的 Qt 运行环境，不包含开发者机器的 SDK 路径。
 
 工作区属性与诊断检查分别位于 `ObjectPropertyChecks.cpp`、`CalculationDiagnosticsChecks.cpp`；原有断言与执行顺序保留。终端输入、项目读写及剪贴板等现有检查继续覆盖界面、方案隔离、撤销、复制、布线与持久化。
 
 同一 Qt 类拆为多个实现文件时不新增 MOC 头；新增独立 UI 组件若不需要信号则保持普通值接口。`terminal_input_test`、`project_io_test` 等按需链接目标同步登记所有拆出的实现，完整应用目标复用 `add_application_sources()`。
 
-本次验收已完成全目标干净构建、15 项回归及 v23/v24 两项启动检查，全部通过；文档相对链接与 `git diff --check` 也已检查。
+新增无画布计算服务检查与预览控制器交互检查，依赖边界和场景生命周期由构建及回归验证。
+
+统一验证现包含 17 项检查及 v23/v24 启动检查；表格会话、计算服务可在没有 Qt Widgets 的环境下验证。逐项日志与退出码见 `build/validation/latest/`。

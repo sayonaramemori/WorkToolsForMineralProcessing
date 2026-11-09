@@ -1,11 +1,12 @@
 #include "app/MainWindow.h"
+#include "app/CalculationController.h"
+#include "app/TerminalTableController.h"
 #include "adapters/CanvasTopologyBuilder.h"
 #include "document/FlowsheetDocument.h"
 #include "editor/FlowsheetScene.h"
 #include "graphics/items/FlotationUnitItem.h"
 #include "graphics/items/MergeJunctionItem.h"
 #include "graphics/items/ProductLineItem.h"
-#include "services/FlowsheetCalculationService.h"
 #include "ui/TerminalProductDock.h"
 #include <QSet>
 #include <QStatusBar>
@@ -17,7 +18,9 @@ void MainWindow::refreshTerminalProducts() {
     // Import emits topologyChanged so views can rebuild their snapshots, but
     // the imported scenarios have just been recalculated and must be retained.
     if (!m_loadingProject) m_document->invalidateAllCalculations();
-    m_terminalDock->setSnapshot(CanvasTopologyBuilder::build(*static_cast<FlowsheetScene*>(m_scene)));
+    auto snapshot = CanvasTopologyBuilder::build(*static_cast<FlowsheetScene*>(m_scene));
+    m_tableController->setStreams(snapshot.reportStreams);
+    m_calculationController->setSnapshot(std::move(snapshot));
     refreshProductNames();
     syncCanvasSelectionToTable();
 }
@@ -44,14 +47,14 @@ void MainWindow::syncCanvasSelectionToTable() {
                 selectedUnitIds.insert(unit->unit().id);
         }
         m_terminalDock->setSelectedUnitIds(std::move(selectedUnitIds));
-        m_terminalDock->selectGraphicsItem(selected.isEmpty() ? nullptr : selected.first());
+        const auto index = CanvasTopologyBuilder::buildItemIndex(*static_cast<FlowsheetScene*>(m_scene));
+        m_terminalDock->selectStreams(index.streamsForItem(selected.isEmpty() ? nullptr : selected.first()));
     }
     refreshSelectionStatus();
 }
 
 void MainWindow::calculateFlowsheet() {
-    auto result = FlowsheetCalculationService::calculate(
-        *static_cast<FlowsheetScene*>(m_scene), *m_document);
+    auto result = m_calculationController->calculate();
     const bool complete = result.complete;
     const int issueCount = result.issues.size();
     const bool hasBalanceConflict = std::any_of(result.issues.cbegin(), result.issues.cend(),

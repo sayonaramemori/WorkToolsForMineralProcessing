@@ -3,10 +3,10 @@
 #include <QVector>
 namespace afs {
 class FlowsheetDocument;
-struct CanvasStreamDescriptor;
+struct StreamDescriptor;
 class ExcelWorksheetBuilder final {
 public:
     static QByteArray build(const FlowsheetDocument& document,
-                            const QVector<CanvasStreamDescriptor>& orderedStreams);
+                            const QVector<StreamDescriptor>& orderedStreams);
 };
 }

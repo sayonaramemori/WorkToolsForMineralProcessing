@@ -43,8 +43,6 @@ CopyResult capture(const FlowsheetScene& scene, const FlowsheetDocument& documen
             streams.insert(product->streamId());
             if (const auto length = product->terminalLengthOverride())
                 snapshot.terminalLengths.insert(product->streamId(), *length);
-            if (document.productNames().contains(product->streamId()))
-                snapshot.productNames.insert(product->streamId(), document.productName(product->streamId()));
         }
     }
     // Only complete product merges are copied; a branch that merges into an
@@ -85,6 +83,12 @@ CopyResult capture(const FlowsheetScene& scene, const FlowsheetDocument& documen
         snapshot.feeds.append(std::move(data)); ++result.feeds;
         streams.insert(feed->outputStreamId());
         if (feed->hasExternalFeed()) streams.insert(feed->externalFeedStreamId());
+    }
+    // Names belong to streams, including complete merge/junction outputs.
+    // Capture only owners that are actually part of this copied fragment.
+    for (const auto& id : streams) {
+        const auto name = document.productName(id);
+        if (!name.isEmpty()) snapshot.productNames.insert(id, name);
     }
     const auto records = document.annotationRecords();
     for (const auto& record : records)

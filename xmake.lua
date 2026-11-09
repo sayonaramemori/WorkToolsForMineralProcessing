@@ -22,6 +22,8 @@ local function add_application_sources()
     add_files("src/ui/WorkspaceSidebar.h")
     add_files("src/ui/ResultMetricMenu.h")
     add_files("src/services/ProjectUndoManager.h")
+    add_files("src/app/CalculationController.h")
+    add_files("src/contracts/TerminalTableSession.h")
 end
 
 local function add_canvas_sources()
@@ -52,16 +54,16 @@ target("connection_test")
     add_rules("qt.widgetapp")
     add_frameworks("QtCore", "QtGui", "QtWidgets")
     add_includedirs("src")
-    add_files("tests/cpp/ConnectionTest.cpp")
+    add_files("tests/cpp/ConnectionTest.cpp", "tests/cpp/CanvasHostChecks.cpp")
     add_canvas_sources()
     set_targetdir("build/tests")
 
 target("merge_test")
     set_default(false)
     add_rules("qt.widgetapp")
-    add_frameworks("QtCore", "QtGui", "QtWidgets")
+    add_frameworks("QtCore", "QtGui", "QtWidgets", "QtTest")
     add_includedirs("src")
-    add_files("tests/cpp/MergeTest.cpp")
+    add_files("tests/cpp/MergeTest.cpp", "tests/cpp/MergeExtensionInteractionChecks.cpp")
     add_canvas_sources()
     set_targetdir("build/tests")
 
@@ -80,6 +82,7 @@ target("terminal_input_test")
     add_frameworks("QtCore", "QtGui", "QtWidgets")
     add_includedirs("src")
     add_files("tests/cpp/TerminalInput*.cpp")
+    add_files("src/app/TerminalTableController.cpp", "src/contracts/TerminalTableSession.h")
     add_files("src/adapters/CanvasTopologyBuilder.cpp")
     add_files("src/document/FlowsheetDocument*.cpp", "src/document/FlowsheetDocument.h")
     add_files("src/ui/TerminalProductTableModel*.cpp", "src/ui/TerminalProductTableModel.h")
@@ -112,7 +115,7 @@ target("clipboard_interaction_test")
     add_files("tests/cpp/ClipboardInteractionTest.cpp", "tests/cpp/ReagentClipboardChecks.cpp",
               "tests/cpp/CopyMoveInteractionChecks.cpp", "tests/cpp/ReagentMenuInteractionChecks.cpp",
               "tests/cpp/ReagentMenuTargetChecks.cpp", "tests/cpp/ReagentShortcutChecks.cpp",
-              "tests/cpp/ScenarioNoteInteractionChecks.cpp")
+              "tests/cpp/ScenarioNoteInteractionChecks.cpp", "tests/cpp/GroupProductNameChecks.cpp")
     add_application_sources()
     remove_files("src/main.cpp")
     set_targetdir("build/tests")
@@ -151,6 +154,7 @@ target("workspace_tools_interaction_test")
     add_frameworks("QtCore", "QtGui", "QtWidgets", "QtSvg", "QtTest")
     add_files("tests/cpp/WorkspaceToolsInteractionTest.cpp",
               "tests/cpp/ObjectPropertyChecks.cpp", "tests/cpp/CalculationDiagnosticsChecks.cpp",
+              "tests/cpp/CalculationControllerChecks.cpp",
               "tests/cpp/WorkspaceSidebarChecks.cpp", "tests/cpp/WorkspacePanelSelectorChecks.cpp",
               "tests/cpp/TerminalTableLayoutChecks.cpp",
               "tests/cpp/FlowTemplateChecks.cpp", "tests/cpp/TemplatePreviewChecks.cpp")
@@ -221,6 +225,29 @@ target("project_io_test")
     add_files("src/document/FlowsheetDocument*.cpp", "src/document/FlowsheetDocument.h")
     add_canvas_sources()
     add_files("src/topology/**.cpp")
+    set_targetdir("build/tests")
+
+-- A calculation must build and run without QtWidgets or any canvas source.
+target("calculation_service_test")
+    set_default(false)
+    add_rules("qt.console")
+    add_frameworks("QtCore", "QtGui")
+    add_includedirs("src")
+    add_files("tests/cpp/CalculationServiceTest.cpp")
+    add_files("src/document/FlowsheetDocument*.cpp", "src/document/FlowsheetDocument.h")
+    add_files("src/services/CalculationInputBuilder.cpp", "src/services/FlowsheetCalculationService.cpp")
+    add_files("src/topology/**.cpp")
+    set_targetdir("build/tests")
+
+target("table_session_test")
+    set_default(false)
+    add_rules("qt.console")
+    add_frameworks("QtCore", "QtGui")
+    add_includedirs("src")
+    add_files("tests/cpp/TableSessionTest.cpp")
+    add_files("src/app/TerminalTableController.cpp", "src/contracts/TerminalTableSession.h")
+    add_files("src/document/FlowsheetDocument*.cpp", "src/document/FlowsheetDocument.h")
+    add_files("src/topology/TopologyTypes.cpp")
     set_targetdir("build/tests")
 
 task("deploy")

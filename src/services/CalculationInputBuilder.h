@@ -4,7 +4,7 @@
 
 namespace afs {
 class FlowsheetDocument;
-struct CanvasTopologySnapshot;
+struct FlowsheetSnapshot;
 
 struct ComponentCalculationInput {
     QHash<topology::StreamId, topology::StreamValue> knownValues;
@@ -17,7 +17,7 @@ class CalculationInputBuilder final {
 public:
     CalculationInputBuilder() = delete;
     [[nodiscard]] static ComponentCalculationInput build(
-        const CanvasTopologySnapshot& snapshot,
+        const FlowsheetSnapshot& snapshot,
         const FlowsheetDocument& document,
         const QString& componentId);
 };

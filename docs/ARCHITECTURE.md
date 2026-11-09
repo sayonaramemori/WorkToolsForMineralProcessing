@@ -6,6 +6,10 @@
 
 ## 模块目录
 
+### `src/contracts`
+
+`TerminalTableSession` 是 UI 与应用层之间的会话契约，提供只读 `TerminalTableState`、类型化 `TableCommand` 和带范围的变更通知。它不暴露文档或场景实例；应用层实现该契约，UI 依赖契约而不依赖应用实现。
+
 ### `src/app`
 
 应用装配层。`MainWindow` 创建场景、视图、停靠面板和工具栏，并连接各模块的信号。顶部动作按项目、流程、方案、显示和导出职责组织为下拉菜单。主窗口可以协调用户用例，但不实现计算公式、连接算法、结果表格或标注绘制。
@@ -170,8 +174,8 @@
 非画布界面组件：
 
 - `WorkspacePanelSelector`：顶部的面板下拉框及悬停滚轮交互，只请求既有页面切换，不操作项目或新增快捷键；
-- `TerminalProductTableModel`：报表物流表模型；根据项目组分动态生成品位列，编辑产品名称、绝对干质量和各组分品位，并在协调模式下提供标准差列。`NameColumn` 显示定位信息，`ProductNameColumn` 只显示用户填写的名称，未填写时为空。`TerminalProductTableModel.cpp` 管理列映射、文档编辑、行集合和模型通知，`TerminalProductTableModelData.cpp` 负责单元格角色、工具提示及表头呈现；
-- `TerminalProductDock.cpp`：对象初始化、跨控件信号连接、表格键盘事件和主题刷新；`TerminalProductDockLayout.cpp` 只装配顶部摘要卡、筛选/操作行及主表，保留标题/统计、筛选/操作、计算状态三行布局；`TerminalProductDockComponents.cpp` 处理组分名称编辑；`TerminalProductDockColumns.cpp` 管理列与委托、初始列宽及手动调整保护；`TerminalProductDockSelection.cpp` 管理快照与选择联动；`TerminalProductDockResults.cpp` 管理进度、计算状态及计算说明数据的选取；
+- `TerminalProductTableModel`：报表物流表模型；根据项目组分动态生成品位列，编辑产品名称、绝对干质量和各组分品位，并在协调模式下提供标准差列。`NameColumn` 显示定位信息，`ProductNameColumn` 只显示用户填写的名称，未填写时为空。`TerminalProductTableModel.cpp` 管理列映射、会话快照呈现、编辑命令映射和模型通知，`TerminalProductTableModelData.cpp` 负责单元格角色、工具提示及表头呈现；
+- `TerminalProductDock.cpp`：对象初始化、跨控件信号连接、表格键盘事件和主题刷新；`TerminalProductDockLayout.cpp` 只装配顶部摘要卡、筛选/操作行及主表，保留标题/统计、筛选/操作、计算状态三行布局；`TerminalProductDockComponents.cpp` 处理组分名称编辑；`TerminalProductDockColumns.cpp` 管理列与委托、初始列宽及手动调整保护；`TerminalProductDockSelection.cpp` 管理快照与选择联动；`TerminalProductDockResults.cpp` 只呈现进度与应用层给出的计算状态；
 - `CalculationExplanationDialog`：只接收计算结果与计算模式，显示只读弹窗；不读取文档、不触发计算或修改项目。表格面板不保留物流结果小表格，主表占满剩余空间；
 - `TerminalProductViewSupport`：物流筛选规则以及数值、状态单元格委托；
 - `TerminalProductStyle`：面板主题样式生成，输入表使用随主题变化的网格线；
@@ -244,7 +248,7 @@ recycle product┘
 
 `FeedJunctionItem` 分别提供主入料支路、回流支路、外部入料和总入料的指标锚点；`AnnotationManager` 必须先识别 `processProduct/processMerge`，避免主入料因共享汇流图元而丢失结果标注。
 
-`CanvasStreamDescriptor` 保存终端、入料、回流类别以及相关对象 ID，`StreamFilterProxyModel` 据此处理“物流类别”和临时的“选中流程关联”筛选而不依赖显示名称。后者按全部所选单元的直接 `ownerIds` 匹配并取并集，不递归展开闭路；它不保存到项目文件。表格导航期间，`MainWindow` 通过受控的选择来源标记保留当前关联范围，避免画布清空选择时重入并修改正在处理鼠标事件的代理模型；实际画布选择变化则重新建立关联范围。多个报表行共享同一个汇流图元时，面板保留当前物流 ID 和编辑列。求解结果同时携带干质量和组分质量的自由度，右侧提示栏使用两者较大值呈现当前仍缺少的独立约束数量。
+`StreamDescriptor` 保存终端、入料、回流类别以及相关对象 ID，`StreamFilterProxyModel` 据此处理“物流类别”和临时的“选中流程关联”筛选而不依赖显示名称。后者按全部所选单元的直接 `ownerIds` 匹配并取并集，不递归展开闭路；它不保存到项目文件。表格导航期间，`MainWindow` 通过受控的选择来源标记保留当前关联范围，避免画布清空选择时重入并修改正在处理鼠标事件的代理模型；实际画布选择变化则重新建立关联范围。多个报表行共享同一个汇流图元时，面板通过稳定物流 ID 保留当前行和编辑列。求解结果同时携带干质量和组分质量的自由度，右侧提示栏使用两者较大值呈现当前仍缺少的独立约束数量。
 
 计算拓扑中的汇流节点通过 `MergeRole` 明确区分产品合并（`ProductMerge`）和主入料/回流汇合（`FeedJunction`）。两者当前共享质量守恒方程，但语义标签保持独立，后续可分别扩展校验和交互规则。
 
@@ -285,3 +289,19 @@ recycle product┘
 - 模板通过 `flow_group::capture/paste` 复用选择快照与新 ID 分配。只保存设备、拓扑、几何、名称、文字和当前方案药剂，不包含测量和计算结果；原子写入使用 `QSaveFile`，加载失败只影响临时场景。
 
 模板预览由 `app/FlowTemplatePreviewSession` 拥有独立文档、`FlowsheetScene` 和 `AnnotationManager`，通过只读快照重建，并复用设备、跨线桥和标注绘制。`ui/FlowTemplatePreview` 仅管理视图与只读交互，复用 `CanvasView` 的缩放平移；窗口级编辑快捷键在预览聚焦时被拦截。模板列表和预览用纵向分隔条布局，默认自动适应可见内容，手动缩放或中键平移后保留视图，点击适应窗口恢复自动适应。主窗口切换模板时先将视图与旧场景分离，再销毁旧会话；关闭时先销毁视图，再清理预览标注、场景和文档。预览不持有当前项目图元，不使用主画布的 ID、剪贴板或撤销栈，也不向模板文件写入缩略图。
+
+## 计算与画布的值边界
+
+`document/FlowsheetSnapshot.h` 包含计算图与物流目录，`StreamDescriptor` 只有稳定 ID、定位描述、类别和关联对象 ID，不能包含 `QGraphicsItem*`。求解、诊断和 Excel 读取这一纯值契约；即使原画布销毁，快照仍能独立计算。`FlowsheetCalculationService` 不再提供场景参数重载，也不依赖 adapters/editor/graphics。
+
+`CanvasTopologyBuilder::buildItemIndex()` 独立构建非拥有型定位索引。应用层在表格请求定位、画布选择同步及问题导航时按需取得当前映射；索引不跨删除、导入或撤销恢复缓存。表格发送 `streamRequested(streamId)`，通过 `selectStreams(streamIds)` 保留共享汇流图元对应的具体行及编辑列，UI 模型不接收图元。
+
+`app/CalculationController` 持有当前纯快照和会话预览缓存。测量、组分、计算模式、方案、已存结果或拓扑变化使缓存失效；零延时单次定时器合并同一轮变更。筛选、选择、命名和主题不触发预览。表格只接收 `CalculationPanelState`；点击计算由主窗口协调显式求解并提交文档，计算说明复用已存结果或缓存预览。预览不写项目、不进入撤销、不改变已存结果；控制器在文档之前销毁并取消待执行刷新。
+
+## 表格会话与同步图元请求
+
+`app/TerminalTableController` 查询文档并发布只读状态，在提交测量、名称、组分和模式命令前校验有效物流、编辑权限、组分、数值范围与模式。不在当前物流目录中的目标被拒绝，目录切换通过模型重置取消旧编辑。表格和表格模型不持有 `FlowsheetDocument`；组件 ID 的保留/生成及输入规范化在应用层完成，界面只采集用户输入。
+
+模型原子更新状态快照：仅行集合、编辑范围或列结构变化时重置；普通测量、名称和结果变更保留行选择及列宽。名称通知只刷新产品名称列，避免影响其它正在编辑的字段。计算预览仍由 `CalculationController` 管理，表格会话不额外求解。
+
+`graphics/CanvasInteraction.h` 定义 `CanvasGeometryHost` 和 `CanvasConnectionHost`；`FlowsheetScene` 实现两者。图元只根据当前所属的 Qt 场景查询契约，请求几何联动、连接或路线变更通知，不引用、转换到具体的 `FlowsheetScene`，不保存回调。请求保持同步，尤其在 `ItemPositionChange` 中的组移动不能合并为排队信号。图元转移到普通场景后不再调用原场景；场景析构期间查询不到契约时安全退化为本地图形更新。

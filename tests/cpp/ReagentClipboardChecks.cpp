@@ -190,6 +190,7 @@ void testTopologyMapping() {
     for (const auto& id : snapshot.graph.streamIds()) {
         originals.append(reagent("reagent:" + id, id, "药剂:" + id));
         document.setAnnotationRecord(originals.back());
+        document.setProductName(id, "物流:" + id);
     }
     document.setAnnotationRecord(reagent("outside", "outside:feed", "外部药剂"));
     document.setAnnotationRecord(reagent("absent-feed", "process:external-feed", "不存在的外部入料"));
@@ -216,8 +217,12 @@ void testTopologyMapping() {
         }
         if (auto* merge = unit->inputLine()->sourceMerge()) owners.insert("merged:output", merge->outputStreamId());
     }
+    require(document.productName(owners.value("merged:output")) == "物流:merged:output",
+            "Merged product name was lost while copying a complete flow group");
     for (const auto& original : originals) {
         require(owners.contains(original.ownerId), "Missing cloned stream mapping");
+        require(document.productName(owners.value(original.ownerId)) == document.productName(original.ownerId),
+                "Copied stream lost its user-assigned name");
         bool found = false;
         for (const auto& copy : reagents(document)) if (copy.ownerId == owners.value(original.ownerId)) {
             expectRecord(original, copy, copy.ownerId); found = true;
@@ -228,8 +233,14 @@ void testTopologyMapping() {
     const auto partial = clipboard.copy(scene, document);
     require(partial.reagents == 2 && partial.merges == 0 && partial.feeds == 0,
             "Partial group copied annotations from omitted junctions");
+    const int namedBefore = document.productNames().size();
     const auto partialPaste = clipboard.paste(scene, document, [] { return QString("partial"); });
     require(partialPaste.reagents == 2, "Partial paste did not retain owned product reagents");
+    require(document.productNames().size() == namedBefore + 2
+        && document.productName("partial:left") == document.productName("a:left")
+        && document.productName("partial:right") == document.productName("a:right")
+        && document.productName("partial:feed").isEmpty(),
+        "Partial selection copied names from omitted junctions or lost product names");
 }
 } // namespace
 

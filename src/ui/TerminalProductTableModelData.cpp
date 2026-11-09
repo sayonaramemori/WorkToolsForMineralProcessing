@@ -1,5 +1,4 @@
 #include "ui/TerminalProductTableModel.h"
-#include "document/FlowsheetDocument.h"
 #include <QBrush>
 #include <QColor>
 #include <QGuiApplication>
@@ -8,22 +7,22 @@
 
 namespace afs {
 QVariant TerminalProductTableModel::data(const QModelIndex& index, int role) const {
-    if (!index.isValid() || index.row() >= m_streams.size()) return {};
-    const auto& stream = m_streams[index.row()];
-    const bool isEditableMeasurement = m_editableStreamIds.contains(stream.streamId);
-    const auto measurement = m_document.measurement(stream.streamId);
+    if (!index.isValid() || index.row() >= m_state.streams.size()) return {};
+    const auto& stream = m_state.streams[index.row()];
+    const bool isEditableMeasurement = m_state.editableStreamIds.contains(stream.streamId);
+    const auto measurement = m_state.measurements.value(stream.streamId);
     bool hasAnyMeasurement = measurement.dryMass.has_value();
-    for (const auto& componentId : m_document.componentIds())
+    for (const auto& componentId : m_state.componentIds())
         hasAnyMeasurement = hasAnyMeasurement || measurement.grade(componentId).has_value();
-    const bool measurementComplete = measurement.completeFor(m_document.componentIds());
-    const auto* calculation = m_document.calculationResult();
+    const bool measurementComplete = measurement.completeFor(m_state.componentIds());
+    const auto* calculation = m_state.result();
     const bool hasCalculatedValue = calculation && calculation->values.contains(stream.streamId);
     const auto calculated = hasCalculatedValue ? calculation->values.value(stream.streamId)
                                                : topology::StreamValue{};
     if (role == Qt::DisplayRole || role == Qt::EditRole) {
         switch (index.column()) {
         case NameColumn: return stream.displayName;
-        case ProductNameColumn: return m_document.productName(stream.streamId);
+        case ProductNameColumn: return m_state.productNames.value(stream.streamId);
         case MassColumn:
             if (role == Qt::DisplayRole && hasCalculatedValue
                 && calculation->reconciled) return calculated.dryMass;
@@ -31,7 +30,7 @@ QVariant TerminalProductTableModel::data(const QModelIndex& index, int role) con
             return role == Qt::DisplayRole && hasCalculatedValue
                 ? QVariant(calculated.dryMass) : QVariant();
         case MassStdDevColumn:
-            if (m_document.calculationMode() == CalculationMode::DataReconciliation
+            if (m_state.mode == CalculationMode::DataReconciliation
                 && measurement.dryMassStdDev) return *measurement.dryMassStdDev;
             break;
         default: break;
@@ -55,8 +54,8 @@ QVariant TerminalProductTableModel::data(const QModelIndex& index, int role) con
                 if (component != calculation->components.cend()
                     && component->values.contains(stream.streamId))
                     return component->values.value(stream.streamId).gradePercent();
-                if (!m_document.components().isEmpty()
-                    && index.column() == gradeColumn(m_document.components().front().id)
+                if (!m_state.components.isEmpty()
+                    && index.column() == gradeColumn(m_state.components.front().id)
                     && hasCalculatedValue)
                     return calculated.gradePercent();
             }
@@ -130,16 +129,16 @@ QVariant TerminalProductTableModel::headerData(int section, Qt::Orientation orie
     if (section == ProductNameColumn) return QString("产品名称");
     if (section == MassColumn) return QString("绝对干质量");
     if (section == MassStdDevColumn
-        && m_document.calculationMode() == CalculationMode::DataReconciliation)
+        && m_state.mode == CalculationMode::DataReconciliation)
         return QString("质量 σ");
     if (isGradeColumn(section)) {
         const QString id = componentIdForColumn(section);
-        for (const auto& component : m_document.components())
+        for (const auto& component : m_state.components)
             if (component.id == id) return QString("%1 / %").arg(component.name);
     }
     if (isUncertaintyColumn(section)) {
         const QString id = componentIdForColumn(section);
-        for (const auto& component : m_document.components())
+        for (const auto& component : m_state.components)
             if (component.id == id) return QString("%1 σ").arg(component.name);
     }
     if (section == statusColumn()) return QString("状态");

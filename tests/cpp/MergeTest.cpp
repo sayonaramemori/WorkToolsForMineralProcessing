@@ -11,6 +11,7 @@
 #include <cmath>
 
 using namespace afs;
+int runMergeExtensionInteractionChecks();
 
 namespace {
 bool hasDiagonalSegment(const QPainterPath& path) {
@@ -27,6 +28,7 @@ bool hasDiagonalSegment(const QPainterPath& path) {
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    if (const int code = runMergeExtensionInteractionChecks()) return 100 + code;
     FlowsheetScene scene;
     auto* first = new FlotationUnitItem({"first", {0, 0}});
     auto* second = new FlotationUnitItem({"second", {500, 100}});

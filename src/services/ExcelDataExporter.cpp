@@ -1,15 +1,15 @@
 #include "services/ExcelDataExporter.h"
 #include "services/ExcelWorksheetBuilder.h"
 #include "services/XlsxWorkbookWriter.h"
-#include "adapters/CanvasTopologyBuilder.h"
+#include "document/FlowsheetSnapshot.h"
 #include "document/FlowsheetDocument.h"
 #include <QSet>
 #include <algorithm>
 
 namespace afs {
-QVector<CanvasStreamDescriptor> ExcelDataExporter::namedStreams(
-    const FlowsheetDocument& document, const CanvasTopologySnapshot& snapshot) {
-    QHash<QString, CanvasStreamDescriptor> byId;
+QVector<StreamDescriptor> ExcelDataExporter::namedStreams(
+    const FlowsheetDocument& document, const FlowsheetSnapshot& snapshot) {
+    QHash<QString, StreamDescriptor> byId;
     for (auto stream : snapshot.reportStreams) {
         stream.displayName = document.productName(stream.streamId).simplified();
         if (!stream.displayName.isEmpty()) {
@@ -17,7 +17,7 @@ QVector<CanvasStreamDescriptor> ExcelDataExporter::namedStreams(
             byId.insert(id, std::move(stream));
         }
     }
-    QVector<CanvasStreamDescriptor> streams;
+    QVector<StreamDescriptor> streams;
     QSet<QString> added;
     const auto append = [&](const QString& id) {
         const auto found = byId.constFind(id);
@@ -30,7 +30,7 @@ QVector<CanvasStreamDescriptor> ExcelDataExporter::namedStreams(
 }
 
 bool ExcelDataExporter::exportWorkbook(const FlowsheetDocument& document,
-                                       const CanvasTopologySnapshot& snapshot,
+                                       const FlowsheetSnapshot& snapshot,
                                        const QString& filePath, QString* error) {
     const auto streams = namedStreams(document, snapshot);
     if (streams.isEmpty()) {

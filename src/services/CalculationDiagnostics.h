@@ -2,14 +2,14 @@
 #include "topology/TopologyTypes.h"
 namespace afs {
 class FlowsheetDocument;
-struct CanvasTopologySnapshot;
+struct FlowsheetSnapshot;
 struct CalculationDiagnostic {
     QString objectId, streamId, componentId, title, message;
     bool error{false}, gradeField{false};
 };
 class CalculationDiagnostics final {
 public:
-    static QVector<CalculationDiagnostic> build(const CanvasTopologySnapshot& snapshot,
+    static QVector<CalculationDiagnostic> build(const FlowsheetSnapshot& snapshot,
                                                const FlowsheetDocument& document,
                                                const topology::CalculationResult& result);
 };

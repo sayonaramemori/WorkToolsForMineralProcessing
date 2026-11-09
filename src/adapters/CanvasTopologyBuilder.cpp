@@ -52,8 +52,8 @@ bool isTerminalPool(const FlotationUnitItem* unit) {
 
 } // namespace
 
-CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene) {
-    CanvasTopologySnapshot result;
+FlowsheetSnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene) {
+    FlowsheetSnapshot result;
     QVector<FlotationUnitItem*> units;
     QVector<MergeJunctionItem*> merges;
     QVector<FeedJunctionItem*> feedJunctions;
@@ -94,7 +94,7 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
                                     topology::PortRef{unit->unit().id, topology::PortKind::Feed}});
             result.reportStreams.append({
                 unit->unit().id + ":feed",
-                QString("单元 %1 主入料（无回流）").arg(unit->unit().id), unit->inputLine(),
+                QString("单元 %1 主入料（无回流）").arg(unit->unit().id),
                 false, false, true, false, {unit->unit().id}});
         }
         const auto products = unit->products();
@@ -118,10 +118,10 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
                                     topology::PortRef{unit->unit().id, sourcePort}, target});
             QString displayName = QString("单元 %1 - %2产品")
                                       .arg(unit->unit().id, productDisplayLabel(*unit, side));
-            CanvasStreamDescriptor descriptor{
+            StreamDescriptor descriptor{
                 product->streamId(),
                 displayName,
-                product, product->mergeJunction() != nullptr};
+                product->mergeJunction() != nullptr};
             descriptor.terminal = !target.has_value() || isTerminalPool(product->targetUnit());
             descriptor.feed = target.has_value() && target->port == topology::PortKind::Feed;
             if (auto* feed = product->feedJunction()) {
@@ -160,8 +160,8 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
         }
         result.graph.addStream({merge->outputStreamId(),
                                 topology::PortRef{merge->id(), topology::PortKind::MergeOutput}, target});
-        CanvasStreamDescriptor descriptor{
-            merge->outputStreamId(), QString("合流产品 · %1").arg(merge->id()), merge};
+        StreamDescriptor descriptor{
+            merge->outputStreamId(), QString("合流产品 · %1").arg(merge->id())};
         descriptor.terminal = !target.has_value() || isTerminalPool(merge->targetUnit());
         descriptor.feed = target.has_value() && target->port == topology::PortKind::Feed;
         if (auto* feed = merge->feedJunction()) {
@@ -189,7 +189,7 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
             result.reportStreams.append({
                 junction->externalFeedStreamId(),
                 QString("单元 %1 主入料（不含回流）").arg(junction->targetUnit()->unit().id),
-                junction, false, false, true, false,
+                false, false, true, false,
                 {junction->id(), junction->targetUnit()->unit().id}});
         }
         result.graph.addStream({junction->outputStreamId(),
@@ -199,11 +199,29 @@ CanvasTopologySnapshot CanvasTopologyBuilder::build(const FlowsheetScene& scene)
         result.reportStreams.append({
             junction->outputStreamId(),
             QString("单元 %1 总入料（含回流）").arg(junction->targetUnit()->unit().id),
-            junction, false, false, true, false,
+            false, false, true, false,
             {junction->id(), junction->targetUnit()->unit().id}});
     }
     result.reportStreams += result.productStreams;
     return result;
+}
+
+CanvasItemIndex CanvasTopologyBuilder::buildItemIndex(const FlowsheetScene& scene) {
+    CanvasItemIndex index;
+    for (auto* item : scene.items()) {
+        if (auto* unit = dynamic_cast<FlotationUnitItem*>(item)) {
+            auto* input = unit->inputLine();
+            if (!input->sourceProduct() && !input->sourceMerge() && !input->feedJunction())
+                index.insert(unit->unit().id + ":feed", input);
+            for (auto* product : unit->products()) index.insert(product->streamId(), product);
+        } else if (auto* merge = dynamic_cast<MergeJunctionItem*>(item)) {
+            index.insert(merge->outputStreamId(), merge);
+        } else if (auto* feed = dynamic_cast<FeedJunctionItem*>(item)) {
+            if (feed->hasExternalFeed()) index.insert(feed->externalFeedStreamId(), feed);
+            index.insert(feed->outputStreamId(), feed);
+        }
+    }
+    return index;
 }
 
 } // namespace afs

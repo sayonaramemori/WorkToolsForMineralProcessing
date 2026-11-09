@@ -1,10 +1,10 @@
 #include "services/CalculationDiagnostics.h"
-#include "adapters/CanvasTopologyBuilder.h"
+#include "document/FlowsheetSnapshot.h"
 #include "document/FlowsheetDocument.h"
 #include <QSet>
 #include <cmath>
 namespace afs {
-QVector<CalculationDiagnostic> CalculationDiagnostics::build(const CanvasTopologySnapshot& snapshot,
+QVector<CalculationDiagnostic> CalculationDiagnostics::build(const FlowsheetSnapshot& snapshot,
     const FlowsheetDocument& document, const topology::CalculationResult& result) {
     QVector<CalculationDiagnostic> entries; QSet<QString> seen;
     for (const auto& issue : result.issues) {

@@ -93,10 +93,10 @@ PasteResult paste(const Snapshot& snapshot, const QPointF& offset,
     for (auto* item : scene.selectedItems()) item->setSelected(false);
     for (auto it = units.cbegin(); it != units.cend(); ++it) {
         it.value()->setSelected(true);
-        for (auto* line : it.value()->products()) {
-            const QString oldStream = it.key() + productSideSuffix(line->side());
-            if (snapshot.productNames.contains(oldStream)) document.setProductName(line->streamId(), snapshot.productNames.value(oldStream));
-        }
+    }
+    for (auto it = snapshot.productNames.cbegin(); it != snapshot.productNames.cend(); ++it) {
+        const QString target = streamIds.value(it.key());
+        if (!target.isEmpty()) document.setProductName(target, it.value());
     }
     const auto existingAnnotations = document.annotationRecords();
     QSet<QString> annotationIds(existingAnnotations.keyBegin(), existingAnnotations.keyEnd());
